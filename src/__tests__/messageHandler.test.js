@@ -255,7 +255,7 @@ describe('messageHandler and helpers', () => {
       await handler(mockMessage);
 
       expect(mockMessage.reply).toHaveBeenCalledWith(
-        expect.stringContaining('Sorry, something went wrong: Mistral quota exceeded')
+        expect.stringContaining('Sorry, something went wrong while processing that.')
       );
     });
   });

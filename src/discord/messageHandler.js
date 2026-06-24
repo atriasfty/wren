@@ -51,11 +51,9 @@ async function fetchChannelContext(channel, beforeId, count = 8) {
  * mid-sentence, e.g. "hey did you ask @wren about this?".
  */
 function isDirectlyMentioned(message, botUserId) {
-  if (!message?.mentions?.users?.has?.(botUserId)) return false;
-  // The raw content starts with the mention snowflake: <@ID> or <@!ID>
-  return /^\s*<@!?\d+>/.test(message.content) &&
-    message.content.trimStart().startsWith(`<@${botUserId}>`) ||
-    message.content.trimStart().startsWith(`<@!${botUserId}>`);
+  if (!message || !message.content) return false;
+  const c = message.content.trim();
+  return c.startsWith(`<@${botUserId}>`) || c.startsWith(`<@!${botUserId}>`);
 }
 
 function stripMention(content, botUserId) {

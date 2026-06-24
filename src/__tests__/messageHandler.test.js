@@ -189,6 +189,28 @@ describe('messageHandler and helpers', () => {
       expect(mocks.runAssistantPipeline).not.toHaveBeenCalled();
     });
 
+    it('ignores message if the ping is for another user', async () => {
+      attachMessageHandler(client);
+      const handler = client.on.mock.calls[0][1];
+
+      mockMessage.content = '<@other-user> what is the rules?';
+      mockMessage.reference = null;
+
+      await handler(mockMessage);
+      expect(mocks.runAssistantPipeline).not.toHaveBeenCalled();
+    });
+
+    it('processes message if the ping is for the bot', async () => {
+      attachMessageHandler(client);
+      const handler = client.on.mock.calls[0][1];
+
+      mockMessage.content = '<@bot-123> what is the rules?';
+      mockMessage.reference = null;
+
+      await handler(mockMessage);
+      expect(mocks.runAssistantPipeline).toHaveBeenCalled();
+    });
+
     it('processes messages that are replies to the bot', async () => {
       attachMessageHandler(client);
       const handler = client.on.mock.calls[0][1];

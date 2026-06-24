@@ -125,7 +125,10 @@ export async function runAssistantPipeline(tenantCtx, {
       break;
     }
 
-    messages.push({ role: 'assistant', content: msg.content || '', tool_calls: toolCalls });
+    // Set content to null (not empty string) when tool_calls are present — the Mistral API
+    // requires assistant content to be null or a non-empty string alongside tool calls.
+    const assistantContent = msg.content == null || msg.content === '' ? null : msg.content;
+    messages.push({ role: 'assistant', content: assistantContent, tool_calls: toolCalls });
 
     const toolResults = [];
     for (const tc of toolCalls) {
@@ -146,5 +149,9 @@ export async function runAssistantPipeline(tenantCtx, {
     messages.push(...toolResults);
   }
 
-  return { text: finalText || 'I could not produce a response.', tools: [] };
+  if (!finalText) {
+    finalText = 'I completed the requested actions, but could not generate a final reply. Please try again.';
+  }
+
+  return { text: finalText, tools: [] };
 }

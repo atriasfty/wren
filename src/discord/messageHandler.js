@@ -9,6 +9,10 @@ const MAX_RESPONSE_LEN = 1900;
 // Per-user in-flight guard: prevents duplicate concurrent pipeline runs.
 const inFlight = new Set();
 
+function publicErrorMessage() {
+  return 'Sorry, something went wrong while processing that.';
+}
+
 export function splitForDiscord(text, limit = MAX_RESPONSE_LEN) {
   if (!text) return [''];
   if (text.length <= limit) return [text];
@@ -118,7 +122,7 @@ export function attachMessageHandler(client) {
       });
     } catch (err) {
       console.error('[message] pipeline error:', err);
-      try { await message.reply(`Sorry, something went wrong: ${err.message}`); } catch {}
+      try { await message.reply(publicErrorMessage()); } catch {}
       return;
     } finally {
       inFlight.delete(userId);
@@ -156,6 +160,10 @@ export function attachMessageHandler(client) {
   });
 
   client.on('messageDelete', async (message) => {
+    // Fetch the full message if it's partial (uncached) to avoid null guild/channel
+    try { if (message.partial) message = await message.fetch(); } catch { return; }
+    if (!message) return;
+
     if (!message.guild) return;
 
     const tenantCtx = await resolveTenantByGuildId(message.guild.id);

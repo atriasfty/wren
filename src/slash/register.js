@@ -42,20 +42,19 @@ function buildCommandTree() {
   ].map((c) => c.toJSON());
 }
 
-export async function registerCommandsForGuild(client, guildId) {
+export async function registerCommandsGlobally(client) {
   const cfg = loadConfig();
   const rest = new REST({ version: '10' }).setToken(cfg.discordToken);
   const body = buildCommandTree();
-  await rest.put(Routes.applicationGuildCommands(client.user.id, guildId), { body });
-}
-
-export async function syncAllGuilds(client) {
-  for (const [guildId] of client.guilds.cache) {
-    try {
-      await registerCommandsForGuild(client, guildId);
-    } catch (err) {
-      console.warn(`[syncAllGuilds] Failed to register for ${guildId}:`, err.message);
-    }
+  try {
+    await rest.put(Routes.applicationCommands(client.user.id), { body });
+  } catch (err) {
+    console.warn('[registerCommands] Failed to register global commands:', err.message);
   }
 }
 
+export async function syncAllGuilds(client) {
+  // We now register globally instead of per-guild to ensure immediate syncing
+  // regardless of client.guilds.cache state at boot.
+  await registerCommandsGlobally(client);
+}

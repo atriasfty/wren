@@ -18,7 +18,7 @@ import { createClient } from './discord/client.js';
 import { attachMessageHandler } from './discord/messageHandler.js';
 import { attachIngameBridge } from './discord/ingameBridge.js';
 import { dispatchGarminCommand, handleComponentInteraction } from './slash/handlers.js';
-import { registerCommandsForGuild, syncAllGuilds } from './slash/register.js';
+import { syncAllGuilds } from './slash/register.js';
 import { startApiServer } from './api/server.js';
 import { pruneExpiredEvents } from './tenant/store.js';
 
@@ -74,9 +74,7 @@ async function main() {
     }
   });
 
-  client.on('guildCreate', async (guild) => {
-    try { await registerCommandsForGuild(client, guild.id); } catch (err) { console.warn('[guildCreate] register failed:', err.message); }
-  });
+// Global commands automatically apply to all guilds, so we don't need to register on guildCreate.
 
   await syncAllGuilds(client);
   console.log('[boot] slash commands synced');

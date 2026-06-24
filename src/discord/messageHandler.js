@@ -45,17 +45,14 @@ async function fetchChannelContext(channel, beforeId, count = 8) {
 }
 
 /**
- * Returns true only if the bot is directly addressed — i.e. the bot mention
- * is the FIRST token in the message content (after optional whitespace).
- * This prevents the bot from triggering when someone merely references it
- * mid-sentence, e.g. "hey did you ask @wren about this?".
+ * Returns true only if the bot is directly addressed at the START of the message.
+ * Prevents triggering when the bot is mentioned mid-sentence.
  */
 function isDirectlyMentioned(message, botUserId) {
   if (!message?.mentions?.users?.has?.(botUserId)) return false;
-  // The raw content starts with the mention snowflake: <@ID> or <@!ID>
-  return /^\s*<@!?\d+>/.test(message.content) &&
-    message.content.trimStart().startsWith(`<@${botUserId}>`) ||
-    message.content.trimStart().startsWith(`<@!${botUserId}>`);
+  // Build a regex anchored to THIS bot's exact snowflake ID
+  const re = new RegExp(`^\\s*<@!?${botUserId}>`);
+  return re.test(message.content);
 }
 
 function stripMention(content, botUserId) {
@@ -172,10 +169,8 @@ export function attachMessageHandler(client) {
   });
 
   client.on('messageDelete', async (message) => {
-    // Fetch the full message if it's partial (uncached) to avoid null guild/channel
     try { if (message.partial) message = await message.fetch(); } catch { return; }
     if (!message) return;
-
     if (!message.guild) return;
 
     const tenantCtx = await resolveTenantByGuildId(message.guild.id);

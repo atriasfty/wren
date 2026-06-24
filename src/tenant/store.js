@@ -1,4 +1,4 @@
-import { withTx } from '../db/pool.js';
+import { withTx, query } from '../db/pool.js';
 import { encryptSecret, decryptSecret } from './crypto.js';
 
 const DEFAULT_POLICY = {
@@ -30,10 +30,6 @@ const DEFAULT_POLICY = {
   analyze_player_activity: 'user',
   summarize_chat: 'user',
   check_punishments: 'user',
-  check_whitelist_status: 'user',
-  check_player_perks: 'user',
-  ingest_run: 'admin',
-  api_issue: 'owner',
 };
 
 export function getDefaultPolicy() {
@@ -62,14 +58,12 @@ export async function createTenant({ tenantId, displayName, ownerDiscordId = nul
 }
 
 export async function getTenant(tenantId, encKey) {
-  const { query } = await import('../db/pool.js');
   const r = await query(`SELECT * FROM tenants WHERE tenant_id = $1`, [tenantId]);
   if (!r.rows[0]) return null;
   return rowToTenant(r.rows[0], encKey);
 }
 
 export async function listTenants(encKey) {
-  const { query } = await import('../db/pool.js');
   const r = await query(`SELECT * FROM tenants ORDER BY created_at`);
   return r.rows.map((row) => rowToTenant(row, encKey));
 }
@@ -80,7 +74,7 @@ export async function updateTenant(tenantId, patch, encKey) {
   let i = 1;
   const allowed = [
     'display_name','bot_display_name','in_game_handle','owner_discord_id',
-    'prc_base_url','pow_base_url','pow_server_a_id','pow_server_b_id',
+    'prc_base_url','pow_base_url','pow_server_a_id',
     'ticket_category_id','ticket_parent_id','security_role_id',
     'status_channel_id','erlc_log_channel_id','in_game_pm_log_id',
     'raid_alert_channel','raid_alert_role',
@@ -99,7 +93,6 @@ export async function updateTenant(tenantId, patch, encKey) {
   if (!fields.length) return getTenant(tenantId, encKey);
   fields.push(`updated_at = NOW()`);
   values.push(tenantId);
-  const { query } = await import('../db/pool.js');
   await query(`UPDATE tenants SET ${fields.join(', ')} WHERE tenant_id = $${i}`, values);
   return getTenant(tenantId, encKey);
 }
@@ -110,7 +103,6 @@ export async function setTenantSecret(tenantId, field, plain, encKey) {
   }
   const blob = encryptSecret(plain, encKey);
   const col = field === 'erlc_server_key' ? 'erlc_server_key_enc' : 'pow_token_enc';
-  const { query } = await import('../db/pool.js');
   await query(`UPDATE tenants SET ${col} = $1, updated_at = NOW() WHERE tenant_id = $2`, [blob, tenantId]);
 }
 
@@ -124,7 +116,6 @@ function rowToTenant(row, encKey) {
     prcBaseUrl: row.prc_base_url,
     powBaseUrl: row.pow_base_url,
     powServerAId: row.pow_server_a_id,
-    powServerBId: row.pow_server_b_id,
     ticketCategoryId: row.ticket_category_id,
     ticketParentId: row.ticket_parent_id,
     securityRoleId: row.security_role_id,
@@ -150,7 +141,6 @@ function rowToTenant(row, encKey) {
 // ---------- sources ----------
 
 export async function listSources(tenantId, { enabledOnly = false } = {}) {
-  const { query } = await import('../db/pool.js');
   const r = await query(
     `SELECT * FROM tenant_sources WHERE tenant_id = $1 ${enabledOnly ? 'AND enabled' : ''} ORDER BY created_at`,
     [tenantId],
@@ -159,7 +149,6 @@ export async function listSources(tenantId, { enabledOnly = false } = {}) {
 }
 
 export async function addSource({ tenantId, kind, ref, label = null, weight = 1.0 }) {
-  const { query } = await import('../db/pool.js');
   await query(
     `INSERT INTO tenant_sources (tenant_id, kind, ref, label, weight)
      VALUES ($1, $2, $3, $4, $5)
@@ -169,7 +158,6 @@ export async function addSource({ tenantId, kind, ref, label = null, weight = 1.
 }
 
 export async function removeSource({ tenantId, kind, ref }) {
-  const { query } = await import('../db/pool.js');
   await query(
     `DELETE FROM tenant_sources WHERE tenant_id = $1 AND kind = $2 AND ref = $3`,
     [tenantId, kind, ref],
@@ -177,7 +165,6 @@ export async function removeSource({ tenantId, kind, ref }) {
 }
 
 export async function setSourceEnabled({ tenantId, kind, ref, enabled }) {
-  const { query } = await import('../db/pool.js');
   await query(
     `UPDATE tenant_sources SET enabled = $1 WHERE tenant_id = $2 AND kind = $3 AND ref = $4`,
     [enabled, tenantId, kind, ref],
@@ -185,7 +172,6 @@ export async function setSourceEnabled({ tenantId, kind, ref, enabled }) {
 }
 
 export async function markSourceIngested({ tenantId, kind, ref }) {
-  const { query } = await import('../db/pool.js');
   await query(
     `UPDATE tenant_sources SET last_ingested_at = NOW() WHERE tenant_id = $1 AND kind = $2 AND ref = $3`,
     [tenantId, kind, ref],
@@ -206,7 +192,6 @@ function rowToSource(row) {
 // ---------- role policy ----------
 
 export async function getPolicy(tenantId) {
-  const { query } = await import('../db/pool.js');
   const r = await query(`SELECT tool, min_role FROM tenant_role_policy WHERE tenant_id = $1`, [tenantId]);
   const map = {};
   for (const row of r.rows) map[row.tool] = row.min_role;
@@ -214,7 +199,6 @@ export async function getPolicy(tenantId) {
 }
 
 export async function setPolicyEntry({ tenantId, tool, minRole }) {
-  const { query } = await import('../db/pool.js');
   await query(
     `INSERT INTO tenant_role_policy (tenant_id, tool, min_role) VALUES ($1, $2, $3)
      ON CONFLICT (tenant_id, tool) DO UPDATE SET min_role = EXCLUDED.min_role`,
@@ -225,7 +209,6 @@ export async function setPolicyEntry({ tenantId, tool, minRole }) {
 // ---------- role slot mapping ----------
 
 export async function getRoleSlots(tenantId) {
-  const { query } = await import('../db/pool.js');
   const r = await query(`SELECT slot, role_id FROM tenant_roles WHERE tenant_id = $1`, [tenantId]);
   const map = {};
   for (const row of r.rows) map[row.slot] = row.role_id;
@@ -233,7 +216,6 @@ export async function getRoleSlots(tenantId) {
 }
 
 export async function setRoleSlot({ tenantId, slot, roleId }) {
-  const { query } = await import('../db/pool.js');
   await query(
     `INSERT INTO tenant_roles (tenant_id, slot, role_id) VALUES ($1, $2, $3)
      ON CONFLICT (tenant_id, slot) DO UPDATE SET role_id = EXCLUDED.role_id`,
@@ -242,14 +224,12 @@ export async function setRoleSlot({ tenantId, slot, roleId }) {
 }
 
 export async function removeRoleSlot({ tenantId, slot }) {
-  const { query } = await import('../db/pool.js');
   await query(`DELETE FROM tenant_roles WHERE tenant_id = $1 AND slot = $2`, [tenantId, slot]);
 }
 
 // ---------- bans ----------
 
 export async function listBans(tenantId) {
-  const { query } = await import('../db/pool.js');
   const r = await query(
     `SELECT user_key, reason, banned_by, created_at FROM tenant_bans WHERE tenant_id = $1 ORDER BY created_at DESC`,
     [tenantId],
@@ -258,7 +238,6 @@ export async function listBans(tenantId) {
 }
 
 export async function isBanned(tenantId, userKey) {
-  const { query } = await import('../db/pool.js');
   const r = await query(
     `SELECT 1 FROM tenant_bans WHERE tenant_id = $1 AND user_key = $2`,
     [tenantId, userKey],
@@ -267,7 +246,6 @@ export async function isBanned(tenantId, userKey) {
 }
 
 export async function addBan({ tenantId, userKey, reason = null, bannedBy = null }) {
-  const { query } = await import('../db/pool.js');
   await query(
     `INSERT INTO tenant_bans (tenant_id, user_key, reason, banned_by) VALUES ($1, $2, $3, $4)
      ON CONFLICT (tenant_id, user_key) DO UPDATE SET reason = EXCLUDED.reason, banned_by = EXCLUDED.banned_by`,
@@ -276,14 +254,12 @@ export async function addBan({ tenantId, userKey, reason = null, bannedBy = null
 }
 
 export async function removeBan({ tenantId, userKey }) {
-  const { query } = await import('../db/pool.js');
   await query(`DELETE FROM tenant_bans WHERE tenant_id = $1 AND user_key = $2`, [tenantId, userKey]);
 }
 
 // ---------- memory ----------
 
 export async function listMemory(tenantId, { scope = null, userKey = null, limit = 200 } = {}) {
-  const { query } = await import('../db/pool.js');
   const clauses = ['tenant_id = $1'];
   const values = [tenantId];
   if (scope) { values.push(scope); clauses.push(`scope = $${values.length}`); }
@@ -298,7 +274,6 @@ export async function listMemory(tenantId, { scope = null, userKey = null, limit
 }
 
 export async function addMemory({ tenantId, scope, userKey = null, content, addedBy = null }) {
-  const { query } = await import('../db/pool.js');
   const r = await query(
     `INSERT INTO tenant_memory (tenant_id, scope, user_key, content, added_by)
      VALUES ($1, $2, $3, $4, $5) RETURNING id`,
@@ -308,14 +283,12 @@ export async function addMemory({ tenantId, scope, userKey = null, content, adde
 }
 
 export async function removeMemory(tenantId, id) {
-  const { query } = await import('../db/pool.js');
   await query(`DELETE FROM tenant_memory WHERE tenant_id = $1 AND id = $2`, [tenantId, id]);
 }
 
 // ---------- processed events (idempotency) ----------
 
 export async function tryClaimEvent({ tenantId, eventId, ttlSeconds }) {
-  const { query } = await import('../db/pool.js');
   const r = await query(
     `INSERT INTO processed_events (tenant_id, event_id, expires_at)
      VALUES ($1, $2, NOW() + ($3 || ' seconds')::interval)
@@ -327,44 +300,53 @@ export async function tryClaimEvent({ tenantId, eventId, ttlSeconds }) {
 }
 
 export async function pruneExpiredEvents() {
-  const { query } = await import('../db/pool.js');
   await query(`DELETE FROM processed_events WHERE expires_at < NOW()`);
 }
 
 // ---------- raid events ----------
 
-export async function pushRaidEvent({ tenantId, playerId, command, logTs, targetCount, windowMs }) {
-  const { query } = await import('../db/pool.js');
+export async function pushRaidEvent({ tenantId, playerId, command, logTs, targetCount = 1, windowMs }) {
   await query(
     `INSERT INTO raid_events (tenant_id, player_id, command, log_ts, added_at, target_count)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (tenant_id, player_id, log_ts, command) DO NOTHING`,
     [tenantId, playerId, command, logTs, Date.now(), targetCount],
   );
-  await query(
-    `DELETE FROM raid_events WHERE tenant_id = $1 AND player_id = $2 AND added_at < $3`,
-    [tenantId, playerId, Date.now() - windowMs],
-  );
+  if (windowMs) {
+    await query(
+      `DELETE FROM raid_events WHERE tenant_id = $1 AND player_id = $2 AND added_at < $3`,
+      [tenantId, playerId, Date.now() - windowMs],
+    );
+  }
 }
 
-export async function recentRaidEvents({ tenantId, playerId, windowMs }) {
-  const { query } = await import('../db/pool.js');
+export async function recentRaidEvents({ tenantId, playerId = null, windowMs }) {
+  const clauses = ['tenant_id = $1', 'added_at >= $2'];
+  const values = [tenantId, Date.now() - windowMs];
+  if (playerId) {
+    values.push(playerId);
+    clauses.push(`player_id = $${values.length}`);
+  }
   const r = await query(
-    `SELECT command, log_ts, target_count FROM raid_events
-     WHERE tenant_id = $1 AND player_id = $2 AND added_at >= $3`,
-    [tenantId, playerId, Date.now() - windowMs],
+    `SELECT player_id, command, log_ts, target_count FROM raid_events
+     WHERE ${clauses.join(' AND ')}`,
+    values,
   );
-  return r.rows;
+  return r.rows.map((row) => ({
+    playerId: row.player_id,
+    command: row.command,
+    logTs: row.log_ts,
+    targetCount: row.target_count,
+  }));
 }
 
 export async function clearRaidHistory(playerId, tenantId) {
-  const { query } = await import('../db/pool.js');
   await query(`DELETE FROM raid_events WHERE tenant_id = $1 AND player_id = $2`, [tenantId, playerId]);
 }
 
 // ---------- processed tickets ----------
 
 export async function markTicketProcessed({ tenantId, channelId }) {
-  const { query } = await import('../db/pool.js');
   await query(
     `INSERT INTO processed_tickets (tenant_id, channel_id) VALUES ($1, $2)
      ON CONFLICT DO NOTHING`,
@@ -373,7 +355,6 @@ export async function markTicketProcessed({ tenantId, channelId }) {
 }
 
 export async function isTicketProcessed({ tenantId, channelId }) {
-  const { query } = await import('../db/pool.js');
   const r = await query(
     `SELECT 1 FROM processed_tickets WHERE tenant_id = $1 AND channel_id = $2`,
     [tenantId, channelId],
@@ -384,7 +365,6 @@ export async function isTicketProcessed({ tenantId, channelId }) {
 // ---------- audit log ----------
 
 export async function audit({ tenantId, actor, action, target = null, metadata = null }) {
-  const { query } = await import('../db/pool.js');
   await query(
     `INSERT INTO audit_log (tenant_id, actor, action, target, metadata) VALUES ($1, $2, $3, $4, $5::jsonb)`,
     [tenantId, actor, action, target, metadata ? JSON.stringify(metadata) : null],
@@ -394,7 +374,6 @@ export async function audit({ tenantId, actor, action, target = null, metadata =
 // ---------- API tokens ----------
 
 export async function issueApiToken({ tenantId, tokenHash, label = null, scopes = ['chat'] }) {
-  const { query } = await import('../db/pool.js');
   await query(
     `INSERT INTO tenant_api_tokens (tenant_id, token_hash, label, scopes)
      VALUES ($1, $2, $3, $4)`,
@@ -403,7 +382,6 @@ export async function issueApiToken({ tenantId, tokenHash, label = null, scopes 
 }
 
 export async function findTenantByTokenHash(tokenHash) {
-  const { query } = await import('../db/pool.js');
   const r = await query(
     `SELECT t.tenant_id AS tenant_id, tok.scopes AS scopes, tok.token_hash AS token_hash
      FROM tenant_api_tokens tok
@@ -424,7 +402,6 @@ export async function findTenantByTokenHash(tokenHash) {
 }
 
 export async function revokeApiToken({ tenantId, tokenHash }) {
-  const { query } = await import('../db/pool.js');
   await query(
     `UPDATE tenant_api_tokens SET revoked_at = NOW() WHERE tenant_id = $1 AND token_hash = $2`,
     [tenantId, tokenHash],

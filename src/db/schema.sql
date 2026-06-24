@@ -12,7 +12,6 @@ CREATE TABLE IF NOT EXISTS tenants (
   pow_base_url        TEXT,
   pow_token_enc       BYTEA,
   pow_server_a_id     TEXT,
-  pow_server_b_id     TEXT,
   ticket_category_id  TEXT,
   ticket_parent_id    TEXT,
   security_role_id    TEXT,
@@ -28,6 +27,7 @@ CREATE TABLE IF NOT EXISTS tenants (
   created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 
 CREATE TABLE IF NOT EXISTS tenant_sources (
   tenant_id  TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,

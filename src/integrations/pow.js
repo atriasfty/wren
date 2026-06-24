@@ -13,18 +13,18 @@ function token(tenantCtx) {
 
 function serverLabel(tenantCtx, key) {
   const t = tenantCtx.tenant;
-  return key === 'A' ? t.powServerAId : key === 'B' ? t.powServerBId : null;
+  const upperKey = String(key || '').toUpperCase();
+  return upperKey === 'A' ? t.powServerAId : null;
 }
 
 export async function getPunishments(tenantCtx, username, server = null) {
   const userInfo = await getRobloxUserId(tenantCtx, username);
   if (!userInfo) throw new Error(`Could not find Roblox user: ${username}`);
-  const serversToQuery = server
-    ? [{ key: server.toUpperCase(), id: serverLabel(tenantCtx, server.toUpperCase()) }]
-    : [
-        { key: 'A', id: tenantCtx.tenant.powServerAId },
-        { key: 'B', id: tenantCtx.tenant.powServerBId },
-      ];
+  const serverKey = server ? server.toUpperCase() : 'A';
+  if (serverKey !== 'A') throw new Error(`Unknown server: ${server}`);
+  const serversToQuery = [
+    { key: 'A', id: tenantCtx.tenant.powServerAId },
+  ];
   const results = { username: userInfo.username, userId: userInfo.userId, punishments: [] };
   for (const srv of serversToQuery) {
     if (!srv.id) continue;

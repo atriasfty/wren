@@ -25,8 +25,8 @@ export function resolveActorRank(actor, tenantCtx) {
     return 'user'; // API rank is governed by scopes, not policy table
   }
   if (actor.kind === 'system') {
-    // Internal actions (raid auto-ban, ticket greeter) act on behalf of the
-    // server owner. The audit log records `system` as the actor.
+    // Internal actions (ticket greeter, future internal flows) act on behalf of
+    // the server owner. The audit log records `system` as the actor.
     return 'owner';
   }
   return 'user';

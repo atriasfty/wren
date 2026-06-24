@@ -5,7 +5,10 @@ import { enforceBan } from './guards.js';
 const MENTION_RE = /^<@!?(\d+)>/;
 const MAX_RESPONSE_LEN = 1900;
 
-function splitForDiscord(text, limit = MAX_RESPONSE_LEN) {
+// Per-user in-flight guard: prevents duplicate concurrent pipeline runs.
+const inFlight = new Set();
+
+export function splitForDiscord(text, limit = MAX_RESPONSE_LEN) {
   if (!text) return [''];
   if (text.length <= limit) return [text];
   const out = [];
@@ -84,6 +87,14 @@ export function attachMessageHandler(client) {
     const question = stripMention(message.content, client.user.id);
     if (!question) return;
 
+    // Drop duplicate requests from the same user while one is in progress.
+    const userId = message.author.id;
+    if (inFlight.has(userId)) {
+      try { await message.react('\u23f3'); } catch {}
+      return;
+    }
+    inFlight.add(userId);
+
     const channelContext = await fetchChannelContext(message.channel, message.id);
     const imageUrls = [...message.attachments.values()]
       .filter((a) => a.contentType?.startsWith?.('image/'))
@@ -103,11 +114,13 @@ export function attachMessageHandler(client) {
       console.error('[message] pipeline error:', err);
       try { await message.reply(`Sorry, something went wrong: ${err.message}`); } catch {}
       return;
+    } finally {
+      inFlight.delete(userId);
     }
 
     const chunks = splitForDiscord(result.text || '');
     try {
-      await message.reply({ content: chunks[0] || '…', allowedMentions: { parse: [] } });
+      await message.reply({ content: chunks[0] || '\u2026', allowedMentions: { parse: [] } });
       for (let i = 1; i < chunks.length; i++) {
         await message.channel.send({ content: chunks[i], allowedMentions: { parse: [] } });
       }

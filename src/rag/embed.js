@@ -15,11 +15,12 @@ export async function embedText(text) {
 }
 
 export async function embedBatch(texts) {
+  if (!texts.length) return [];
   const model = await getEmbedder();
-  const results = [];
-  for (const t of texts) {
-    const out = await model(t, { pooling: 'mean', normalize: true });
-    results.push(Array.from(out.data));
-  }
-  return results;
+  return Promise.all(
+    texts.map(async (t) => {
+      const out = await model(t, { pooling: 'mean', normalize: true });
+      return Array.from(out.data);
+    })
+  );
 }

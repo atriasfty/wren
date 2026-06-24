@@ -1,11 +1,28 @@
 import express from 'express';
 import { hashToken } from '../tenant/crypto.js';
-import { findTenantByTokenHash, pruneExpiredEvents } from '../tenant/store.js';
+import { findTenantByTokenHash } from '../tenant/store.js';
 import { resolveTenantById, setEncryptionKey } from '../tenant/resolve.js';
 import { runAssistantPipeline } from '../ai/pipeline.js';
 import { loadConfig } from '../config.js';
 
 const SCOPES = new Set(['chat', 'mod']);
+
+// Simple in-memory rate limiter: 20 requests per token per 60 s window.
+const rateLimitMap = new Map();
+function checkRateLimit(tokenHash, limit = 20, windowMs = 60_000) {
+  const now = Date.now();
+  let entry = rateLimitMap.get(tokenHash);
+  if (!entry || now > entry.resetAt) {
+    entry = { count: 0, resetAt: now + windowMs };
+  }
+  if (entry.count >= limit) {
+    rateLimitMap.set(tokenHash, entry);
+    return false;
+  }
+  entry.count++;
+  rateLimitMap.set(tokenHash, entry);
+  return true;
+}
 
 export async function createApiServer() {
   const cfg = loadConfig();
@@ -29,6 +46,7 @@ export async function createApiServer() {
     const row = await findTenantByTokenHash(tokenHash);
     if (!row) return res.status(401).json({ error: 'Invalid token' });
     if (!row.scopes?.some((s) => SCOPES.has(s))) return res.status(403).json({ error: 'Token lacks required scope' });
+    if (!checkRateLimit(tokenHash)) return res.status(429).json({ error: 'Rate limit exceeded. Try again in a minute.' });
     const ctx = await resolveTenantById(row.tenantId);
     if (!ctx) return res.status(404).json({ error: 'Tenant not found' });
     req.tenantCtx = ctx;
@@ -48,6 +66,7 @@ export async function createApiServer() {
   app.post('/v1/chat', auth, requireScope('chat'), async (req, res) => {
     const { question, channelContext = null, imageUrls = [] } = req.body || {};
     if (!question || typeof question !== 'string') return res.status(400).json({ error: 'question required' });
+    if (question.length > 4000) return res.status(400).json({ error: 'question too long (max 4000 chars)' });
     try {
       const result = await runAssistantPipeline(req.tenantCtx, {
         question,
@@ -72,8 +91,6 @@ export async function createApiServer() {
       policyCount: Object.keys(req.tenantCtx.policy).length,
     });
   });
-
-  setInterval(() => pruneExpiredEvents().catch(() => {}), 60 * 60 * 1000);
 
   return app;
 }

@@ -17,7 +17,9 @@ export async function readVectorStore(vectorStorePath) {
 }
 
 export async function writeVectorStore(vectorStorePath, store) {
-  await fs.writeFile(vectorStorePath, JSON.stringify(store, null, 2));
+  const tmp = vectorStorePath + '.tmp';
+  await fs.writeFile(tmp, JSON.stringify(store, null, 2));
+  await fs.rename(tmp, vectorStorePath);
 }
 
 export async function appendManualDoc(dataDir, filename, content) {

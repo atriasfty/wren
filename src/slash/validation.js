@@ -8,7 +8,6 @@ export const SETTABLE_KEYS = new Set([
   'prcBaseUrl',
   'powBaseUrl',
   'powServerAId',
-  'powServerBId',
   'ticketCategoryId',
   'securityRoleId',
   'ticketParentId',

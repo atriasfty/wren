@@ -5,7 +5,7 @@ export async function fetchWebpage(url, { timeoutMs = 10_000, maxChars = 5000 } 
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; GarminBot/1.0; +https://discord.com)' },
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; WrenBot/1.0; +https://discord.com)' },
       signal: controller.signal,
     });
     if (!res.ok) {

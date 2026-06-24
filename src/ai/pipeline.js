@@ -1,10 +1,12 @@
 import MistralClient from '@mistralai/mistralai';
+import { trace, SpanStatusCode } from '@opentelemetry/api';
 import { retrieveSources } from '../rag/retrieve.js';
 import { webSearch } from '../integrations/brave.js';
 import { executeTool } from './executor.js';
 import { buildSystemPrompt } from './prompts.js';
 import { loadConfig } from '../config.js';
 import { addMemory } from '../tenant/store.js';
+import { actorKey } from './utils.js';
 
 let _client = null;
 function client() {
@@ -18,15 +20,7 @@ function client() {
 const MAX_TOOL_STEPS = 6;
 const WEB_TRIGGER = /(?:^|\s)(?:what|who|where|when|why|how|latest|current|today|news|release|update|is|are|do|does)\b/i;
 
-function actorKey(actor) {
-  if (!actor) return 'unknown';
-  if (actor.kind === 'discord') return `discord:${actor.member?.id ?? '?'}`;
-  if (actor.kind === 'in_game') return `ingame:${actor.playerName}`;
-  if (actor.kind === 'api') return `api:${actor.tokenId ?? '?'}`;
-  return 'unknown';
-}
-
-function stripTrailingNoise(text) {
+function normaliseWhitespace(text) {
   return text.replace(/\s+/g, ' ').trim();
 }
 
@@ -57,7 +51,7 @@ export async function runAssistantPipeline(tenantCtx, {
       const results = await webSearch(question, { count: 4 });
       if (results.length) {
         webContext = '\n\nWEB SEARCH RESULTS:\n' +
-          results.map((r, i) => `[${i + 1}] ${r.title} — ${r.snippet} (${r.url})`).join('\n');
+          results.map((r, i) => `[${i + 1}] ${r.title} \u2014 ${r.snippet} (${r.url})`).join('\n');
       }
     } catch (err) {
       console.warn('[pipeline] web search failed:', err.message);
@@ -65,7 +59,7 @@ export async function runAssistantPipeline(tenantCtx, {
   }
 
   const userContent = [
-    { type: 'text', text: stripTrailingNoise(question) },
+    { type: 'text', text: normaliseWhitespace(question) },
     ...(channelContext ? [{ type: 'text', text: `\n\nRECENT CHANNEL MESSAGES:\n${channelContext}` }] : []),
     ...(ragContext ? [{ type: 'text', text: ragContext }] : []),
     ...(webContext ? [{ type: 'text', text: webContext }] : []),
@@ -81,8 +75,18 @@ export async function runAssistantPipeline(tenantCtx, {
   const tools = getToolsForMistral();
 
   let finalText = '';
+  const tracer = trace.getTracer('wren');
   for (let step = 0; step < MAX_TOOL_STEPS; step++) {
     let resp;
+    const span = tracer.startSpan('gen_ai.chat', {
+      attributes: {
+        'gen_ai.system': 'mistral',
+        'gen_ai.request.model': 'mistral-large-2512',
+        'gen_ai.input.messages': JSON.stringify(messages),
+        'posthog.distinct_id': actorKey(actor),
+        'posthog.tenant_id': tenantCtx.tenantId,
+      }
+    });
     try {
       resp = await client().chat({
         model: 'mistral-large-2512',
@@ -91,9 +95,22 @@ export async function runAssistantPipeline(tenantCtx, {
         tool_choice: 'auto',
         temperature: 0.2,
       });
+      if (resp.usage) {
+        span.setAttributes({
+          'gen_ai.usage.input_tokens': resp.usage.prompt_tokens ?? 0,
+          'gen_ai.usage.output_tokens': resp.usage.completion_tokens ?? 0,
+        });
+      }
+      if (resp.choices?.[0]?.message) {
+        span.setAttribute('gen_ai.output.messages', JSON.stringify([resp.choices[0].message]));
+      }
     } catch (err) {
+      span.recordException(err);
+      span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
+      span.end();
       return { text: `LLM call failed: ${err.message}`, tools: [], error: err.message };
     }
+    span.end();
 
     const choice = resp.choices?.[0];
     if (!choice) return { text: 'No response from model.', tools: [] };

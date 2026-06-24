@@ -18,12 +18,9 @@ export async function resolveTenantByGuildId(guildId) {
   return ctx;
 }
 
+// tenantId === guildId for all tenants - delegate to shared cache.
 export async function resolveTenantById(tenantId) {
-  const cached = cache.get(tenantId);
-  if (cached && cached.expiresAt > Date.now()) return cached.ctx;
-  const ctx = await buildTenantContext(tenantId, encKey);
-  if (ctx) cache.set(tenantId, { ctx, expiresAt: Date.now() + TTL_MS });
-  return ctx;
+  return resolveTenantByGuildId(tenantId);
 }
 
 export function invalidateTenant(tenantId) {

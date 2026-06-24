@@ -52,7 +52,7 @@ describe('policy.canRunTool', () => {
     expect(resolveActorRank({ kind: 'api', tokenId: 'a' }, { roleSlots: {} })).toBe('user');
   });
 
-  it('system actor resolves to owner (raid auto-ban, ticket greeter)', () => {
+  it('system actor resolves to owner (ticket greeter, future internal actions)', () => {
     expect(resolveActorRank({ kind: 'system' }, { roleSlots: {} })).toBe('owner');
     const ctx = tenantCtxWith({ ban_player: 'admin' });
     expect(canRunTool(ctx, 'ban_player', {}, { kind: 'system' })).toBe(true);

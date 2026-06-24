@@ -1,10 +1,10 @@
 function baseUrl(tenantCtx) {
-  return tenantCtx.tenant.prcBaseUrl || 'https://api.erlc.gg/v1';
+  return tenantCtx.tenant.prcBaseUrl || process.env.PRC_BASE_URL || 'https://api.erlc.gg/v1';
 }
 
 function serverKey(tenantCtx) {
   if (!tenantCtx.tenant.erlcServerKey) {
-    throw new Error('Tenant has no ERLC server key configured. Run /wren config erlc server-key:<key>');
+    throw new Error('Tenant has no ERLC server key configured. Run /wren config view and set it in Secrets.');
   }
   return tenantCtx.tenant.erlcServerKey;
 }
@@ -74,8 +74,8 @@ export async function findPlayer(tenantCtx, partialName) {
   const term = partialName.toLowerCase().trim();
   return (
     players.find((p) => p.username.toLowerCase() === term) ||
-    players.find((p) => p.username.toLowerCase().includes(term)) ||
     players.find((p) => p.username.toLowerCase().startsWith(term)) ||
+    players.find((p) => p.username.toLowerCase().includes(term)) ||
     null
   );
 }
@@ -148,12 +148,6 @@ export async function banPlayer(tenantCtx, username, reason = 'No reason provide
   return { ...result, actualUsername: userInfo.username };
 }
 
-export async function unbanPlayer(tenantCtx, username) {
-  const userInfo = await getRobloxUserId(tenantCtx, username);
-  if (!userInfo) throw new Error(`Could not find Roblox user: ${username}`);
-  return { ...(await executeCommand(tenantCtx, `:unban ${userInfo.userId}`)), actualUsername: userInfo.username };
-}
-
 export async function kickPlayer(tenantCtx, username, reason = 'No reason provided') {
   const userInfo = await getRobloxUserId(tenantCtx, username);
   if (!userInfo) throw new Error(`Could not find Roblox user: ${username}`);
@@ -207,10 +201,3 @@ export async function unadminPlayer(tenantCtx, username) {
   if (!u) throw new Error(`Could not find Roblox user: ${username}`);
   return { ...(await executeCommand(tenantCtx, `:unadmin ${u.userId}`)), actualUsername: u.username };
 }
-
-export async function isPlayerOnline(tenantCtx, username) {
-  return (await findPlayer(tenantCtx, username)) !== null;
-}
-
-// no-op re-export so callers can import as one module
-export { query };

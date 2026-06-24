@@ -9,7 +9,10 @@ dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 const REQUIRED = ['DISCORD_TOKEN', 'MISTRAL_API_KEY', 'DATABASE_URL', 'TENANT_SECRET_ENC_KEY'];
 
+let _config = null;
+
 export function loadConfig() {
+  if (_config) return _config;
   const missing = REQUIRED.filter((k) => !process.env[k]);
   if (missing.length) {
     throw new Error(`Missing required env vars: ${missing.join(', ')}`);
@@ -18,7 +21,7 @@ export function loadConfig() {
   if (!/^[A-Za-z0-9+/=]+$/.test(encKey) || Buffer.from(encKey, 'base64').length !== 32) {
     throw new Error('TENANT_SECRET_ENC_KEY must be base64 of 32 raw bytes (AES-256 key)');
   }
-  return {
+  _config = {
     discordToken: process.env.DISCORD_TOKEN,
     mistralApiKey: process.env.MISTRAL_API_KEY,
     braveApiKey: process.env.BRAVE_SEARCH_API_KEY || null,
@@ -27,4 +30,5 @@ export function loadConfig() {
     apiPort: Number(process.env.API_PORT || 42011),
     nodeEnv: process.env.NODE_ENV || 'development',
   };
+  return _config;
 }

@@ -1,10 +1,8 @@
 import { Client, GatewayIntentBits, Partials } from 'discord.js';
 import { loadConfig } from '../config.js';
-import { runMigrations } from '../db/migrate.js';
 
 export async function createClient() {
   const cfg = loadConfig();
-  await runMigrations();
 
   const client = new Client({
     intents: [

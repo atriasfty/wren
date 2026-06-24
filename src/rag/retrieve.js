@@ -27,16 +27,3 @@ export async function retrieveSources(tenantCtx, question, topK = 8, { minSimila
     .slice(0, topK);
   return scored;
 }
-
-// Backwards-compatible string-returning variant used by callers that want a single
-// concatenated context block instead of an array.
-export async function retrieve(tenantCtx, question, opts = {}) {
-  const topK = opts.topK ?? 8;
-  const chunks = await retrieveSources(tenantCtx, question, topK, opts);
-  if (!chunks.length) {
-    return opts.allowEmpty === false ? '' : 'No relevant information found in the knowledge base for this question.';
-  }
-  return chunks
-    .map((s, i) => `[Source ${i + 1} - ${(s.score * 100).toFixed(1)}% — ${s.chunk.label || s.chunk.sourceRef}]\n${s.chunk.text}`)
-    .join('\n\n---\n\n');
-}

@@ -17,22 +17,67 @@ dotenv.config({ path: path.join(__dirname, '..', '..', '.env') });
 const CHUNK_SIZE = 1000;
 const CHUNK_OVERLAP = 150;
 
-function chunkText(text, size = CHUNK_SIZE, overlap = CHUNK_OVERLAP) {
+export function chunkText(text, size = CHUNK_SIZE, overlap = CHUNK_OVERLAP) {
+  if (!text) return [];
+  const actualOverlap = Math.min(overlap, Math.floor(size / 2));
+  // Split by standard and CJK period / question / exclamation marks, or newlines
+  const sentences = text.match(/[^.!?。！？\n\r]+[.!?。！？\n\r]*/g) || [text];
   const chunks = [];
-  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
   let current = '';
+
   for (const s of sentences) {
     const trimmed = s.trim();
-    if (current.length + trimmed.length > size && current.length > 0) {
-      chunks.push(current.trim());
-      const words = current.split(' ');
-      const overlapWords = words.slice(-Math.floor(overlap / 5));
-      current = overlapWords.join(' ') + ' ' + trimmed;
+    if (!trimmed) continue;
+
+    if (trimmed.length > size) {
+      if (current.trim().length > 0) {
+        chunks.push(current.trim());
+        current = '';
+      }
+
+      const words = trimmed.split(/\s+/);
+      let subChunk = '';
+      for (const w of words) {
+        if (subChunk.length + w.length + 1 > size && subChunk.length > 0) {
+          chunks.push(subChunk.trim());
+          const subWords = subChunk.trim().split(/\s+/);
+          const overlapWords = subWords.slice(-Math.max(1, Math.floor(actualOverlap / 5)));
+          subChunk = overlapWords.join(' ') + ' ' + w;
+        } else {
+          subChunk = subChunk ? subChunk + ' ' + w : w;
+        }
+      }
+
+      if (subChunk.trim().length > 0) {
+        if (subChunk.length > size) {
+          let temp = subChunk.trim();
+          while (temp.length > size) {
+            chunks.push(temp.substring(0, size));
+            temp = temp.substring(size - actualOverlap);
+          }
+          if (temp.length > 0) {
+            current = temp;
+          }
+        } else {
+          current = subChunk;
+        }
+      }
     } else {
-      current += ' ' + trimmed;
+      if (current.length + trimmed.length > size && current.length > 0) {
+        chunks.push(current.trim());
+        const words = current.split(/\s+/);
+        const overlapWords = words.slice(-Math.max(1, Math.floor(actualOverlap / 5)));
+        current = overlapWords.join(' ') + ' ' + trimmed;
+      } else {
+        current = current ? current + ' ' + trimmed : trimmed;
+      }
     }
   }
-  if (current.trim().length > 0) chunks.push(current.trim());
+
+  if (current.trim().length > 0) {
+    chunks.push(current.trim());
+  }
+
   return chunks.filter((c) => c.length > 50);
 }
 
@@ -59,6 +104,11 @@ async function fetchChannelHistory(client, channelId, { capPerChannel = 1000 } =
     if (msgs.size < 100) break;
   }
   return out;
+}
+
+function clientReady(client) {
+  if (client.isReady()) return Promise.resolve();
+  return new Promise((resolve) => client.once('ready', resolve));
 }
 
 export async function ingestTenant(tenantCtx, client, { kinds = ['all'] } = {}) {
@@ -99,14 +149,19 @@ export async function ingestTenant(tenantCtx, client, { kinds = ['all'] } = {}) 
     }
   }
 
+  // Incremental: keep chunks from sources NOT being re-ingested.
+  const ingestingRefs = new Set(corpus.map((c) => `${c.kind}:${c.ref}`));
   const store = await readVectorStore(tenantCtx.vectorStorePath);
+  store.chunks = (store.chunks || []).filter(
+    (c) => !ingestingRefs.has(`${c.sourceKind}:${c.sourceRef}`)
+  );
+
   store.metadata = {
     createdAt: new Date().toISOString(),
     totalChunks: 0,
     chunkSize: CHUNK_SIZE,
     chunkOverlap: CHUNK_OVERLAP,
   };
-  store.chunks = [];
 
   const BATCH = 16;
   for (let i = 0; i < chunkedCorpus.length; i += BATCH) {
@@ -124,6 +179,7 @@ export async function ingestTenant(tenantCtx, client, { kinds = ['all'] } = {}) 
     }
     console.log(`[ingest] embedded ${Math.min(i + BATCH, chunkedCorpus.length)}/${chunkedCorpus.length}`);
   }
+  store.chunks.forEach((c, idx) => { c.id = idx; });
   store.metadata.totalChunks = store.chunks.length;
   await writeVectorStore(tenantCtx.vectorStorePath, store);
 
@@ -154,16 +210,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       process.exit(1);
     }
     const result = await ingestTenant(ctx, client, { kinds: ['all'] });
-    console.log('✓ ingest complete', result);
+    console.log('\u2713 ingest complete', result);
     await client.destroy();
     process.exit(0);
   })().catch((err) => {
     console.error('ingest failed', err);
     process.exit(1);
   });
-}
-
-function clientReady(client) {
-  if (client.isReady()) return Promise.resolve();
-  return new Promise((resolve) => client.once('ready', resolve));
 }

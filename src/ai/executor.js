@@ -1,8 +1,8 @@
 import * as prc from '../integrations/prc.js';
 import * as pow from '../integrations/pow.js';
-import { getDiscordIdFromRobloxId } from '../integrations/bloxlink.js';
 import { audit, addMemory } from '../tenant/store.js';
 import { canRunTool, denialReason } from './policy.js';
+import { actorKey } from './utils.js';
 
 const BANNED_TARGETS = new Set(['all', 'everyone', 'everybody', '*', 'others', 'server', 'people']);
 const MOD_TOOLS = new Set([
@@ -21,16 +21,8 @@ function rejectTarget(username) {
   return null;
 }
 
-function actorKey(actor) {
-  if (!actor) return 'unknown';
-  if (actor.kind === 'discord') return `discord:${actor.member?.id ?? '?'}`;
-  if (actor.kind === 'in_game') return `ingame:${actor.playerName}`;
-  if (actor.kind === 'api') return `api:${actor.tokenId ?? '?'}`;
-  return 'unknown';
-}
-
-async function getGuild(tenantCtx, actor) {
-  return actor?.guild || tenantCtx._guild || null;
+function getGuild(tenantCtx, actor) {
+  return actor?.guild || null;
 }
 
 export async function executeTool(tenantCtx, name, args, actor) {
@@ -188,36 +180,6 @@ export async function executeTool(tenantCtx, name, args, actor) {
         result = { success: true, username: p.username, isStaff, rank: isStaff ? p.permission : 'Regular Player' };
         break;
       }
-      case 'check_whitelist_status': {
-        const u = await prc.getRobloxUserId(tenantCtx, args.username);
-        if (!u) return { success: false, error: `Could not find Roblox user: ${args.username}` };
-        const discordId = await getDiscordIdFromRobloxId(u.userId);
-        const guild = await getGuild(tenantCtx, actor);
-        if (!discordId || !guild) return { success: false, error: 'No Discord link or guild context' };
-        const member = await guild.members.fetch(discordId).catch(() => null);
-        if (!member) return { success: false, error: `${u.username} is not in the Discord server` };
-        const roleId = tenantCtx.roleSlots.whitelist;
-        const whitelisted = roleId ? member.roles.cache.has(roleId) : false;
-        result = { success: true, username: u.username, whitelisted };
-        break;
-      }
-      case 'check_player_perks': {
-        const u = await prc.getRobloxUserId(tenantCtx, args.username);
-        if (!u) return { success: false, error: `Could not find Roblox user: ${args.username}` };
-        const discordId = await getDiscordIdFromRobloxId(u.userId);
-        const guild = await getGuild(tenantCtx, actor);
-        if (!discordId || !guild) return { success: false, error: 'No Discord link or guild context' };
-        const member = await guild.members.fetch(discordId).catch(() => null);
-        if (!member) return { success: false, error: `${u.username} is not in the Discord server` };
-        const perks = [];
-        const labels = { booster: 'Server Booster', la_plus: 'LA+', la_premium: 'LA Premium' };
-        for (const [slot, label] of Object.entries(labels)) {
-          const rid = tenantCtx.roleSlots[slot];
-          if (rid && member.roles.cache.has(rid)) perks.push(label);
-        }
-        result = { success: true, username: u.username, perks, hasPerks: perks.length > 0 };
-        break;
-      }
       case 'get_player_info': {
         const players = await prc.getOnlinePlayers(tenantCtx);
         const term = args.username.toLowerCase();
@@ -241,7 +203,14 @@ export async function executeTool(tenantCtx, name, args, actor) {
       case 'lookup_roblox_profile': {
         const u = await prc.getRobloxUserId(tenantCtx, args.username);
         if (!u) return { success: false, error: 'User not found' };
-        const res = await fetch(`https://users.roblox.com/v1/users/${u.userId}`);
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 8_000);
+        let res;
+        try {
+          res = await fetch(`https://users.roblox.com/v1/users/${u.userId}`, { signal: controller.signal });
+        } finally {
+          clearTimeout(timer);
+        }
         if (!res.ok) return { success: false, error: 'Roblox lookup failed' };
         const data = await res.json();
         result = {
@@ -283,7 +252,7 @@ export async function executeTool(tenantCtx, name, args, actor) {
         break;
       }
       case 'get_all_channels': {
-        const guild = await getGuild(tenantCtx, actor);
+        const guild = getGuild(tenantCtx, actor);
         if (!guild) return { success: false, error: 'Discord guild context required' };
         const secRoleId = tenantCtx.tenant.securityRoleId;
         if (!secRoleId) return { success: false, error: 'No security_role_id configured for this tenant.' };
@@ -296,7 +265,7 @@ export async function executeTool(tenantCtx, name, args, actor) {
         break;
       }
       case 'get_channel_messages': {
-        const guild = await getGuild(tenantCtx, actor);
+        const guild = getGuild(tenantCtx, actor);
         if (!guild) return { success: false, error: 'Discord guild context required' };
         const channel = await guild.channels.fetch(args.channel_id).catch(() => null);
         if (!channel) return { success: false, error: 'Channel not found' };
@@ -312,7 +281,7 @@ export async function executeTool(tenantCtx, name, args, actor) {
         break;
       }
       case 'get_user_info': {
-        const guild = await getGuild(tenantCtx, actor);
+        const guild = getGuild(tenantCtx, actor);
         if (!guild) return { success: false, error: 'Discord guild context required' };
         let member;
         if (/^\d+$/.test(args.user_id)) {
@@ -328,7 +297,7 @@ export async function executeTool(tenantCtx, name, args, actor) {
         break;
       }
       case 'summarize_chat': {
-        const guild = await getGuild(tenantCtx, actor);
+        const guild = getGuild(tenantCtx, actor);
         if (!guild) return { success: false, error: 'Discord guild context required' };
         const channel = await guild.channels.fetch(args.channel_id).catch(() => null);
         if (!channel || !channel.isTextBased()) return { success: false, error: 'Channel not found or not text-based' };
@@ -342,7 +311,7 @@ export async function executeTool(tenantCtx, name, args, actor) {
         break;
       }
       case 'purge_messages': {
-        const guild = await getGuild(tenantCtx, actor);
+        const guild = getGuild(tenantCtx, actor);
         if (!guild) return { success: false, error: 'Discord guild context required' };
         const channel = await guild.channels.fetch(args.channel_id).catch(() => null);
         if (!channel || !channel.isTextBased()) return { success: false, error: 'Channel not found' };

@@ -111,7 +111,12 @@ else
 const u = new URL('postgresql://localhost');
 u.username = process.env.DB_USER;
 u.password = process.env.DB_PASS;
-u.hostname = process.env.DB_HOST;
+if (process.env.DB_HOST.startsWith('/')) {
+  u.hostname = 'localhost';
+  u.searchParams.set('host', process.env.DB_HOST);
+} else {
+  u.hostname = process.env.DB_HOST;
+}
 u.port = process.env.DB_PORT;
 u.pathname = '/' + process.env.DB_NAME;
 console.log(u.toString());

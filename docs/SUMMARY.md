@@ -10,6 +10,7 @@
 * [Proactive Memory](proactive-memory.md)
 * [Real-Time Knowledge](real-time-knowledge.md)
 * [Roblox Integration](roblox-integration.md)
+* [POW Integration](pow-integration.md)
 * [Smart Web Search](smart-web-search.md)
 
 ## Guides & FAQ

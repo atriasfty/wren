@@ -12,6 +12,7 @@ function cosine(a, b) {
 }
 
 export async function retrieveSources(tenantCtx, question, topK = 8, { minSimilarity = 0.05 } = {}) {
+  if (!tenantCtx.vectorStorePath || !tenantCtx.sources || tenantCtx.sources.length === 0) return [];
   const store = await readVectorStore(tenantCtx.vectorStorePath);
   if (!store.chunks || !store.chunks.length) return [];
   const q = await embedText(question);

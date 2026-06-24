@@ -118,7 +118,7 @@ export async function runAssistantPipeline(tenantCtx, {
     if (!choice) return { text: 'No response from model.', tools: [] };
 
     const msg = choice.message;
-    const toolCalls = msg.tool_calls || [];
+    const toolCalls = msg.toolCalls || [];
 
     if (toolCalls.length === 0) {
       finalText = typeof msg.content === 'string' ? msg.content : (msg.content?.[0]?.text || '');

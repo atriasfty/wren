@@ -1,4 +1,4 @@
-# Summary
+# Table of contents
 
 ## Starting
 * [Welcome to Wren](README.md)

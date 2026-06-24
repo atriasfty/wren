@@ -272,7 +272,7 @@ describe('messageHandler and helpers', () => {
       attachMessageHandler(client);
       const handler = client.on.mock.calls[0][1];
 
-      mocks.runAssistantPipeline.mockRejectedValue(new Error('Mistral quota exceeded'));
+      mocks.runAssistantPipeline.mockRejectedValue(new Error('OpenRouter quota exceeded'));
 
       await handler(mockMessage);
 

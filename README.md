@@ -6,7 +6,7 @@ Multi-tenant Discord bot for ERLC (Emergency Response: Liberty County) servers. 
 
 - **Multi-tenant**: one Postgres DB on Railway, one row in `tenants` per Discord guild, every other table keyed by `tenant_id` with composite indexes. No shared mutable state in module scope.
 - **Discord**: `discord.js` v14. Mention the bot (or reply to it) to chat. Slash commands live under `/wren` for server admins.
-- **AI**: Mistral (`mistral-large-2512`) with function-calling. 26 tools covering mod actions, Discord introspection, ERLC server queries, and memory.
+- **AI**: OpenRouter (`mistralai/mistral-large-2411`) with function-calling. 26 tools covering mod actions, Discord introspection, ERLC server queries, and memory.
 - **RAG**: per-tenant JSON vector store at `data/tenants/<guild_id>/vector-store.json`. Sources can be Discord channels, websites, or manual documents — each weighted.
 - **Web search**: Brave Search API (with page-fetch fallback).
 - **POW**: per-tenant token, AES-256-GCM encrypted at rest, key in env.
@@ -30,7 +30,7 @@ On boot Wren registers `/wren` in every guild it is a member of and (re)starts t
 | Key | Required | Notes |
 |---|---|---|
 | `DISCORD_TOKEN` | yes | Bot token. Enable Message Content Intent in the dev portal. |
-| `MISTRAL_API_KEY` | yes | https://console.mistral.ai/ |
+| `OPENROUTER_API_KEY` | yes | https://openrouter.ai/ |
 | `BRAVE_SEARCH_API_KEY` | yes | https://brave.com/search/api/ |
 | `DATABASE_URL` | yes | Postgres connection string. |
 | `TENANT_SECRET_ENC_KEY` | yes | base64 of 32 random bytes. Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` |
@@ -71,7 +71,7 @@ All require `ManageGuild` unless noted; some require server owner.
 3. System prompt built from `botDisplayName`, `coreInfo`, `responseStyle`, configured sources, and tenant-scoped memory.
 4. RAG: top-K cosine over `data/tenants/<id>/vector-store.json`, weighted per source.
 5. If no chunk is clearly relevant, Brave Search is consulted (rate-limited).
-6. Mistral returns either a final answer or a list of `tool_calls`. The pipeline loops up to 6 steps:
+6. OpenRouter returns either a final answer or a list of `tool_calls`. The pipeline loops up to 6 steps:
    - Each tool call goes through `canRunTool(...)` — deny by default.
    - Mass-action targets (`all`, `everyone`, `*`, …) are rejected before any API call.
    - Every mod-tool invocation writes an `audit_log` row.
@@ -95,7 +95,7 @@ src/
 ├── tenant/               # CRUD store, crypto, ctx builder, resolver (60s cache)
 ├── integrations/         # prc.js, pow.js, bloxlink.js, brave.js, search/webpage.js
 ├── rag/                  # per-tenant JSON vector store + MiniLM embedder
-├── ai/                   # tool catalog, policy gate, prompt builder, Mistral pipeline
+├── ai/                   # tool catalog, policy gate, prompt builder, LLM pipeline
 ├── discord/              # client + message/ticket/raid/ingame handlers
 ├── slash/                # /wren command tree and dispatch
 ├── api/                  # express REST server, bearer-token auth

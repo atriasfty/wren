@@ -2,14 +2,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { BasicTracerProvider, SimpleSpanProcessor, InMemorySpanExporter } from '@opentelemetry/sdk-trace-base';
 import { trace } from '@opentelemetry/api';
 
-const mockMistralChat = vi.fn();
+const mockOpenAIChat = vi.fn();
 
-vi.mock('@mistralai/mistralai', () => {
+vi.mock('openai', () => {
   return {
-    Mistral: class {
+    default: class {
       constructor() {
         this.chat = {
-          complete: mockMistralChat
+          completions: {
+            create: mockOpenAIChat
+          }
         };
       }
     }
@@ -19,7 +21,7 @@ vi.mock('@mistralai/mistralai', () => {
 vi.mock('../config.js', () => ({
   loadConfig: () => ({
     discordToken: 'token',
-    mistralApiKey: 'key',
+    openRouterApiKey: 'key',
     databaseUrl: 'url',
     tenantSecretEncKey: Buffer.alloc(32),
   })
@@ -49,7 +51,7 @@ describe('observability tracing in assistant pipeline', () => {
   });
 
   it('records correct manual gen_ai spans during pipeline execution', async () => {
-    mockMistralChat.mockResolvedValue({
+    mockOpenAIChat.mockResolvedValue({
       choices: [{ message: { role: 'assistant', content: 'Here is the response.' } }],
       usage: { prompt_tokens: 10, completion_tokens: 15 }
     });
@@ -85,8 +87,8 @@ describe('observability tracing in assistant pipeline', () => {
     expect(genAiSpan).toBeDefined();
 
     const attrs = genAiSpan.attributes;
-    expect(attrs['gen_ai.system']).toBe('mistral');
-    expect(attrs['gen_ai.request.model']).toBe('mistral-large-2512');
+    expect(attrs['gen_ai.system']).toBe('openrouter');
+    expect(attrs['gen_ai.request.model']).toBe('mistralai/mistral-large-2411');
     expect(attrs['posthog.distinct_id']).toBe('discord:user-123');
     expect(attrs['posthog.tenant_id']).toBe('guild-abc');
     expect(attrs['gen_ai.usage.input_tokens']).toBe(10);
@@ -97,7 +99,7 @@ describe('observability tracing in assistant pipeline', () => {
 
   it('handles LLM API call failure and records error status and exception on the span', async () => {
     const errorMsg = 'API key expired';
-    mockMistralChat.mockRejectedValue(new Error(errorMsg));
+    mockOpenAIChat.mockRejectedValue(new Error(errorMsg));
 
     const { runAssistantPipeline } = await import('../ai/pipeline.js');
 
@@ -138,7 +140,7 @@ describe('observability tracing in assistant pipeline', () => {
   });
 
   it('handles empty choices response gracefully', async () => {
-    mockMistralChat.mockResolvedValue({
+    mockOpenAIChat.mockResolvedValue({
       choices: [],
       usage: { prompt_tokens: 5, completion_tokens: 0 }
     });
@@ -175,7 +177,7 @@ describe('observability tracing in assistant pipeline', () => {
   });
 
   it('handles missing tenantId and missing actor gracefully', async () => {
-    mockMistralChat.mockResolvedValue({
+    mockOpenAIChat.mockResolvedValue({
       choices: [{ message: { role: 'assistant', content: 'Hello!' } }],
       usage: { prompt_tokens: 3, completion_tokens: 4 }
     });
@@ -206,7 +208,7 @@ describe('observability tracing in assistant pipeline', () => {
   });
 
   it('handles usage token count missing fields gracefully', async () => {
-    mockMistralChat.mockResolvedValue({
+    mockOpenAIChat.mockResolvedValue({
       choices: [{ message: { role: 'assistant', content: 'Response' } }],
       usage: {} // empty usage object
     });

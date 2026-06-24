@@ -7,7 +7,7 @@ const __dirname = path.dirname(__filename);
 
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
-const REQUIRED = ['DISCORD_TOKEN', 'MISTRAL_API_KEY', 'DATABASE_URL', 'TENANT_SECRET_ENC_KEY'];
+const REQUIRED = ['DISCORD_TOKEN', 'OPENROUTER_API_KEY', 'DATABASE_URL', 'TENANT_SECRET_ENC_KEY'];
 
 let _config = null;
 
@@ -23,7 +23,7 @@ export function loadConfig() {
   }
   _config = {
     discordToken: process.env.DISCORD_TOKEN,
-    mistralApiKey: process.env.MISTRAL_API_KEY,
+    openRouterApiKey: process.env.OPENROUTER_API_KEY,
     braveApiKey: process.env.BRAVE_SEARCH_API_KEY || null,
     databaseUrl: process.env.DATABASE_URL,
     tenantSecretEncKey: Buffer.from(encKey, 'base64'),

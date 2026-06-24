@@ -1,4 +1,4 @@
-import { Mistral } from '@mistralai/mistralai';
+import OpenAI from 'openai';
 import { trace, SpanStatusCode } from '@opentelemetry/api';
 import { retrieveSources } from '../rag/retrieve.js';
 import { webSearch } from '../integrations/brave.js';
@@ -12,7 +12,14 @@ let _client = null;
 function client() {
   if (!_client) {
     const cfg = loadConfig();
-    _client = new Mistral({ apiKey: cfg.mistralApiKey });
+    _client = new OpenAI({
+      baseURL: 'https://openrouter.ai/api/v1',
+      apiKey: cfg.openRouterApiKey,
+      defaultHeaders: {
+        'HTTP-Referer': 'https://atriasafety.org',
+        'X-Title': 'Wren',
+      },
+    });
   }
   return _client;
 }
@@ -82,16 +89,16 @@ export async function runAssistantPipeline(tenantCtx, {
     let resp;
     const span = tracer.startSpan('gen_ai.chat', {
       attributes: {
-        'gen_ai.system': 'mistral',
-        'gen_ai.request.model': 'mistral-large-2512',
+        'gen_ai.system': 'openrouter',
+        'gen_ai.request.model': 'mistralai/mistral-large-2411',
         'gen_ai.input.messages': JSON.stringify(messages),
         'posthog.distinct_id': actorKey(actor),
         'posthog.tenant_id': tenantCtx.tenantId,
       }
     });
     try {
-      resp = await client().chat.complete({
-        model: 'mistral-large-2512',
+      resp = await client().chat.completions.create({
+        model: 'mistralai/mistral-large-2411',
         messages,
         tools,
         tool_choice: 'auto',
@@ -118,17 +125,16 @@ export async function runAssistantPipeline(tenantCtx, {
     if (!choice) return { text: 'No response from model.', tools: [] };
 
     const msg = choice.message;
-    const toolCalls = msg.toolCalls || [];
+    const toolCalls = msg.tool_calls || [];
 
     if (toolCalls.length === 0) {
       finalText = typeof msg.content === 'string' ? msg.content : (msg.content?.[0]?.text || '');
       break;
     }
 
-    // Set content to null (not empty string) when tool_calls are present — the Mistral API
-    // requires assistant content to be null or a non-empty string alongside tool calls.
+    // Set content to null (not empty string) when tool_calls are present
     const assistantContent = msg.content == null || msg.content === '' ? null : msg.content;
-    messages.push({ role: 'assistant', content: assistantContent, toolCalls: toolCalls });
+    messages.push({ role: 'assistant', content: assistantContent, tool_calls: toolCalls });
 
     const toolResults = [];
     for (const tc of toolCalls) {
@@ -139,7 +145,7 @@ export async function runAssistantPipeline(tenantCtx, {
       const result = await executeTool(tenantCtx, name, args, actor);
 
       toolResults.push({
-        toolCallId: tc.id,
+        tool_call_id: tc.id,
         role: 'tool',
         name,
         content: JSON.stringify(result),

@@ -66,7 +66,7 @@ else
     echo -e "${BLUE}=== ENTERING SECRETS ===${NC}"
     read -p "GitHub Personal Access Token (for private repo): " GITHUB_PAT
     read -p "Discord Bot Token: " DISCORD_TOKEN
-    read -p "Mistral API Key: " MISTRAL_API_KEY
+    read -p "OpenRouter API Key: " OPENROUTER_API_KEY
     read -p "Brave Search API Key (Optional, press enter to skip): " BRAVE_SEARCH_API_KEY
     read -p "API Listen Port [42011]: " API_PORT
     API_PORT=${API_PORT:-42011}
@@ -132,7 +132,7 @@ console.log(u.toString());
     cat <<EOF > "${SHARED_ENV_FILE}"
 GITHUB_PAT=${GITHUB_PAT}
 DISCORD_TOKEN=${DISCORD_TOKEN}
-MISTRAL_API_KEY=${MISTRAL_API_KEY}
+OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
 BRAVE_SEARCH_API_KEY=${BRAVE_SEARCH_API_KEY}
 DATABASE_URL=${DATABASE_URL}
 TENANT_SECRET_ENC_KEY=${TENANT_SECRET_ENC_KEY}

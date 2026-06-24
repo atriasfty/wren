@@ -28,7 +28,7 @@ export function splitForDiscord(text, limit = MAX_RESPONSE_LEN) {
   return out;
 }
 
-async function fetchChannelContext(channel, beforeId, count = 8) {
+async function fetchChannelContext(channel, beforeId, count = 25) {
   if (!channel?.isTextBased?.()) return null;
   try {
     const opts = { limit: count + 1 };
@@ -38,7 +38,20 @@ async function fetchChannelContext(channel, beforeId, count = 8) {
       .filter((m) => !m.author.bot)
       .sort((a, b) => a.createdTimestamp - b.createdTimestamp)
       .slice(-count);
-    return sorted.map((m) => `[${m.author.username}]: ${m.content}`).join('\n');
+
+    const lines = sorted.map((m) => `[${m.author.username}]: ${m.content}`);
+    const selected = [];
+    let totalLen = 0;
+
+    // Walk backwards to prioritize the most recent messages up to 5000 chars
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const lineLen = lines[i].length + (selected.length > 0 ? 1 : 0);
+      if (totalLen + lineLen > 5000) break;
+      selected.unshift(lines[i]);
+      totalLen += lineLen;
+    }
+
+    return selected.length ? selected.join('\n') : null;
   } catch {
     return null;
   }

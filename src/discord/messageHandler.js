@@ -43,8 +43,7 @@ async function fetchChannelContext(channel, beforeId, count = 8) {
 
 function isMentioned(message, botUserId) {
   if (!message) return false;
-  if (message.mentions?.users?.has?.(botUserId)) return true;
-  return MENTION_RE.test(message.content || '');
+  return !!message.mentions?.users?.has?.(botUserId);
 }
 
 function stripMention(content, botUserId) {

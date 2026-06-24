@@ -50,11 +50,12 @@ export async function registerCommandsForGuild(client, guildId) {
 }
 
 export async function syncAllGuilds(client) {
-  const tenants = await listTenants();
-  const known = new Set(tenants.map((t) => t.tenantId));
   for (const [guildId] of client.guilds.cache) {
-    if (known.has(guildId)) {
+    try {
       await registerCommandsForGuild(client, guildId);
+    } catch (err) {
+      console.warn(`[syncAllGuilds] Failed to register for ${guildId}:`, err.message);
     }
   }
 }
+

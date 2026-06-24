@@ -73,31 +73,50 @@ else
     read -p "PostHog API Key (Optional, for observability): " POSTHOG_API_KEY
     
     echo -e "${BLUE}=== DATABASE CONFIGURATION ===${NC}"
+    read -p "Database Host [localhost]: " DB_HOST
+    DB_HOST=${DB_HOST:-localhost}
+    read -p "Database Port [5432]: " DB_PORT
+    DB_PORT=${DB_PORT:-5432}
     read -p "Database Name [wren_prod]: " DB_NAME
     DB_NAME=${DB_NAME:-wren_prod}
     read -p "Database User [wren]: " DB_USER
     DB_USER=${DB_USER:-wren}
     read -p "Database Password: " DB_PASS
     
-    echo -e "${YELLOW}Checking if Postgres database '${DB_NAME}' exists...${NC}"
-    if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q 1; then
-        echo -e "${YELLOW}Database '${DB_NAME}' not found. Creating it safely...${NC}"
-        
-        # Check if user exists, if not create, else update password
-        if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" | grep -q 1; then
-            sudo -u postgres psql -c "CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASS}';"
+    # We only attempt automatic DB creation if the host is localhost
+    if [ "$DB_HOST" = "localhost" ] || [ "$DB_HOST" = "127.0.0.1" ]; then
+        echo -e "${YELLOW}Checking if local Postgres database '${DB_NAME}' exists...${NC}"
+        if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q 1; then
+            echo -e "${YELLOW}Database '${DB_NAME}' not found. Creating it safely...${NC}"
+            
+            # Check if user exists, if not create, else update password
+            if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" | grep -q 1; then
+                sudo -u postgres psql -c "CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASS}';"
+            else
+                sudo -u postgres psql -c "ALTER USER ${DB_USER} WITH PASSWORD '${DB_PASS}';"
+            fi
+            
+            # Create database owned by the user
+            sudo -u postgres createdb -O "${DB_USER}" "${DB_NAME}"
+            echo -e "${GREEN}Database '${DB_NAME}' and user '${DB_USER}' created successfully.${NC}"
         else
-            sudo -u postgres psql -c "ALTER USER ${DB_USER} WITH PASSWORD '${DB_PASS}';"
+            echo -e "${GREEN}Database '${DB_NAME}' already exists. Skipping creation.${NC}"
         fi
-        
-        # Create database owned by the user
-        sudo -u postgres createdb -O "${DB_USER}" "${DB_NAME}"
-        echo -e "${GREEN}Database '${DB_NAME}' and user '${DB_USER}' created successfully.${NC}"
     else
-        echo -e "${GREEN}Database '${DB_NAME}' already exists. Skipping creation.${NC}"
+        echo -e "${YELLOW}External database host detected. Skipping automatic database creation.${NC}"
     fi
     
-    DATABASE_URL="postgresql://${DB_USER}:${DB_PASS}@localhost:5432/${DB_NAME}"
+    echo -e "${YELLOW}Building secure DATABASE_URL...${NC}"
+    DATABASE_URL=$(DB_USER="$DB_USER" DB_PASS="$DB_PASS" DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_NAME="$DB_NAME" node -e "
+const u = new URL('postgresql://localhost');
+u.username = process.env.DB_USER;
+u.password = process.env.DB_PASS;
+u.hostname = process.env.DB_HOST;
+u.port = process.env.DB_PORT;
+u.pathname = '/' + process.env.DB_NAME;
+console.log(u.toString());
+")
+
     
     echo -e "${YELLOW}Generating AES-256-GCM Tenant Encryption Key...${NC}"
     TENANT_SECRET_ENC_KEY=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64'))")

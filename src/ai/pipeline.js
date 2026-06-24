@@ -128,7 +128,7 @@ export async function runAssistantPipeline(tenantCtx, {
     // Set content to null (not empty string) when tool_calls are present — the Mistral API
     // requires assistant content to be null or a non-empty string alongside tool calls.
     const assistantContent = msg.content == null || msg.content === '' ? null : msg.content;
-    messages.push({ role: 'assistant', content: assistantContent, tool_calls: toolCalls });
+    messages.push({ role: 'assistant', content: assistantContent, toolCalls: toolCalls });
 
     const toolResults = [];
     for (const tc of toolCalls) {
@@ -139,7 +139,7 @@ export async function runAssistantPipeline(tenantCtx, {
       const result = await executeTool(tenantCtx, name, args, actor);
 
       toolResults.push({
-        tool_call_id: tc.id,
+        toolCallId: tc.id,
         role: 'tool',
         name,
         content: JSON.stringify(result),

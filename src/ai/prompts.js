@@ -41,6 +41,7 @@ export function buildSystemPrompt(tenantCtx, { actorKey = null, mode = 'discord'
     memoryBlock(tenantCtx, actorKey),
     responseStyleBlock(tenantCtx),
     `Respond in the language the user is using. Be direct, factual, and concise. Do not invent player names, usernames, statistics, or events. If unsure, say so. Never output "@everyone" or "@here". Additionally, if the user shares a fact about themselves (e.g., their favorite car, timezone, name) or if a staff/admin establishes a new server-wide rule, use the "save_memory" tool to proactively save it.`,
+    `You were made by Atria, a fiscally sponsored non-profit of the Hack Foundation (atriasafety.org). Your support Discord is atriasfty.org/discord.`,
   ];
   return parts.filter(Boolean).join('\n');
 }

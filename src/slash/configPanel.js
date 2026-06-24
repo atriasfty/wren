@@ -19,8 +19,8 @@ import { loadConfig } from '../config.js';
 export const CONFIG_FIELDS = {
   // Identity
   displayName:    { dbField: 'display_name',    kind: 'text',     label: 'Server display name', category: 'Identity', placeholder: 'e.g. LA County Roleplay' },
-  botDisplayName: { dbField: 'bot_display_name', kind: 'text',    label: 'Bot display name',    category: 'Identity', placeholder: 'e.g. Atria - Project "Finch"' },
-  inGameHandle:   { dbField: 'in_game_handle',  kind: 'text',     label: 'In-game PM handle',   category: 'Identity', placeholder: 'e.g. :pm finch' },
+  botDisplayName: { dbField: 'bot_display_name', kind: 'text',    label: 'Bot display name',    category: 'Identity', placeholder: 'e.g. Wren' },
+  inGameHandle:   { dbField: 'in_game_handle',  kind: 'text',     label: 'In-game PM handle',   category: 'Identity', placeholder: 'e.g. :pm wren' },
 
   // Channels
   statusChannelId:    { dbField: 'status_channel_id',    kind: 'channel', label: 'Status channel',     category: 'Channels' },
@@ -63,7 +63,7 @@ export async function buildMainPanel(tenantId) {
   const t = ctx.tenant;
 
   const embed = new EmbedBuilder()
-    .setTitle(`Project "Finch" configuration — ${t.displayName}`)
+    .setTitle(`Wren configuration — ${t.displayName}`)
     .setColor(0x5865f2)
     .setDescription('Pick a category below to view and edit your settings.')
     .addFields(
@@ -72,7 +72,7 @@ export async function buildMainPanel(tenantId) {
       { name: 'Behaviour', value: `Core info: ${t.coreInfo ? `${t.coreInfo.slice(0, 100)}${t.coreInfo.length > 100 ? '…' : ''}` : '—'}`, inline: false },
       { name: 'Secrets',   value: `ERLC key: ${t.erlcServerKey ? '•••• set' : '—'}\nPOW token: ${t.powToken ? '•••• set' : '—'}`, inline: false },
     )
-    .setFooter({ text: 'Project "Finch" · settings panel' });
+    .setFooter({ text: 'Wren · settings panel' });
 
   const select = new StringSelectMenuBuilder()
     .setCustomId(`wren_cfg_cat:${tenantId}`)

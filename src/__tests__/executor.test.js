@@ -91,7 +91,7 @@ describe('executeTool', () => {
     });
 
     it('blocks targeting the bot itself', async () => {
-      const result = await executeTool(tenantCtx, 'kill_player', { username: 'finch' }, actor);
+      const result = await executeTool(tenantCtx, 'kill_player', { username: 'wren' }, actor);
       expect(result).toEqual({ success: false, error: 'Cannot target the bot.' });
     });
 

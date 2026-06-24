@@ -59,9 +59,9 @@ describe('observability tracing in assistant pipeline', () => {
     const tenantCtx = {
       tenantId: 'guild-abc',
       tenant: {
-        botDisplayName: 'Atria - Project "Finch"',
+        botDisplayName: 'Wren',
         displayName: 'Test Server',
-        inGameHandle: ':pm finch',
+        inGameHandle: ':pm wren',
         erlcServerKey: 'key',
       },
       sources: [],
@@ -104,9 +104,9 @@ describe('observability tracing in assistant pipeline', () => {
     const tenantCtx = {
       tenantId: 'guild-abc',
       tenant: {
-        botDisplayName: 'Atria - Project "Finch"',
+        botDisplayName: 'Wren',
         displayName: 'Test Server',
-        inGameHandle: ':pm finch',
+        inGameHandle: ':pm wren',
         erlcServerKey: 'key',
       },
       sources: [],

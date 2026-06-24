@@ -15,7 +15,7 @@ function rejectTarget(username) {
   if (!username) return null;
   const t = username.toLowerCase().trim();
   if (BANNED_TARGETS.has(t)) return 'Mass actions are not allowed. Specify a single player.';
-  if (t === 'garmin' || t === 'finch' || t === 'bot') return 'Cannot target the bot.';
+  if (t === 'garmin' || t === 'wren' || t === 'bot') return 'Cannot target the bot.';
   if (t.length < 2) return 'Target username too short.';
   if (/^\d+$/.test(username)) return 'That looks like a Discord ID, not a Roblox username.';
   return null;

@@ -5,8 +5,8 @@ import { listTenants } from '../tenant/store.js';
 function buildCommandTree() {
   return [
     new SlashCommandBuilder()
-      .setName('finch')
-      .setDescription('Atria - Project "Finch" bot configuration and utilities')
+      .setName('wren')
+      .setDescription('Wren bot configuration and utilities')
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
       .addSubcommandGroup((g) =>
         g.setName('config').setDescription('View or change server configuration').addSubcommand((s) => s.setName('view').setDescription('Open the configuration panel')),
@@ -23,7 +23,7 @@ function buildCommandTree() {
         g.setName('policy').setDescription('View tool permission policy')
           .addSubcommand((s) => s.setName('view').setDescription('Show the current policy')))
       .addSubcommandGroup((g) =>
-        g.setName('bans').setDescription('Manage the Project "Finch" ban list').addSubcommand((s) => s.setName('list').setDescription('List bans'))
+        g.setName('bans').setDescription('Manage the Wren ban list').addSubcommand((s) => s.setName('list').setDescription('List bans'))
           .addSubcommand((s) => s.setName('add').setDescription('Ban a user').addUserOption((o) => o.setName('target').setDescription('User').setRequired(true)).addStringOption((o) => o.setName('reason').setDescription('Reason').setRequired(false)))
           .addSubcommand((s) => s.setName('remove').setDescription('Unban a user').addUserOption((o) => o.setName('target').setDescription('User').setRequired(true))))
       .addSubcommandGroup((g) =>
@@ -38,7 +38,7 @@ function buildCommandTree() {
                 .addChoices({ name: 'all', value: 'all' }, { name: 'channels', value: 'channels' }, { name: 'websites', value: 'websites' }, { name: 'documents', value: 'documents' })))
           .addSubcommand((s) => s.setName('status').setDescription('Show ingestion status'))
       )
-      .addSubcommand((s) => s.setName('setup').setDescription('Initialise Project "Finch" for this server')),
+      .addSubcommand((s) => s.setName('setup').setDescription('Initialise Wren for this server')),
   ].map((c) => c.toJSON());
 }
 

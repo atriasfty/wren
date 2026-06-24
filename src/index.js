@@ -40,7 +40,7 @@ async function main() {
 
   client.on('interactionCreate', async (interaction) => {
     if (interaction.isChatInputCommand()) {
-      if (interaction.commandName !== 'finch') return;
+      if (interaction.commandName !== 'wren') return;
       try {
         const reply = await dispatchGarminCommand(interaction);
         if (reply) {

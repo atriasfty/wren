@@ -1,6 +1,7 @@
 import { resolveTenantById } from '../tenant/resolve.js';
 import { listTenants } from '../tenant/store.js';
 import { runAssistantPipeline } from '../ai/pipeline.js';
+import { loadConfig } from '../config.js';
 import { executeTool } from '../ai/executor.js';
 import { findPlayer } from '../integrations/prc.js';
 
@@ -94,9 +95,10 @@ function escapeRegex(s) {
 }
 
 export function attachIngameBridge(client) {
-  // Periodically poll modcalls
+  // Periodically poll modcalls — pass the encryption key so listTenants can decrypt secrets
   setInterval(async () => {
-    const tenants = await listTenants();
+    const cfg = loadConfig();
+    const tenants = await listTenants(cfg.tenantSecretEncKey);
     for (const t of tenants) {
       const ctx = await resolveTenantById(t.tenantId);
       if (!ctx) continue;

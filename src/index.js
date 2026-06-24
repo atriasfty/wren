@@ -22,6 +22,10 @@ import { syncAllGuilds } from './slash/register.js';
 import { startApiServer } from './api/server.js';
 import { pruneExpiredEvents } from './tenant/store.js';
 
+function publicInteractionError() {
+  return 'Something went wrong while processing that request.';
+}
+
 async function main() {
   const cfg = loadConfig();
   setEncryptionKey(cfg.tenantSecretEncKey);
@@ -50,7 +54,7 @@ async function main() {
         }
       } catch (err) {
         console.error('[slash] dispatch failed:', err);
-        try { await interaction.reply({ content: `Error: ${err.message}`, ephemeral: true }); } catch {}
+        try { await interaction.reply({ content: publicInteractionError(), ephemeral: true }); } catch {}
       }
       return;
     }
@@ -66,7 +70,7 @@ async function main() {
       } catch (err) {
         console.error('[component] dispatch failed:', err);
         try {
-          const content = { content: `Error: ${err.message}`, ephemeral: true };
+          const content = { content: publicInteractionError(), ephemeral: true };
           if (interaction.replied || interaction.deferred) await interaction.followUp(content);
           else await interaction.reply(content);
         } catch {}

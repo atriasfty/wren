@@ -46,17 +46,26 @@ function ephemeral(text) {
 
 async function loadCtx(interaction) {
   const cfg = loadConfig();
-  let ctx = await resolveTenantByGuildId(interaction.guild.id);
-  if (!ctx) {
-    await createTenant({
-      tenantId: interaction.guild.id,
-      displayName: interaction.guild.name,
-      ownerDiscordId: interaction.guild.ownerId,
-      encKey: cfg.tenantSecretEncKey,
-    });
-    ctx = await resolveTenantByGuildId(interaction.guild.id);
-  }
+  const ctx = await resolveTenantByGuildId(interaction.guild.id);
   return { ctx, cfg };
+}
+
+export async function handleSetup(interaction) {
+  if (!checkManageGuild(interaction)) return ephemeral('You need ManageGuild permission for this.');
+  const { ctx, cfg } = await loadCtx(interaction);
+  if (ctx) {
+    return ephemeral('This server is already set up. Use `/wren config` to manage it.');
+  }
+  await createTenant({
+    tenantId: interaction.guild.id,
+    displayName: interaction.guild.name,
+    ownerDiscordId: interaction.guild.ownerId,
+    encKey: cfg.tenantSecretEncKey,
+  });
+  return {
+    content: "✅ **Wren is now configured for this server!**\n\nYou can now use `/wren config view` to set up your channels, API keys, and options.\nBe sure to check out the setup guide at **https://wrendocs.atriasafety.org** to learn how to add knowledge sources.",
+    ephemeral: false
+  };
 }
 
 
@@ -220,16 +229,25 @@ export async function dispatchGarminCommand(interaction) {
 
   let reply;
   if (group === null) {
-    reply = ephemeral('Unknown command.');
+    if (sub === 'setup') {
+      reply = await handleSetup(interaction);
+    } else {
+      reply = ephemeral('Unknown command.');
+    }
   } else {
-    switch (group) {
-      case 'config': reply = await handleConfig(interaction); break;
-      case 'sources': reply = await handleSources(interaction); break;
-      case 'policy': reply = await handlePolicy(interaction); break;
-      case 'bans': reply = await handleBans(interaction); break;
-      case 'memory': reply = await handleMemory(interaction); break;
-      case 'ingest': reply = await handleIngest(interaction); break;
-      default: reply = ephemeral(`Unknown group: ${group}`);
+    const { ctx } = await loadCtx(interaction);
+    if (!ctx) {
+      reply = ephemeral('⚠️ This server is not configured with Wren yet. An admin must run `/wren setup` first.');
+    } else {
+      switch (group) {
+        case 'config': reply = await handleConfig(interaction); break;
+        case 'sources': reply = await handleSources(interaction); break;
+        case 'policy': reply = await handlePolicy(interaction); break;
+        case 'bans': reply = await handleBans(interaction); break;
+        case 'memory': reply = await handleMemory(interaction); break;
+        case 'ingest': reply = await handleIngest(interaction); break;
+        default: reply = ephemeral(`Unknown group: ${group}`);
+      }
     }
   }
 

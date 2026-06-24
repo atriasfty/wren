@@ -152,15 +152,14 @@ describe('messageHandler and helpers', () => {
       expect(mocks.resolveTenantByGuildId).not.toHaveBeenCalled();
     });
 
-    it('auto-creates a tenant if the guild is not configured and bot is mentioned', async () => {
+    it('replies warning if guild is not configured as tenant and bot is mentioned', async () => {
       attachMessageHandler(client);
       const handler = client.on.mock.calls[0][1];
 
-      mocks.resolveTenantByGuildId.mockResolvedValueOnce(null).mockResolvedValueOnce({ tenantId: 'guild-123' });
+      mocks.resolveTenantByGuildId.mockResolvedValue(null);
       await handler(mockMessage);
 
-      // It shouldn't reply with the warning anymore.
-      expect(mockMessage.reply).not.toHaveBeenCalledWith(
+      expect(mockMessage.reply).toHaveBeenCalledWith(
         expect.stringContaining('This server is not configured with Wren yet')
       );
     });

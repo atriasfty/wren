@@ -57,19 +57,10 @@ export function attachMessageHandler(client) {
     if (message.author.bot) return;
 
     let tenantCtx = await resolveTenantByGuildId(message.guild.id);
-    if (!tenantCtx) {
-      if (!isMentioned(message, client.user.id)) return;
-      const { createTenant } = await import('../tenant/store.js');
-      const { loadConfig } = await import('../config.js');
-      const cfg = loadConfig();
-      await createTenant({
-        tenantId: message.guild.id,
-        displayName: message.guild.name,
-        ownerDiscordId: message.guild.ownerId,
-        encKey: cfg.tenantSecretEncKey,
-      });
-      tenantCtx = await resolveTenantByGuildId(message.guild.id);
-      if (!tenantCtx) return;
+    if (!tenantCtx && isMentioned(message, client.user.id)) {
+      return message.reply('⚠️ This server is not configured with Wren yet. An admin must run `/wren setup` first.');
+    } else if (!tenantCtx) {
+      return;
     }
 
     const isSourceChannel = tenantCtx.sources.some(

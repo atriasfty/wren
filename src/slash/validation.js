@@ -6,7 +6,6 @@ export const SETTABLE_KEYS = new Set([
   'botDisplayName',
   'inGameHandle',
   'prcBaseUrl',
-  'powBaseUrl',
   'powServerAId',
   'ticketCategoryId',
   'securityRoleId',

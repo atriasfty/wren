@@ -38,6 +38,7 @@ function buildCommandTree() {
                 .addChoices({ name: 'all', value: 'all' }, { name: 'channels', value: 'channels' }, { name: 'websites', value: 'websites' }, { name: 'documents', value: 'documents' })))
           .addSubcommand((s) => s.setName('status').setDescription('Show ingestion status'))
       )
+      .addSubcommand((s) => s.setName('setup').setDescription('Initialise Wren for this server')),
   ].map((c) => c.toJSON());
 }
 

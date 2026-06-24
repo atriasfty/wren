@@ -1,7 +1,7 @@
 import { getRobloxUserId } from './prc.js';
 
 function baseUrl(tenantCtx) {
-  return tenantCtx.tenant.powBaseUrl;
+  return 'https://pow.ciankelly.xyz';
 }
 
 function token(tenantCtx) {

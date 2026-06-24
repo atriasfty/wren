@@ -32,7 +32,6 @@ export const CONFIG_FIELDS = {
 
   // Secrets
   erlcServerKey: { dbField: 'erlc_server_key_enc', kind: 'secret', label: 'ERLC server key', category: 'Secrets', placeholder: 'paste from the PRC dashboard' },
-  powBaseUrl:    { dbField: 'pow_base_url',        kind: 'text',   label: 'POW base URL',    category: 'Secrets', placeholder: 'https://your-pow.example.com' },
   powToken:      { dbField: 'pow_token_enc',       kind: 'secret', label: 'POW token',       category: 'Secrets', placeholder: 'paste your POW API token' },
 };
 

@@ -18,3 +18,11 @@ Wren is smart about what it reads. It does not want to clutter its brain with us
 {% hint style="info" %}
 Wren's Real-Time Knowledge makes it the perfect assistant for busy servers where questions get asked a lot!
 {% endhint %}
+
+## Configuration
+
+You are in total control of where Wren gets its real-time knowledge. Server administrators can manage this using the `/wren sources` and `/wren ingest` commands:
+* **Add a source:** Use `/wren sources add` to tell Wren to read from a specific Discord channel, website, or document.
+* **Remove or toggle:** Use `/wren sources remove` or `/wren sources toggle` to stop Wren from reading a source.
+* **View sources:** Use `/wren sources list` to see all active knowledge sources.
+* **Force ingestion:** Use `/wren ingest run` to manually force Wren to read all the sources right away!

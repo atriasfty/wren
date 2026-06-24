@@ -14,3 +14,10 @@ If Wren spots a fact like this, it uses a special internal tool to securely save
 {% hint style="success" %}
 Because Wren understands natural language, you can also just tell it to forget things. "Wren, my favorite color is actually blue now." It will handle the rest!
 {% endhint %}
+
+## Configuration
+
+Server administrators can manage Wren's memory using the `/wren memory` command:
+* Use `/wren memory list` to see all the facts Wren has saved for your server or specific users.
+* Use `/wren memory add` to manually force Wren to remember something important.
+* Use `/wren memory remove` to delete a memory you no longer want Wren to use.

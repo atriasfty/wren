@@ -16,6 +16,5 @@
 
 * [How to Talk to Wren](how-to-talk-to-wren.md)
 * [What is Wren Memory?](what-is-wren-memory.md)
-* [Using Wren in Roblox](using-wren-in-roblox.md)
 * [How Does Search Work?](how-does-search-work.md)
 * [Frequently Asked Questions](faq.md)

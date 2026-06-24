@@ -15,3 +15,9 @@ You can specifically ask Wren to search for things, like "Look up the weather in
 {% endhint %}
 
 This feature ensures that Wren is always up to date and can help you with almost anything!
+
+## Configuration
+
+The Smart Web Search feature works automatically out of the box! If the server is configured to allow search, Wren handles everything behind the scenes. 
+
+However, you can guide how Wren searches by giving it context. Server administrators can use `/wren config view` to set the **Core info** (under the Behaviour tab). This tells Wren about your server's vibe and location, which helps it pull up more relevant search results for your community!

@@ -15,5 +15,5 @@ If you want Wren to forget something about you, just ask it! You can say "Wren, 
 
 ### Who makes Wren?
 
-Wren is powered by advanced AI and built by an awesome team of developers. It uses models like Mistral to think and respond, making sure it runs smoothly without any lag.
+Wren is powered by advanced AI and built by an awesome team of developers. It uses models like Mistral to think and respond, ensuring you get smart answers lightning fast.
 

@@ -16,6 +16,13 @@ If you ask Wren a question, and then ask a follow up question, Wren remembers th
 This makes it super easy to get help or just have a fun chat without leaving your game.
 {% endhint %}
 
-### Account Linking
+### ERLC Integration
 
-To make all of this work, Wren uses a system called Bloxlink. This links your Discord account to your Roblox account, so Wren always knows who it is talking to, keeping your experience personalized and secure.
+Wren is specifically integrated with Emergency Response: Liberty County! To start talking to Wren in the game, all you have to do is open your chat and type `:pm wren` followed by your message. Wren will immediately receive it and reply to you!
+
+## Configuration
+
+To set up the Roblox integration, server administrators can use the `/wren config view` command to open the configuration panel.
+* **Identity:** Set the "In-game PM handle" (like `:pm wren`) so players know how to reach Wren.
+* **Channels:** Set the "ERLC log channel" to choose where Wren should post logs from the game.
+* **Secrets:** Securely enter your "ERLC server key" to allow Wren to connect to your specific server.

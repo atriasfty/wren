@@ -191,8 +191,10 @@ echo -e "${YELLOW}[6/6] Reloading application with PM2...${NC}"
 cd "${CURRENT_SYMLINK}"
 
 if pm2 show wren &> /dev/null; then
-    echo -e "${GREEN}Restarting existing PM2 process...${NC}"
-    pm2 reload wren --update-env
+    echo -e "${GREEN}Restarting existing PM2 process (bypassing symlink cache)...${NC}"
+    pm2 delete wren
+    pm2 start src/index.js --name "wren"
+    pm2 save
 else
     echo -e "${GREEN}Starting new PM2 process...${NC}"
     pm2 start src/index.js --name "wren"

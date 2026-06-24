@@ -1,0 +1,46 @@
+function serverInfoBlock(tenantCtx) {
+  const t = tenantCtx.tenant;
+  return [
+    `Server: ${t.displayName}`,
+    t.coreInfo ? `\n${t.coreInfo}\n` : '',
+  ].filter(Boolean).join('\n');
+}
+
+function responseStyleBlock(tenantCtx) {
+  const t = tenantCtx.tenant;
+  if (!t.responseStyle) return '';
+  return `\nRESPONSE STYLE (configured by admins):\n${t.responseStyle}\n`;
+}
+
+function memoryBlock(tenantCtx, actorKey = null) {
+  const serverMem = tenantCtx.memory.filter((m) => m.scope === 'server');
+  const userMem = actorKey ? tenantCtx.memory.filter((m) => m.scope === 'user' && m.user_key === actorKey) : [];
+  if (!serverMem.length && !userMem.length) return '';
+  const lines = [];
+  if (serverMem.length) lines.push('SERVER FACTS:', ...serverMem.map((m) => `• ${m.content}`));
+  if (userMem.length) lines.push(`USER FACTS (for ${actorKey}):`, ...userMem.map((m) => `• ${m.content}`));
+  return `\nMEMORY:\n${lines.join('\n')}\n`;
+}
+
+function sourcesBlock(tenantCtx) {
+  if (!tenantCtx.sources.length) return '';
+  const grouped = { discord_channel: [], website: [], manual_doc: [] };
+  for (const s of tenantCtx.sources) grouped[s.kind]?.push(s);
+  const lines = [];
+  if (grouped.discord_channel.length) lines.push(`Discord channels (${grouped.discord_channel.length}): ${grouped.discord_channel.map((s) => s.label || s.ref).join(', ')}`);
+  if (grouped.website.length) lines.push(`Websites (${grouped.website.length}): ${grouped.website.map((s) => s.label || s.ref).join(', ')}`);
+  if (grouped.manual_doc.length) lines.push(`Manual docs (${grouped.manual_doc.length}): ${grouped.manual_doc.map((s) => s.label || s.ref).join(', ')}`);
+  return `\nKNOWN SOURCES OF TRUTH:\n${lines.join('\n')}\n`;
+}
+
+export function buildSystemPrompt(tenantCtx, { actorKey = null, mode = 'discord' } = {}) {
+  const parts = [
+    `You are ${tenantCtx.tenant.botDisplayName}, a helpful assistant for the ${tenantCtx.tenant.displayName} Discord community and its ERLC server.`,
+    serverInfoBlock(tenantCtx),
+    sourcesBlock(tenantCtx),
+    memoryBlock(tenantCtx, actorKey),
+    responseStyleBlock(tenantCtx),
+    `Respond in the language the user is using. Be direct, factual, and concise. Do not invent player names, usernames, statistics, or events. If unsure, say so. Never output "@everyone" or "@here".`,
+  ];
+  return parts.filter(Boolean).join('\n');
+}

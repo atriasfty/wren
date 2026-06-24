@@ -9,6 +9,10 @@ const HANDLE_PREFIX_RE = /^:\s*pm\s+/i;
 // Per-tenant last-polled timestamp to avoid cross-tenant timestamp bleed.
 const lastPollTs = new Map();
 
+// Per-player conversational history for in-game PMs (multi-turn bridge session state)
+export const playerSessions = new Map(); // key: `${tenantId}:${playerName}`, value: { messages: [], lastActive: Date.now() }
+const SESSION_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 export async function pollModcallsFor(tenantCtx) {
   const sinceTs = lastPollTs.get(tenantCtx.tenantId) || 0;
   const modcalls = await (await import('../integrations/prc.js')).getModcalls(tenantCtx, { sinceTs });
@@ -37,6 +41,16 @@ export async function pollModcallsFor(tenantCtx) {
     const question = cleanText.slice(botName.length).trim();
     if (!question) continue;
 
+    // Retrieve or initialize session state
+    const sessionKey = `${tenantCtx.tenantId}:${playerName.toLowerCase()}`;
+    const now = Date.now();
+    let session = playerSessions.get(sessionKey);
+    if (!session || (now - session.lastActive > SESSION_TTL_MS)) {
+      session = { messages: [], lastActive: now };
+      playerSessions.set(sessionKey, session);
+    }
+    session.lastActive = now;
+
     try {
       const online = await findPlayer(tenantCtx, playerName).catch(() => null);
       const actor = { kind: 'in_game', playerName, isStaff: online?.permission === 'Server Moderator' || online?.permission === 'Server Administrator' };
@@ -45,9 +59,19 @@ export async function pollModcallsFor(tenantCtx) {
         question,
         actor,
         isInGame: true,
+        history: [...session.messages],
       });
 
       if (result.text) {
+        // Update session history
+        session.messages.push({ role: 'user', content: question });
+        session.messages.push({ role: 'assistant', content: result.text });
+
+        // Cap history to 6 turns (12 messages)
+        if (session.messages.length > 12) {
+          session.messages = session.messages.slice(-12);
+        }
+
         try {
           await executeTool(
             tenantCtx,
@@ -70,6 +94,7 @@ function escapeRegex(s) {
 }
 
 export function attachIngameBridge(client) {
+  // Periodically poll modcalls
   setInterval(async () => {
     const tenants = await listTenants();
     for (const t of tenants) {
@@ -82,4 +107,14 @@ export function attachIngameBridge(client) {
       }
     }
   }, 15_000);
+
+  // Periodically clean up expired player sessions
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, value] of playerSessions.entries()) {
+      if (now - value.lastActive > SESSION_TTL_MS) {
+        playerSessions.delete(key);
+      }
+    }
+  }, 60_000);
 }

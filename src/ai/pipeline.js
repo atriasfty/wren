@@ -30,6 +30,7 @@ export async function runAssistantPipeline(tenantCtx, {
   imageUrls = [],
   actor,
   isInGame = false,
+  history = [],
 }) {
   const sys = buildSystemPrompt(tenantCtx, { actorKey: actorKey(actor) });
 
@@ -68,6 +69,7 @@ export async function runAssistantPipeline(tenantCtx, {
 
   const messages = [
     { role: 'system', content: sys },
+    ...history,
     { role: 'user', content: userContent },
   ];
 

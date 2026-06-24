@@ -22,11 +22,16 @@ vi.mock('../ai/executor.js', () => ({
 
 describe('ingameBridge - pollModcallsFor', () => {
   let pollModcallsFor;
+  let playerSessions;
   let tenantCtx;
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    ({ pollModcallsFor } = await import('../discord/ingameBridge.js'));
+    const mod = await import('../discord/ingameBridge.js');
+    pollModcallsFor = mod.pollModcallsFor;
+    playerSessions = mod.playerSessions;
+    playerSessions.clear();
+
     tenantCtx = {
       tenantId: 'guild-123',
       tenant: {
@@ -61,6 +66,7 @@ describe('ingameBridge - pollModcallsFor', () => {
       question: 'what is the status?',
       actor: { kind: 'in_game', playerName: 'Player1', isStaff: false },
       isInGame: true,
+      history: [],
     });
     expect(mocks.executeTool).toHaveBeenCalledWith(
       tenantCtx,
@@ -81,6 +87,7 @@ describe('ingameBridge - pollModcallsFor', () => {
       question: 'rules please',
       actor: { kind: 'in_game', playerName: 'Player1', isStaff: false },
       isInGame: true,
+      history: [],
     });
   });
 
@@ -107,6 +114,7 @@ describe('ingameBridge - pollModcallsFor', () => {
       question: 'help me',
       actor: { kind: 'in_game', playerName: 'Player1', isStaff: false },
       isInGame: true,
+      history: [],
     });
   });
 
@@ -139,5 +147,71 @@ describe('ingameBridge - pollModcallsFor', () => {
     ]);
 
     await expect(pollModcallsFor(tenantCtx)).resolves.not.toThrow();
+  });
+
+  it('retains conversational history across subsequent PMs within the session TTL', async () => {
+    mocks.getModcalls.mockResolvedValue([
+      { callerName: 'Player1', message: ':pm wren question 1', timestamp: 100 },
+    ]);
+    mocks.runAssistantPipeline.mockResolvedValueOnce({ text: 'answer 1' });
+
+    await pollModcallsFor(tenantCtx);
+
+    expect(mocks.runAssistantPipeline).toHaveBeenLastCalledWith(tenantCtx, {
+      question: 'question 1',
+      actor: { kind: 'in_game', playerName: 'Player1', isStaff: false },
+      isInGame: true,
+      history: [],
+    });
+
+    // Run second PM
+    mocks.getModcalls.mockResolvedValue([
+      { callerName: 'Player1', message: ':pm wren question 2', timestamp: 101 },
+    ]);
+    mocks.runAssistantPipeline.mockResolvedValueOnce({ text: 'answer 2' });
+
+    await pollModcallsFor(tenantCtx);
+
+    expect(mocks.runAssistantPipeline).toHaveBeenLastCalledWith(tenantCtx, {
+      question: 'question 2',
+      actor: { kind: 'in_game', playerName: 'Player1', isStaff: false },
+      isInGame: true,
+      history: [
+        { role: 'user', content: 'question 1' },
+        { role: 'assistant', content: 'answer 1' },
+      ],
+    });
+  });
+
+  it('expires session history and starts clean if time exceeds session TTL', async () => {
+    const mockDateNow = vi.spyOn(Date, 'now');
+    mockDateNow.mockReturnValue(1000);
+
+    mocks.getModcalls.mockResolvedValue([
+      { callerName: 'Player1', message: ':pm wren question 1', timestamp: 100 },
+    ]);
+    mocks.runAssistantPipeline.mockResolvedValueOnce({ text: 'answer 1' });
+
+    await pollModcallsFor(tenantCtx);
+
+    // Jump forward by 6 minutes (TTL is 5 minutes)
+    mockDateNow.mockReturnValue(1000 + 6 * 60 * 1000);
+
+    mocks.getModcalls.mockResolvedValue([
+      { callerName: 'Player1', message: ':pm wren question 2', timestamp: 101 },
+    ]);
+    mocks.runAssistantPipeline.mockResolvedValueOnce({ text: 'answer 2' });
+
+    await pollModcallsFor(tenantCtx);
+
+    // The history should be empty because session expired
+    expect(mocks.runAssistantPipeline).toHaveBeenLastCalledWith(tenantCtx, {
+      question: 'question 2',
+      actor: { kind: 'in_game', playerName: 'Player1', isStaff: false },
+      isInGame: true,
+      history: [],
+    });
+
+    mockDateNow.mockRestore();
   });
 });

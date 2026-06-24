@@ -1,6 +1,7 @@
 import { resolveTenantByGuildId } from '../tenant/resolve.js';
 import { runAssistantPipeline } from '../ai/pipeline.js';
 import { enforceBan } from './guards.js';
+import { ingestDiscordMessage, removeDiscordMessageChunks } from '../rag/ingest.js';
 
 const MENTION_RE = /^<@!?(\d+)>/;
 const MAX_RESPONSE_LEN = 1900;
@@ -66,6 +67,15 @@ export function attachMessageHandler(client) {
       return;
     }
 
+    const isSourceChannel = tenantCtx.sources.some(
+      (s) => s.enabled && s.kind === 'discord_channel' && s.ref === message.channel.id
+    );
+    if (isSourceChannel) {
+      ingestDiscordMessage(tenantCtx, message).catch((err) => {
+        console.error('[messageCreate] Auto-ingestion failed:', err.message);
+      });
+    }
+
     const actor = { kind: 'discord', member: message.member };
     if (await enforceBan(tenantCtx, actor)) {
       try { await message.reply('You are blocked from using this bot.'); } catch {}
@@ -126,6 +136,42 @@ export function attachMessageHandler(client) {
       }
     } catch (err) {
       console.error('[message] send failed:', err.message);
+    }
+  });
+
+  client.on('messageUpdate', async (oldMessage, newMessage) => {
+    try {
+      if (newMessage.partial) newMessage = await newMessage.fetch();
+    } catch { return; }
+    if (!newMessage.guild) return;
+    if (newMessage.author?.bot) return;
+
+    const tenantCtx = await resolveTenantByGuildId(newMessage.guild.id);
+    if (!tenantCtx) return;
+
+    const isSourceChannel = tenantCtx.sources.some(
+      (s) => s.enabled && s.kind === 'discord_channel' && s.ref === newMessage.channel.id
+    );
+    if (isSourceChannel) {
+      ingestDiscordMessage(tenantCtx, newMessage).catch((err) => {
+        console.error('[messageUpdate] Auto-ingestion failed:', err.message);
+      });
+    }
+  });
+
+  client.on('messageDelete', async (message) => {
+    if (!message.guild) return;
+
+    const tenantCtx = await resolveTenantByGuildId(message.guild.id);
+    if (!tenantCtx) return;
+
+    const isSourceChannel = tenantCtx.sources.some(
+      (s) => s.enabled && s.kind === 'discord_channel' && s.ref === message.channel.id
+    );
+    if (isSourceChannel) {
+      removeDiscordMessageChunks(tenantCtx, message.id).catch((err) => {
+        console.error('[messageDelete] Auto-remove failed:', err.message);
+      });
     }
   });
 }

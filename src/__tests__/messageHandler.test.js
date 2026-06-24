@@ -108,6 +108,7 @@ describe('messageHandler and helpers', () => {
       mocks.resolveTenantByGuildId.mockResolvedValue({
         tenantId: 'guild-123',
         tenant: {},
+        sources: [],
       });
       mocks.enforceBan.mockResolvedValue(false);
       mocks.runAssistantPipeline.mockResolvedValue({ text: 'This is the answer.' });

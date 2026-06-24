@@ -191,6 +191,61 @@ export async function ingestTenant(tenantCtx, client, { kinds = ['all'] } = {}) 
   return { chunks: store.chunks.length, sources: corpus.length };
 }
 
+export async function ingestDiscordMessage(tenantCtx, message) {
+  if (message.author.bot) return;
+  if (!message.content || message.content.length < 15) return;
+  if (message.content.match(/^https?:\/\//)) return;
+  if (message.content.trim().split(/\s+/).length < 3) return;
+
+  const chunks = chunkText(message.content);
+  if (!chunks.length) return;
+
+  const vectors = await embedBatch(chunks);
+  const store = await readVectorStore(tenantCtx.vectorStorePath);
+
+  // Remove existing chunks for this specific message first (in case of updates)
+  store.chunks = (store.chunks || []).filter((c) => c.messageId !== message.id);
+
+  const source = tenantCtx.sources.find(
+    (s) => s.kind === 'discord_channel' && s.ref === message.channel.id
+  );
+  const label = source ? source.label : 'Discord Channel';
+
+  for (let i = 0; i < chunks.length; i++) {
+    store.chunks.push({
+      id: store.chunks.length,
+      text: chunks[i],
+      embedding: vectors[i],
+      sourceKind: 'discord_channel',
+      sourceRef: message.channel.id,
+      label,
+      messageId: message.id,
+    });
+  }
+
+  // Ensure sequential IDs
+  store.chunks.forEach((c, idx) => { c.id = idx; });
+  if (!store.metadata) store.metadata = {};
+  store.metadata.totalChunks = store.chunks.length;
+  store.metadata.updatedAt = new Date().toISOString();
+
+  await writeVectorStore(tenantCtx.vectorStorePath, store);
+}
+
+export async function removeDiscordMessageChunks(tenantCtx, messageId) {
+  const store = await readVectorStore(tenantCtx.vectorStorePath);
+  const beforeCount = store.chunks?.length || 0;
+  store.chunks = (store.chunks || []).filter((c) => c.messageId !== messageId);
+
+  if (store.chunks.length !== beforeCount) {
+    store.chunks.forEach((c, idx) => { c.id = idx; });
+    if (!store.metadata) store.metadata = {};
+    store.metadata.totalChunks = store.chunks.length;
+    store.metadata.updatedAt = new Date().toISOString();
+    await writeVectorStore(tenantCtx.vectorStorePath, store);
+  }
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const tenantArg = process.argv.find((a) => a.startsWith('--tenant='));
   if (!tenantArg) {

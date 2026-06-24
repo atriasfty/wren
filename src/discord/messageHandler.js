@@ -3,7 +3,6 @@ import { runAssistantPipeline } from '../ai/pipeline.js';
 import { enforceBan } from './guards.js';
 import { ingestDiscordMessage, removeDiscordMessageChunks } from '../rag/ingest.js';
 
-const MENTION_RE = /^<@!?(\d+)>/;
 const MAX_RESPONSE_LEN = 1900;
 
 // Per-user in-flight guard: prevents duplicate concurrent pipeline runs.
@@ -45,13 +44,24 @@ async function fetchChannelContext(channel, beforeId, count = 8) {
   }
 }
 
-function isMentioned(message, botUserId) {
-  if (!message) return false;
-  return !!message.mentions?.users?.has?.(botUserId);
+/**
+ * Returns true only if the bot is directly addressed — i.e. the bot mention
+ * is the FIRST token in the message content (after optional whitespace).
+ * This prevents the bot from triggering when someone merely references it
+ * mid-sentence, e.g. "hey did you ask @wren about this?".
+ */
+function isDirectlyMentioned(message, botUserId) {
+  if (!message?.mentions?.users?.has?.(botUserId)) return false;
+  // The raw content starts with the mention snowflake: <@ID> or <@!ID>
+  return /^\s*<@!?\d+>/.test(message.content) &&
+    message.content.trimStart().startsWith(`<@${botUserId}>`) ||
+    message.content.trimStart().startsWith(`<@!${botUserId}>`);
 }
 
 function stripMention(content, botUserId) {
-  return (content || '').replace(new RegExp(`^<@!?${botUserId}>\\s*`), '').trim();
+  return (content || '')
+    .replace(new RegExp(`^\\s*<@!?${botUserId}>\\s*`), '')
+    .trim();
 }
 
 export function attachMessageHandler(client) {
@@ -61,7 +71,7 @@ export function attachMessageHandler(client) {
     if (message.author.bot) return;
 
     let tenantCtx = await resolveTenantByGuildId(message.guild.id);
-    if (!tenantCtx && isMentioned(message, client.user.id)) {
+    if (!tenantCtx && isDirectlyMentioned(message, client.user.id)) {
       return message.reply('⚠️ This server is not configured with Wren yet. An admin must run `/wren setup` first.');
     } else if (!tenantCtx) {
       return;
@@ -82,7 +92,9 @@ export function attachMessageHandler(client) {
       return;
     }
 
-    const mentioned = isMentioned(message, client.user.id);
+    // Only respond if the bot is directly addressed at the start of the message,
+    // or if the message is a direct reply to one of the bot's messages.
+    const directlyMentioned = isDirectlyMentioned(message, client.user.id);
     const isReplyToBot = message.reference?.messageId
       ? await (async () => {
           try {
@@ -92,7 +104,7 @@ export function attachMessageHandler(client) {
         })()
       : false;
 
-    if (!mentioned && !isReplyToBot) return;
+    if (!directlyMentioned && !isReplyToBot) return;
 
     const question = stripMention(message.content, client.user.id);
     if (!question) return;

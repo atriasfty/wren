@@ -1,4 +1,4 @@
-import MistralClient from '@mistralai/mistralai';
+import { Mistral } from '@mistralai/mistralai';
 import { trace, SpanStatusCode } from '@opentelemetry/api';
 import { retrieveSources } from '../rag/retrieve.js';
 import { webSearch } from '../integrations/brave.js';
@@ -12,7 +12,7 @@ let _client = null;
 function client() {
   if (!_client) {
     const cfg = loadConfig();
-    _client = new MistralClient(cfg.mistralApiKey);
+    _client = new Mistral({ apiKey: cfg.mistralApiKey });
   }
   return _client;
 }
@@ -90,7 +90,7 @@ export async function runAssistantPipeline(tenantCtx, {
       }
     });
     try {
-      resp = await client().chat({
+      resp = await client().chat.complete({
         model: 'mistral-large-2512',
         messages,
         tools,

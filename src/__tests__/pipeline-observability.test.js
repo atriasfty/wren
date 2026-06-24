@@ -6,9 +6,11 @@ const mockMistralChat = vi.fn();
 
 vi.mock('@mistralai/mistralai', () => {
   return {
-    default: class {
+    Mistral: class {
       constructor() {
-        this.chat = mockMistralChat;
+        this.chat = {
+          complete: mockMistralChat
+        };
       }
     }
   };

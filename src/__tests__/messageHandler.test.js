@@ -15,6 +15,14 @@ vi.mock('../ai/pipeline.js', () => ({
   runAssistantPipeline: (...args) => mocks.runAssistantPipeline(...args),
 }));
 
+vi.mock('../config.js', () => ({
+  loadConfig: () => ({ tenantSecretEncKey: 'test-key' }),
+}));
+
+vi.mock('../tenant/store.js', () => ({
+  createTenant: vi.fn().mockResolvedValue(),
+}));
+
 // We mock guards.js with the path relative to the test file
 vi.mock('../discord/guards.js', () => ({
   enforceBan: (...args) => mocks.enforceBan(...args),
@@ -144,14 +152,15 @@ describe('messageHandler and helpers', () => {
       expect(mocks.resolveTenantByGuildId).not.toHaveBeenCalled();
     });
 
-    it('replies warning if guild is not configured as tenant and bot is mentioned', async () => {
+    it('auto-creates a tenant if the guild is not configured and bot is mentioned', async () => {
       attachMessageHandler(client);
       const handler = client.on.mock.calls[0][1];
 
-      mocks.resolveTenantByGuildId.mockResolvedValue(null);
+      mocks.resolveTenantByGuildId.mockResolvedValueOnce(null).mockResolvedValueOnce({ tenantId: 'guild-123' });
       await handler(mockMessage);
 
-      expect(mockMessage.reply).toHaveBeenCalledWith(
+      // It shouldn't reply with the warning anymore.
+      expect(mockMessage.reply).not.toHaveBeenCalledWith(
         expect.stringContaining('This server is not configured with Wren yet')
       );
     });

@@ -1,5 +1,6 @@
 # Summary
 
+## Starting
 * [Welcome to Wren](README.md)
 * [Configuration Guide](configuration.md)
 * [Features Overview](features.md)

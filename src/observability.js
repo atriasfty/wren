@@ -1,6 +1,5 @@
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { resourceFromAttributes } from '@opentelemetry/resources';
-import { PostHogSpanProcessor } from '@posthog/ai/otel';
 
 let sdkInstance = null;
 
@@ -10,25 +9,18 @@ export function initObservability() {
     console.log('[observability] POSTHOG_API_KEY not set; tracing disabled');
     return;
   }
-  const host = process.env.POSTHOG_HOST || 'https://us.i.posthog.com';
 
-  console.log(`[observability] Initializing PostHog AI Observability with host ${host}`);
+  console.log('[observability] OpenTelemetry tracing initialised (manual spans only)');
 
   sdkInstance = new NodeSDK({
     resource: resourceFromAttributes({
       'service.name': 'wren',
     }),
-    spanProcessors: [
-      new PostHogSpanProcessor({
-        projectToken: apiKey,
-        host,
-      }),
-    ],
   });
 
   try {
     sdkInstance.start();
-    console.log('[observability] PostHog AI Observability tracing started successfully');
+    console.log('[observability] OpenTelemetry SDK started');
   } catch (err) {
     console.error('[observability] Failed to start OpenTelemetry SDK:', err);
   }

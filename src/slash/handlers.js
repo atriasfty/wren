@@ -46,29 +46,24 @@ function ephemeral(text) {
 
 async function loadCtx(interaction) {
   const cfg = loadConfig();
-  const ctx = await resolveTenantByGuildId(interaction.guild.id);
+  let ctx = await resolveTenantByGuildId(interaction.guild.id);
+  if (!ctx) {
+    await createTenant({
+      tenantId: interaction.guild.id,
+      displayName: interaction.guild.name,
+      ownerDiscordId: interaction.guild.ownerId,
+      encKey: cfg.tenantSecretEncKey,
+    });
+    ctx = await resolveTenantByGuildId(interaction.guild.id);
+  }
   return { ctx, cfg };
 }
 
-export async function handleSetup(interaction) {
-  if (!checkManageGuild(interaction)) return ephemeral('You need ManageGuild permission for this.');
-  const { ctx, cfg } = await loadCtx(interaction);
-  if (ctx) return ephemeral('This server is already configured as a tenant.');
 
-  await createTenant({
-    tenantId: interaction.guild.id,
-    displayName: interaction.guild.name,
-    ownerDiscordId: interaction.guild.ownerId,
-    encKey: cfg.tenantSecretEncKey,
-  });
-  await pruneExpiredEvents();
-  return ephemeral(`Setup complete. Tenant row created for **${interaction.guild.name}**.`);
-}
 
 export async function handleConfig(interaction) {
   if (!checkManageGuild(interaction)) return ephemeral('You need ManageGuild permission for this.');
   const { ctx } = await loadCtx(interaction);
-  if (!ctx) return ephemeral('Run `/wren setup` first.');
 
   const panel = await buildMainPanel(interaction.guild.id);
   if (!panel) return ephemeral('Could not load configuration.');
@@ -80,7 +75,6 @@ export async function handleSources(interaction) {
   const sub = interaction.options.getSubcommand();
   const tenantId = interaction.guild.id;
   const { ctx } = await loadCtx(interaction);
-  if (!ctx) return ephemeral('Run `/wren setup` first.');
 
   if (sub === 'list') {
     const rows = await listSources(tenantId);
@@ -192,7 +186,6 @@ export async function handleIngest(interaction) {
   if (!isOwner(interaction)) return ephemeral('Only the server owner can run ingestion.');
   const sub = interaction.options.getSubcommand();
   const { ctx } = await loadCtx(interaction);
-  if (!ctx) return ephemeral('Run `/wren setup` first.');
 
   if (sub === 'run') {
     const kind = interaction.options.getString('kind') || 'all';
@@ -227,8 +220,7 @@ export async function dispatchGarminCommand(interaction) {
 
   let reply;
   if (group === null) {
-    if (sub === 'setup') reply = await handleSetup(interaction);
-    else reply = ephemeral('Unknown command.');
+    reply = ephemeral('Unknown command.');
   } else {
     switch (group) {
       case 'config': reply = await handleConfig(interaction); break;

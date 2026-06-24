@@ -38,7 +38,6 @@ function buildCommandTree() {
                 .addChoices({ name: 'all', value: 'all' }, { name: 'channels', value: 'channels' }, { name: 'websites', value: 'websites' }, { name: 'documents', value: 'documents' })))
           .addSubcommand((s) => s.setName('status').setDescription('Show ingestion status'))
       )
-      .addSubcommand((s) => s.setName('setup').setDescription('Create a tenant row for this server (no-op if already created)')),
   ].map((c) => c.toJSON());
 }
 

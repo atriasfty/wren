@@ -31,6 +31,7 @@ On boot Wren registers `/wren` in every guild it is a member of and (re)starts t
 |---|---|---|
 | `DISCORD_TOKEN` | yes | Bot token. Enable Message Content Intent in the dev portal. |
 | `OPENROUTER_API_KEY` | yes | https://openrouter.ai/ |
+| `OPENROUTER_MODEL` | yes | OpenRouter model string (e.g. `mistralai/mistral-large-2411`). |
 | `BRAVE_SEARCH_API_KEY` | yes | https://brave.com/search/api/ |
 | `DATABASE_URL` | yes | Postgres connection string. |
 | `TENANT_SECRET_ENC_KEY` | yes | base64 of 32 random bytes. Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` |

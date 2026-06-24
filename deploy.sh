@@ -67,6 +67,8 @@ else
     read -p "GitHub Personal Access Token (for private repo): " GITHUB_PAT
     read -p "Discord Bot Token: " DISCORD_TOKEN
     read -p "OpenRouter API Key: " OPENROUTER_API_KEY
+    read -p "OpenRouter Model [mistralai/mistral-large-2411]: " OPENROUTER_MODEL
+    OPENROUTER_MODEL=${OPENROUTER_MODEL:-mistralai/mistral-large-2411}
     read -p "Brave Search API Key (Optional, press enter to skip): " BRAVE_SEARCH_API_KEY
     read -p "API Listen Port [42011]: " API_PORT
     API_PORT=${API_PORT:-42011}
@@ -133,6 +135,7 @@ console.log(u.toString());
 GITHUB_PAT=${GITHUB_PAT}
 DISCORD_TOKEN=${DISCORD_TOKEN}
 OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+OPENROUTER_MODEL=${OPENROUTER_MODEL}
 BRAVE_SEARCH_API_KEY=${BRAVE_SEARCH_API_KEY}
 DATABASE_URL=${DATABASE_URL}
 TENANT_SECRET_ENC_KEY=${TENANT_SECRET_ENC_KEY}

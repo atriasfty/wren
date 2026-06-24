@@ -22,6 +22,7 @@ vi.mock('../config.js', () => ({
   loadConfig: () => ({
     discordToken: 'token',
     openRouterApiKey: 'key',
+    openRouterModel: 'mistralai/mistral-large-2411',
     databaseUrl: 'url',
     tenantSecretEncKey: Buffer.alloc(32),
   })

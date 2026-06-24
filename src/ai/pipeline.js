@@ -90,7 +90,7 @@ export async function runAssistantPipeline(tenantCtx, {
     const span = tracer.startSpan('gen_ai.chat', {
       attributes: {
         'gen_ai.system': 'openrouter',
-        'gen_ai.request.model': 'mistralai/mistral-large-2411',
+        'gen_ai.request.model': loadConfig().openRouterModel,
         'gen_ai.input.messages': JSON.stringify(messages),
         'posthog.distinct_id': actorKey(actor),
         'posthog.tenant_id': tenantCtx.tenantId,
@@ -98,7 +98,7 @@ export async function runAssistantPipeline(tenantCtx, {
     });
     try {
       resp = await client().chat.completions.create({
-        model: 'mistralai/mistral-large-2411',
+        model: loadConfig().openRouterModel,
         messages,
         tools,
         tool_choice: 'auto',

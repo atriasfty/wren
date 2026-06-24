@@ -7,7 +7,7 @@ const __dirname = path.dirname(__filename);
 
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
-const REQUIRED = ['DISCORD_TOKEN', 'OPENROUTER_API_KEY', 'DATABASE_URL', 'TENANT_SECRET_ENC_KEY'];
+const REQUIRED = ['DISCORD_TOKEN', 'OPENROUTER_API_KEY', 'OPENROUTER_MODEL', 'DATABASE_URL', 'TENANT_SECRET_ENC_KEY'];
 
 let _config = null;
 
@@ -24,6 +24,7 @@ export function loadConfig() {
   _config = {
     discordToken: process.env.DISCORD_TOKEN,
     openRouterApiKey: process.env.OPENROUTER_API_KEY,
+    openRouterModel: process.env.OPENROUTER_MODEL,
     braveApiKey: process.env.BRAVE_SEARCH_API_KEY || null,
     databaseUrl: process.env.DATABASE_URL,
     tenantSecretEncKey: Buffer.from(encKey, 'base64'),

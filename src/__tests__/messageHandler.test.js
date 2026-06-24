@@ -160,7 +160,7 @@ describe('messageHandler and helpers', () => {
       await handler(mockMessage);
 
       expect(mockMessage.reply).toHaveBeenCalledWith(
-        expect.stringContaining('This server is not configured with Wren yet')
+        expect.stringContaining('This server is not configured with Project "Finch" yet')
       );
     });
 

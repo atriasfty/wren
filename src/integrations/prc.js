@@ -4,7 +4,7 @@ function baseUrl(tenantCtx) {
 
 function serverKey(tenantCtx) {
   if (!tenantCtx.tenant.erlcServerKey) {
-    throw new Error('Tenant has no ERLC server key configured. Run /wren config view and set it in Secrets.');
+    throw new Error('Tenant has no ERLC server key configured. Run /finch config view and set it in Secrets.');
   }
   return tenantCtx.tenant.erlcServerKey;
 }

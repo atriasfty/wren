@@ -58,7 +58,7 @@ export function attachMessageHandler(client) {
 
     let tenantCtx = await resolveTenantByGuildId(message.guild.id);
     if (!tenantCtx && isMentioned(message, client.user.id)) {
-      return message.reply('⚠️ This server is not configured with Wren yet. An admin must run `/wren setup` first.');
+      return message.reply('⚠️ This server is not configured with Project "Finch" yet. An admin must run `/finch setup` first.');
     } else if (!tenantCtx) {
       return;
     }

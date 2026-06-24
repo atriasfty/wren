@@ -54,7 +54,7 @@ export async function handleSetup(interaction) {
   if (!checkManageGuild(interaction)) return ephemeral('You need ManageGuild permission for this.');
   const { ctx, cfg } = await loadCtx(interaction);
   if (ctx) {
-    return ephemeral('This server is already set up. Use `/wren config` to manage it.');
+    return ephemeral('This server is already set up. Use `/finch config` to manage it.');
   }
   await createTenant({
     tenantId: interaction.guild.id,
@@ -63,7 +63,7 @@ export async function handleSetup(interaction) {
     encKey: cfg.tenantSecretEncKey,
   });
   return {
-    content: "✅ **Wren is now configured for this server!**\n\nYou can now use `/wren config view` to set up your channels, API keys, and options.\nBe sure to check out the setup guide at **https://wrendocs.atriasafety.org** to learn how to add knowledge sources.",
+    content: "✅ **Atria - Project \"Finch\" is now configured for this server!**\n\nYou can now use `/finch config view` to set up your channels, API keys, and options.\nBe sure to check out the setup guide at **https://wrendocs.atriasafety.org** to learn how to add knowledge sources.",
     ephemeral: false
   };
 }
@@ -237,7 +237,7 @@ export async function dispatchGarminCommand(interaction) {
   } else {
     const { ctx } = await loadCtx(interaction);
     if (!ctx) {
-      reply = ephemeral('⚠️ This server is not configured with Wren yet. An admin must run `/wren setup` first.');
+      reply = ephemeral('⚠️ This server is not configured with Project "Finch" yet. An admin must run `/finch setup` first.');
     } else {
       switch (group) {
         case 'config': reply = await handleConfig(interaction); break;

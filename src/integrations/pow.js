@@ -6,7 +6,7 @@ function baseUrl(tenantCtx) {
 
 function token(tenantCtx) {
   if (!tenantCtx.tenant.powToken) {
-    throw new Error('Tenant has no POW token configured. Run /wren config pow token:<token>');
+    throw new Error('Tenant has no POW token configured. Run `/finch config` and set it in Secrets.');
   }
   return tenantCtx.tenant.powToken;
 }

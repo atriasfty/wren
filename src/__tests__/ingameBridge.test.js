@@ -35,7 +35,7 @@ describe('ingameBridge - pollModcallsFor', () => {
     tenantCtx = {
       tenantId: 'guild-123',
       tenant: {
-        inGameHandle: ':pm wren',
+        inGameHandle: ':pm finch',
       },
     };
     mocks.getModcalls.mockResolvedValue([]);
@@ -57,7 +57,7 @@ describe('ingameBridge - pollModcallsFor', () => {
 
   it('processes modcalls addressed to the bot and strips handle correctly', async () => {
     mocks.getModcalls.mockResolvedValue([
-      { callerName: 'Player1', message: ':pm wren what is the status?', timestamp: 100 },
+      { callerName: 'Player1', message: ':pm finch what is the status?', timestamp: 100 },
     ]);
 
     await pollModcallsFor(tenantCtx);
@@ -78,7 +78,7 @@ describe('ingameBridge - pollModcallsFor', () => {
 
   it('processes modcalls with alternative casing or spaces in bot handle', async () => {
     mocks.getModcalls.mockResolvedValue([
-      { callerName: 'Player1', message: ':pm   WREN  rules please', timestamp: 100 },
+      { callerName: 'Player1', message: ':pm   FINCH  rules please', timestamp: 100 },
     ]);
 
     await pollModcallsFor(tenantCtx);
@@ -93,8 +93,8 @@ describe('ingameBridge - pollModcallsFor', () => {
 
   it('ignores empty questions after stripping handle', async () => {
     mocks.getModcalls.mockResolvedValue([
-      { callerName: 'Player1', message: ':pm wren', timestamp: 100 },
-      { callerName: 'Player2', message: ':pm wren     ', timestamp: 101 },
+      { callerName: 'Player1', message: ':pm finch', timestamp: 100 },
+      { callerName: 'Player2', message: ':pm finch     ', timestamp: 101 },
     ]);
 
     await pollModcallsFor(tenantCtx);
@@ -104,7 +104,7 @@ describe('ingameBridge - pollModcallsFor', () => {
 
   it('gracefully falls back to non-staff if findPlayer throws an error', async () => {
     mocks.getModcalls.mockResolvedValue([
-      { callerName: 'Player1', message: ':pm wren help me', timestamp: 100 },
+      { callerName: 'Player1', message: ':pm finch help me', timestamp: 100 },
     ]);
     mocks.findPlayer.mockRejectedValue(new Error('Connection failure'));
 
@@ -120,8 +120,8 @@ describe('ingameBridge - pollModcallsFor', () => {
 
   it('continues processing subsequent modcalls if runAssistantPipeline throws an error on one', async () => {
     mocks.getModcalls.mockResolvedValue([
-      { callerName: 'Player1', message: ':pm wren first question', timestamp: 100 },
-      { callerName: 'Player2', message: ':pm wren second question', timestamp: 101 },
+      { callerName: 'Player1', message: ':pm finch first question', timestamp: 100 },
+      { callerName: 'Player2', message: ':pm finch second question', timestamp: 101 },
     ]);
 
     mocks.runAssistantPipeline
@@ -142,8 +142,8 @@ describe('ingameBridge - pollModcallsFor', () => {
 
   it('handles empty timestamps or missing timestamp fields in modcall list safely', async () => {
     mocks.getModcalls.mockResolvedValue([
-      { callerName: 'Player1', message: ':pm wren test', timestamp: undefined },
-      { callerName: 'Player2', message: ':pm wren test2', timestamp: null },
+      { callerName: 'Player1', message: ':pm finch test', timestamp: undefined },
+      { callerName: 'Player2', message: ':pm finch test2', timestamp: null },
     ]);
 
     await expect(pollModcallsFor(tenantCtx)).resolves.not.toThrow();
@@ -151,7 +151,7 @@ describe('ingameBridge - pollModcallsFor', () => {
 
   it('retains conversational history across subsequent PMs within the session TTL', async () => {
     mocks.getModcalls.mockResolvedValue([
-      { callerName: 'Player1', message: ':pm wren question 1', timestamp: 100 },
+      { callerName: 'Player1', message: ':pm finch question 1', timestamp: 100 },
     ]);
     mocks.runAssistantPipeline.mockResolvedValueOnce({ text: 'answer 1' });
 
@@ -166,7 +166,7 @@ describe('ingameBridge - pollModcallsFor', () => {
 
     // Run second PM
     mocks.getModcalls.mockResolvedValue([
-      { callerName: 'Player1', message: ':pm wren question 2', timestamp: 101 },
+      { callerName: 'Player1', message: ':pm finch question 2', timestamp: 101 },
     ]);
     mocks.runAssistantPipeline.mockResolvedValueOnce({ text: 'answer 2' });
 
@@ -188,7 +188,7 @@ describe('ingameBridge - pollModcallsFor', () => {
     mockDateNow.mockReturnValue(1000);
 
     mocks.getModcalls.mockResolvedValue([
-      { callerName: 'Player1', message: ':pm wren question 1', timestamp: 100 },
+      { callerName: 'Player1', message: ':pm finch question 1', timestamp: 100 },
     ]);
     mocks.runAssistantPipeline.mockResolvedValueOnce({ text: 'answer 1' });
 
@@ -198,7 +198,7 @@ describe('ingameBridge - pollModcallsFor', () => {
     mockDateNow.mockReturnValue(1000 + 6 * 60 * 1000);
 
     mocks.getModcalls.mockResolvedValue([
-      { callerName: 'Player1', message: ':pm wren question 2', timestamp: 101 },
+      { callerName: 'Player1', message: ':pm finch question 2', timestamp: 101 },
     ]);
     mocks.runAssistantPipeline.mockResolvedValueOnce({ text: 'answer 2' });
 

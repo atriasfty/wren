@@ -4,8 +4,8 @@
 CREATE TABLE IF NOT EXISTS tenants (
   tenant_id           TEXT PRIMARY KEY,
   display_name        TEXT NOT NULL,
-  bot_display_name    TEXT NOT NULL DEFAULT 'Wren',
-  in_game_handle      TEXT NOT NULL DEFAULT ':pm wren',
+  bot_display_name    TEXT NOT NULL DEFAULT 'Atria - Project "Finch"',
+  in_game_handle      TEXT NOT NULL DEFAULT ':pm finch',
   owner_discord_id    TEXT,
   erlc_server_key_enc BYTEA,
   prc_base_url        TEXT NOT NULL DEFAULT 'https://api.erlc.gg/v1',

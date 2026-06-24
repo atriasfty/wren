@@ -1,0 +1,32 @@
+Atria Internal Use License (AIUL)
+Version 1.0 — Confidential and Unreleased
+
+Copyright (c) 2026 Atria
+
+This repository and all associated contents (the “Software”) are proprietary, confidential, and unpublished works owned by Atria.
+
+No Public Distribution
+The Software may not be shared, published, distributed, sublicensed, or otherwise made available to any third party, in whole or in part, without explicit prior written permission from Atria.
+
+No Deployment or Production Use
+The Software may not be deployed, hosted, executed in production environments, or used in any live system outside of explicitly authorized internal Atria infrastructure.
+
+No Modification or Derivative Works
+You may not modify, adapt, reverse engineer, decompile, or create derivative works based on the Software unless expressly authorized in writing by Atria.
+
+Access Restrictions
+Access to this repository is granted solely to individuals explicitly authorized by Atria. Unauthorized access, use, or attempted access is strictly prohibited.
+
+Confidentiality
+All contents of this repository are confidential. You agree not to disclose any information, code, architecture, or materials contained within to any third party under any circumstances.
+
+No License Granted
+No rights or licenses are granted except the limited right to access the Software for authorized internal purposes. All rights not expressly granted are reserved by Atria.
+
+Enforcement
+Any violation of this license will result in immediate revocation of access and may result in legal action.
+
+Ownership
+The Software remains the sole property of Atria. This license does not transfer ownership or any intellectual property rights.
+
+By accessing this repository, you acknowledge that you have read, understood, and agreed to the terms of this license.

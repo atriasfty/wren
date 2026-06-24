@@ -39,7 +39,7 @@ export async function runAssistantPipeline(tenantCtx, {
   isInGame = false,
   history = [],
 }) {
-  const sys = buildSystemPrompt(tenantCtx, { actorKey: actorKey(actor) });
+  const sys = buildSystemPrompt(tenantCtx, { actorKey: actorKey(actor), actor });
 
   let ragContext = '';
   try {

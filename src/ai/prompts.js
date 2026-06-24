@@ -6,6 +6,19 @@ function serverInfoBlock(tenantCtx) {
   ].filter(Boolean).join('\n');
 }
 
+function identityBlock(actor) {
+  if (!actor) return '';
+  if (actor.kind === 'discord' && actor.member) {
+    const id = actor.member.id || actor.member.user?.id;
+    const name = actor.member.user?.username || actor.member.displayName || 'Unknown';
+    return `\nCURRENT USER:\nYou are talking to a Discord user. Their username is "${name}" and their Discord ID is "${id}".\n`;
+  }
+  if (actor.kind === 'in_game' && actor.playerName) {
+    return `\nCURRENT USER:\nYou are talking to a Roblox player in-game. Their username is "${actor.playerName}".\n`;
+  }
+  return '';
+}
+
 function responseStyleBlock(tenantCtx) {
   const t = tenantCtx.tenant;
   if (!t.responseStyle) return '';
@@ -33,9 +46,10 @@ function sourcesBlock(tenantCtx) {
   return `\nKNOWN SOURCES OF TRUTH:\n${lines.join('\n')}\n`;
 }
 
-export function buildSystemPrompt(tenantCtx, { actorKey = null, mode = 'discord' } = {}) {
+export function buildSystemPrompt(tenantCtx, { actorKey = null, actor = null, mode = 'discord' } = {}) {
   const parts = [
     `You are ${tenantCtx.tenant.botDisplayName}, a helpful assistant for the ${tenantCtx.tenant.displayName} Discord community and its ERLC server.`,
+    identityBlock(actor),
     serverInfoBlock(tenantCtx),
     sourcesBlock(tenantCtx),
     memoryBlock(tenantCtx, actorKey),

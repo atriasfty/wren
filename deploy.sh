@@ -75,8 +75,11 @@ else
     echo -e "${BLUE}=== DATABASE CONFIGURATION ===${NC}"
     read -p "Database Host [localhost]: " DB_HOST
     DB_HOST=${DB_HOST:-localhost}
-    read -p "Database Port [5432]: " DB_PORT
-    DB_PORT=${DB_PORT:-5432}
+    
+    DETECTED_PORT=$(sudo -u postgres psql -tAc "SHOW port;" 2>/dev/null || echo "5432")
+    read -p "Database Port [$DETECTED_PORT]: " DB_PORT
+    DB_PORT=${DB_PORT:-$DETECTED_PORT}
+    
     read -p "Database Name [wren_prod]: " DB_NAME
     DB_NAME=${DB_NAME:-wren_prod}
     read -p "Database User [wren]: " DB_USER

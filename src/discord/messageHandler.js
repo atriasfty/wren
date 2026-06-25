@@ -140,6 +140,9 @@ export function attachMessageHandler(client) {
       .map((a) => a.url);
 
     await message.channel.sendTyping().catch(() => {});
+    const typingInterval = setInterval(() => {
+      message.channel.sendTyping().catch(() => {});
+    }, 9000);
 
     let result;
     try {
@@ -154,6 +157,7 @@ export function attachMessageHandler(client) {
       try { await message.reply(publicErrorMessage()); } catch {}
       return;
     } finally {
+      clearInterval(typingInterval);
       inFlight.delete(userId);
     }
 

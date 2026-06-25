@@ -30,6 +30,8 @@ const TOOL_DEFS = [
   { name: 'analyze_player_activity', description: 'Summarize a player\'s recent ERLC activity (joins, kills, commands).', params: { type: 'object', properties: { username: { type: 'string' } }, required: ['username'] } },
   // memory
   { name: 'save_memory', description: 'Save a fact to long-term memory. type=server for global rules (staff only), type=user for personal facts.', params: { type: 'object', properties: { content: { type: 'string' }, type: { type: 'string', enum: ['server', 'user'] } }, required: ['content', 'type'] } },
+  // web
+  { name: 'search_web', description: 'Search the internet for real-time information.', params: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } },
 ];
 
 export function getToolsForMistral() {

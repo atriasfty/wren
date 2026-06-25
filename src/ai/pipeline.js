@@ -1,7 +1,6 @@
 import OpenAI from 'openai';
 import { trace, SpanStatusCode } from '@opentelemetry/api';
 import { retrieveSources } from '../rag/retrieve.js';
-import { webSearch } from '../integrations/brave.js';
 import { executeTool } from './executor.js';
 import { buildSystemPrompt } from './prompts.js';
 import { loadConfig } from '../config.js';
@@ -25,7 +24,6 @@ function client() {
 }
 
 const MAX_TOOL_STEPS = 6;
-const WEB_TRIGGER = /(?:^|\s)(?:what|who|where|when|why|how|latest|current|today|news|release|update|is|are|do|does)\b/i;
 
 function normaliseWhitespace(text) {
   return text.replace(/\s+/g, ' ').trim();
@@ -52,25 +50,10 @@ export async function runAssistantPipeline(tenantCtx, {
     console.warn('[pipeline] retrieve failed:', err.message);
   }
 
-  let webContext = '';
-  const needsWeb = !ragContext.includes(question.slice(0, 40)) && (WEB_TRIGGER.test(question) || question.length > 60);
-  if (needsWeb) {
-    try {
-      const results = await webSearch(question, { count: 4 });
-      if (results.length) {
-        webContext = '\n\nWEB SEARCH RESULTS:\n' +
-          results.map((r, i) => `[${i + 1}] ${r.title} \u2014 ${r.snippet} (${r.url})`).join('\n');
-      }
-    } catch (err) {
-      console.warn('[pipeline] web search failed:', err.message);
-    }
-  }
-
   const userContent = [
     { type: 'text', text: normaliseWhitespace(question) },
     ...(channelContext ? [{ type: 'text', text: `\n\nRECENT CHANNEL MESSAGES:\n${channelContext}` }] : []),
     ...(ragContext ? [{ type: 'text', text: ragContext }] : []),
-    ...(webContext ? [{ type: 'text', text: webContext }] : []),
     ...(imageUrls?.length ? imageUrls.map((u) => ({ type: 'image_url', image_url: { url: u } })) : []),
   ];
 

@@ -1,5 +1,6 @@
 import * as prc from '../integrations/prc.js';
 import * as pow from '../integrations/pow.js';
+import { webSearch } from '../integrations/brave.js';
 import { audit, addMemory } from '../tenant/store.js';
 import { canRunTool, denialReason } from './policy.js';
 import { actorKey } from './utils.js';
@@ -331,6 +332,11 @@ export async function executeTool(tenantCtx, name, args, actor) {
           await addMemory({ tenantId: tenantCtx.tenantId, scope: 'user', userKey: key, content: args.content, addedBy: key });
         }
         result = { success: true, message: args.type === 'server' ? `Saved server fact: "${args.content}"` : `Saved user fact: "${args.content}"` };
+        break;
+      }
+      case 'search_web': {
+        const results = await webSearch(args.query, { count: 4 });
+        result = { success: true, results };
         break;
       }
       default:

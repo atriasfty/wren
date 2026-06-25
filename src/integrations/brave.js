@@ -1,13 +1,15 @@
 const BRAVE_URL = 'https://api.search.brave.com/res/v1/web/search';
 
 export async function webSearch(query, { count = 5 } = {}) {
+  // Brave Search has a strict 400 byte limit for the 'q' parameter.
+  const safeQuery = query.length > 300 ? query.slice(0, 300) : query;
   const key = process.env.BRAVE_SEARCH_API_KEY;
   if (!key) {
     const err = new Error('BRAVE_SEARCH_API_KEY is not set');
     err.code = 'missing_key';
     throw err;
   }
-  const url = `${BRAVE_URL}?q=${encodeURIComponent(query)}&count=${count}`;
+  const url = `${BRAVE_URL}?q=${encodeURIComponent(safeQuery)}&count=${count}`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10_000);
   try {

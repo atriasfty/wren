@@ -30,6 +30,7 @@ const DEFAULT_POLICY = {
   analyze_player_activity: 'user',
   summarize_chat: 'user',
   check_punishments: 'user',
+  search_web: 'user',
 };
 
 export function getDefaultPolicy() {

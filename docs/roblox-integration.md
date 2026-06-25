@@ -26,3 +26,7 @@ To set up the Roblox integration, server administrators can use the `/wren confi
 * **Identity:** Set the "In-game PM handle" (like `:pm wren`) so players know how to reach Wren.
 * **Channels:** Set the "ERLC log channel" to choose where Wren should post logs from the game.
 * **Secrets:** Securely enter your "ERLC server key" to allow Wren to connect to your specific server.
+
+{% hint style="warning" %}
+⚠️ **IMPORTANT:** You must whitelist Wren's IP (`152.53.21.47`) in your ERLC server dashboard (https://api.erlc.gg/server-owners), otherwise Wren won't be able to connect or perform any actions.
+{% endhint %}

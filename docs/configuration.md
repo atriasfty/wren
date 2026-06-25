@@ -31,6 +31,10 @@ If you are connecting Wren to external services, you can securely store the keys
 * **ERLC server key:** Required to connect Wren to your Emergency Response: Liberty County server.
 * **POW token:** Required if you use POW integrations.
 
+{% hint style="warning" %}
+⚠️ **IMPORTANT:** You must whitelist Wren's IP (`152.53.21.47`) in your ERLC server dashboard (https://api.erlc.gg/server-owners), otherwise Wren won't be able to connect or perform any actions.
+{% endhint %}
+
 {% hint style="info" %}
 All secrets are heavily encrypted in our database. We take your security very seriously!
 {% endhint %}

@@ -209,6 +209,7 @@ export function attachMessageHandler(client) {
         channelContext,
         imageUrls,
         actor,
+        channelId: message.channel.id,
       });
       query('UPDATE tenants SET last_active_channel_id = $1 WHERE tenant_id = $2', [message.channel.id, message.guild.id]).catch(e => console.error('[message] Failed to update last active channel:', e));
     } catch (err) {

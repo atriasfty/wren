@@ -34,6 +34,7 @@ export async function runAssistantPipeline(tenantCtx, {
   channelContext = null,
   imageUrls = [],
   actor,
+  channelId = null,
   isInGame = false,
   history = [],
 }) {
@@ -46,7 +47,7 @@ export async function runAssistantPipeline(tenantCtx, {
     return { text: `⚠️ You've hit your monthly message limit of **${limit}** for the **${tier.toUpperCase()}** plan. Use \`/wren upgrade\` to increase your limits!`, error: null };
   }
 
-  const sys = buildSystemPrompt(tenantCtx, { actorKey: actorKey(actor), actor });
+  const sys = buildSystemPrompt(tenantCtx, { actorKey: actorKey(actor), actor, channelId });
 
   let ragContext = '';
   try {

@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS tenants (
   ticket_category_id  TEXT,
   ticket_parent_id    TEXT,
   security_role_id    TEXT,
+  staff_role_id       TEXT,
+  admin_role_id       TEXT,
   status_channel_id   TEXT,
   erlc_log_channel_id TEXT,
   in_game_pm_log_id   TEXT,
@@ -127,3 +129,13 @@ CREATE TABLE IF NOT EXISTS processed_tickets (
   processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (tenant_id, channel_id)
 );
+
+-- Migrations for existing databases (idempotent)
+DO $$ BEGIN
+  ALTER TABLE tenants ADD COLUMN staff_role_id TEXT;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE tenants ADD COLUMN admin_role_id TEXT;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;

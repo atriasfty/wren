@@ -10,11 +10,23 @@ export function resolveActorRank(actor, tenantCtx) {
     const member = actor.member;
     if (!member) return 'user';
     if (member.id === member.guild?.ownerId) return 'owner';
+    if (member.permissions?.has?.('ManageGuild')) return 'owner';
     if (member.permissions?.has?.('Administrator')) return 'admin';
+    // Dedicated admin role on tenant config (matches the role and every role above it)
+    const adminRoleId = tenantCtx.tenant?.adminRoleId;
+    if (adminRoleId) {
+      const adminRole = member.guild?.roles?.cache?.get?.(adminRoleId);
+      if (adminRole && member.roles?.cache?.some?.(r => r.position >= adminRole.position && r.id !== member.guild.id)) return 'admin';
+    }
+    // Legacy staff_a/b/c slots → mod rank
     for (const slot of STAFF_SLOTS) {
       const roleId = tenantCtx.roleSlots[slot];
       if (roleId && member.roles?.cache?.has?.(roleId)) return 'mod';
     }
+    // Dedicated staff role on tenant config
+    const staffRoleId = tenantCtx.tenant?.staffRoleId;
+    if (staffRoleId && member.roles?.cache?.has?.(staffRoleId)) return 'staff';
+    // Legacy staff slot
     if (tenantCtx.roleSlots.staff && member.roles?.cache?.has?.(tenantCtx.roleSlots.staff)) return 'staff';
     return 'user';
   }

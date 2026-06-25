@@ -14,11 +14,13 @@ This is how Wren presents itself in your community.
 * **Bot display name:** You can rename Wren to fit your server's theme!
 * **In-game PM handle:** The handle Wren uses when replying to players in Roblox games like ERLC.
 
-### 2. Channels
+### 2. Channels & Roles
 Tell Wren where it is allowed to operate and who is in charge.
 * **Status channel:** Where Wren posts important updates.
 * **ERLC log channel:** Where Wren sends logs from in-game events.
 * **Security role:** The role required to access secure Wren commands.
+* **Staff role:** Set this to the role you give everyone on your staff team. Members with this role can use everyday moderation tools like kicking, teleporting, and messaging players. See the [Permissions](permissions.md) page for the full list.
+* **Admin role:** Set this to the role you give everyone on your admin team. Members with this role can use sensitive tools like banning, and promoting or demoting moderators and administrators. Every role above the admin role in your server's role hierarchy is automatically treated as admin too, so you only need to set the lowest admin rank.
 
 ### 3. Behaviour
 This is the most powerful setting! 

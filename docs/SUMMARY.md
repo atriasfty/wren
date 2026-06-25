@@ -12,6 +12,7 @@
 * [Roblox Integration](roblox-integration.md)
 * [POW Integration](pow-integration.md)
 * [Smart Web Search](smart-web-search.md)
+* [Permissions](permissions.md)
 
 ## Guides & FAQ
 

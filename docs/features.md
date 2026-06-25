@@ -7,6 +7,7 @@ Wren is packed with awesome capabilities to make your community and gaming exper
 * **[Roblox Integration](roblox-integration.md)**: Chat with Wren directly inside your favorite Roblox games with full multi-turn conversation support.
 * **[POW Integration](pow-integration.md)**: Connect Wren to Project Overwatch for advanced ERLC moderation capabilities.
 * **[Smart Web Search](smart-web-search.md)**: When Wren doesn't know the answer, it searches the web and summarizes the best information for you.
+* **[Permissions](permissions.md)**: Control exactly which Discord roles can use which tools, from basic moderation to sensitive admin actions.
 
 {% hint style="info" %}
 Click on any of the features above to learn exactly how they work!

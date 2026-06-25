@@ -28,18 +28,21 @@ export function splitForDiscord(text, limit = MAX_RESPONSE_LEN) {
   return out;
 }
 
-async function fetchChannelContext(channel, beforeId, count = 25) {
+async function fetchChannelContext(channel, beforeId, botId, count = 25) {
   if (!channel?.isTextBased?.()) return null;
   try {
     const opts = { limit: count + 1 };
     if (beforeId) opts.before = beforeId;
     const msgs = await channel.messages.fetch(opts);
     const sorted = [...msgs.values()]
-      .filter((m) => !m.author.bot)
+      .filter((m) => !m.author.bot || m.author.id === botId)
       .sort((a, b) => a.createdTimestamp - b.createdTimestamp)
       .slice(-count);
 
-    const lines = sorted.map((m) => `[${m.author.username}]: ${m.content}`);
+    const lines = sorted.map((m) => {
+      const name = m.member?.nickname ? `${m.member.nickname} (${m.author.username})` : m.author.username;
+      return `[${name}]: ${m.content}`;
+    });
     const selected = [];
     let totalLen = 0;
 
@@ -106,19 +109,22 @@ export function attachMessageHandler(client) {
     // Only respond if the bot is directly addressed at the start of the message,
     // or if the message is a direct reply to one of the bot's messages.
     const directlyMentioned = isDirectlyMentioned(message, client.user.id);
-    const isReplyToBot = message.reference?.messageId
-      ? await (async () => {
-          try {
-            const ref = await message.channel.messages.fetch(message.reference.messageId);
-            return ref?.author?.id === client.user.id;
-          } catch { return false; }
-        })()
-      : false;
+    let refMsg = null;
+    if (message.reference?.messageId) {
+      try { refMsg = await message.channel.messages.fetch(message.reference.messageId); } catch {}
+    }
+    const isReplyToBot = refMsg?.author?.id === client.user.id;
 
     if (!directlyMentioned && !isReplyToBot) return;
 
-    const question = stripMention(message.content, client.user.id);
-    if (!question) return;
+    let replyContext = '';
+    if (refMsg) {
+      const name = refMsg.member?.nickname ? `${refMsg.member.nickname} (${refMsg.author.username})` : refMsg.author.username;
+      replyContext = `[Replying to ${name}: "${refMsg.content}"]\n`;
+    }
+
+    const question = replyContext + stripMention(message.content, client.user.id);
+    if (!question || question.trim() === '') return;
 
     // Drop duplicate requests from the same user while one is in progress.
     const userId = message.author.id;
@@ -128,7 +134,7 @@ export function attachMessageHandler(client) {
     }
     inFlight.add(userId);
 
-    const channelContext = await fetchChannelContext(message.channel, message.id);
+    const channelContext = await fetchChannelContext(message.channel, message.id, client.user.id);
     const imageUrls = [...message.attachments.values()]
       .filter((a) => a.contentType?.startsWith?.('image/'))
       .map((a) => a.url);

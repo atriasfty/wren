@@ -307,6 +307,8 @@ export async function handleManage(interaction) {
     );
   } else if (ctx.tenant.polarCustomerId) {
     message += `\n*(You cannot manage the server subscription as you are not the owner.)*\n`;
+  } else if (ctx.tenant.subscriptionTier && ctx.tenant.subscriptionTier !== 'free') {
+    message += `\n*(This server has been manually upgraded by Atria Staff. There is no billing portal to manage.)*\n`;
   } else {
     message += `\n*(No active paid server subscription found.)*\n`;
   }

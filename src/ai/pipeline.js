@@ -71,7 +71,7 @@ export async function runAssistantPipeline(tenantCtx, {
     ...(channelContext ? [{ type: 'text', text: `\n\nRECENT CHANNEL MESSAGES:\n${channelContext}` }] : []),
     ...(ragContext ? [{ type: 'text', text: ragContext }] : []),
     ...(webContext ? [{ type: 'text', text: webContext }] : []),
-    ...(imageUrls?.length ? imageUrls.map((u) => ({ type: 'image_url', image_url: u })) : []),
+    ...(imageUrls?.length ? imageUrls.map((u) => ({ type: 'image_url', image_url: { url: u } })) : []),
   ];
 
   const messages = [

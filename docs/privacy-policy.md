@@ -49,10 +49,11 @@ When you send a message to Wren in a Discord server, we process:
 | Data | Purpose | Stored? |
 |---|---|---|
 | **Your Discord User ID** | Identifies you for memory, bans, and role-based access control | Yes — our database |
-| **Your message content** | Passed to the AI model to generate a response | Transiently in memory; may be stored as conversation memory if the Server Owner has enabled it |
-| **Recent channel messages** (limited context window) | Provides conversational context to the AI | No — processed in-memory only, not persisted |
+| **Your Discord username and display name / nickname** | Captured at the time of interaction for audit logs and memory context | Yes — our database (in memory and audit log entries) |
+| **Your message content** | Passed to the AI model to generate a response; logged for observability | **Yes** — transmitted to OpenRouter (Zero Data Retention enabled; not stored by them) and stored in PostHog (EU servers) for **30 days**; may also be stored indefinitely as conversation memory if a Server Owner has saved it via Wren's memory system |
+| **Recent channel messages** (up to 100 messages) | Provides conversational context to the AI | **Yes** — transmitted to OpenRouter (Zero Data Retention) and stored in PostHog (EU servers) for **30 days**; not otherwise persisted in our own database |
 | **Images you attach** | Passed by URL to the AI model for vision analysis | No — URLs only; images are not stored by us |
-| **Your in-game username / handle** (ERLC integration, if enabled) | Identifies you in game server moderation tools | Yes — our database, only if your server uses this feature |
+| **Your in-game username / handle** (ERLC integration, if enabled) | Identifies you in game server moderation tools | Yes — stored as plain text in our database; only if your server uses the ERLC integration |
 
 ### 4.2 Data Collected from Server Owners / Administrators
 
@@ -97,10 +98,17 @@ If a Server Owner creates an API token for programmatic access, we store a **one
 
 ## 5. Data We Do NOT Collect
 
-- We do not collect your Discord username, display name, email address, or any other Discord profile information beyond your numeric User ID.
+- We do not collect your email address or any Discord profile information beyond your numeric User ID, username, and server nickname (which are captured only at the time of interaction, as described above).
 - We do not record or log voice channel activity.
 - We do not run advertising or sell data to third parties.
 - We do not build individual advertising profiles.
+- We do not store your payment card details or billing address (these are handled exclusively by Polar.sh).
+
+---
+
+## 6. Discord as a Platform
+
+Because Wren operates entirely within Discord, **Discord Inc. independently processes all data transmitted through their platform** — including your messages, user IDs, and server information — in accordance with [Discord's Privacy Policy](https://discord.com/privacy). Atria does not control Discord's data practices. By using Wren, you also remain subject to Discord's own terms and privacy policy.
 
 ---
 
@@ -110,12 +118,12 @@ Your data may be transmitted to the following third-party processors in order to
 
 | Service | Purpose | Data Transmitted | Privacy Policy |
 |---|---|---|---|
-| **OpenRouter.ai** | Routes requests to AI language models | Your message content, conversation history, system prompt (containing server configuration) | [openrouter.ai/privacy](https://openrouter.ai/privacy) |
-| **AI Model Providers** (via OpenRouter) | Generates responses | Same as above — OpenRouter forwards this to the underlying model provider (e.g., Mistral AI, Google, Anthropic) | Varies by model selected |
+| **OpenRouter.ai** | Routes requests to AI language models | Your message content, up to 100 recent channel messages, conversation history, system prompt. **Zero Data Retention (ZDR) is enabled on our account — OpenRouter does not store any of this data.** | [openrouter.ai/privacy](https://openrouter.ai/privacy) |
+| **AI Model Providers** (via OpenRouter) | Generates responses | Same as above — OpenRouter forwards this to the underlying model provider under ZDR agreements | Varies by model selected |
 | **Brave Search** | Web search tool available to Wren | Your query/question (truncated to 300 characters) | [api.search.brave.com/app/trust-center](https://api.search.brave.com/app/trust-center) |
 | **Polar.sh** | Subscription billing and payment processing | Discord User ID (as `externalCustomerId`), guild ID (in subscription metadata), subscription tier | [polar.sh/privacy](https://polar.sh/privacy) |
 | **PostgreSQL (self-hosted)** | Primary database | All data described in Section 4 above | N/A — operated by us |
-| **PostHog** (EU data residency) | Observability, tracing, and prompt/response logging | AI model name, token usage counts, Discord User ID, Guild ID, **full message prompts and AI responses** | [posthog.com/privacy](https://posthog.com/privacy) |
+| **PostHog** (EU data residency) | Observability, tracing, and prompt/response logging | AI model name, token usage counts, Discord User ID, username, Guild ID, **full message prompts and AI responses** (including recent channel context). Retained for **30 days**. | [posthog.com/privacy](https://posthog.com/privacy) |
 
 > **Note:** When OpenRouter transmits your message to an AI model provider, it is subject to that provider's data policies. OpenRouter's default agreements with model providers prohibit using API data to train models. See [openrouter.ai/privacy](https://openrouter.ai/privacy) for details.
 
@@ -135,8 +143,8 @@ All AI prompts (the messages you send to Wren) and the AI's responses are transm
 
 | Data Category | Retention Period |
 |---|---|
-| **AI prompts & responses** (PostHog, EU) | **30 days** — automatically and permanently deleted after this period |
-| **Conversation memory** | Until the Server Owner deletes it, or the server removes Wren |
+| **AI prompts, responses & channel context** (PostHog, EU) | **30 days** — automatically and permanently deleted after this period |
+| **Conversation memory** (tenant_memory table) | **Indefinitely** — retained until a Server Owner explicitly deletes it, or the server removes Wren. Server admins can view and manage all stored memories for their server. |
 | **Audit logs** | Retained indefinitely while the server remains active |
 | **Processed event deduplication records** | Automatically purged after their expiry timestamp |
 | **Billing & subscription records** | Retained for 7 years from the end of the subscription to comply with financial record-keeping obligations |
@@ -157,6 +165,17 @@ We implement the following technical and organisational measures to protect your
 
 ---
 
+## 8. Data Breach Notification
+
+In the event of a personal data breach, Atria will:
+
+- **Notify the relevant supervisory authority** (the Irish Data Protection Commission, or the UK ICO where applicable) **within 72 hours** of becoming aware of the breach, where it is likely to result in a risk to your rights and freedoms.
+- **Notify affected individuals** without undue delay where the breach is likely to result in a high risk to their rights and freedoms, including information about the nature of the breach, the categories of data affected, likely consequences, and the measures taken or proposed.
+
+If you believe you have discovered a security vulnerability or data breach affecting the Service, please report it immediately to [gdpr@atriasafety.org](mailto:gdpr@atriasafety.org).
+
+---
+
 ## 9. Your Rights Under GDPR
 
 If you are located in the European Economic Area (EEA), United Kingdom, or Switzerland, you have the following rights:
@@ -167,22 +186,24 @@ If you are located in the European Economic Area (EEA), United Kingdom, or Switz
 | **Right to Rectification (Art. 16)** | Request correction of inaccurate data. |
 | **Right to Erasure (Art. 17)** | Request deletion of your personal data ("right to be forgotten"). |
 | **Right to Restriction (Art. 18)** | Request that we restrict processing of your data. |
-| **Right to Data Portability (Art. 20)** | Request your data in a structured, machine-readable format. |
+| **Right to Data Portability (Art. 20)** | Request your data in a structured, machine-readable format. We do not currently have an automated export tool — requests are fulfilled manually by our team, who will extract your data from our database and provide it to you. |
 | **Right to Object (Art. 21)** | Object to processing based on legitimate interests. |
 | **Right to Withdraw Consent (Art. 7(3))** | Where processing is based on consent, withdraw it at any time. |
 
-**To exercise any of these rights**, contact our DPO at [dpo@atriasafety.org](mailto:dpo@atriasafety.org). We will respond within **30 days**.
+**To exercise any of these rights**, contact our DPO at [dpo@atriasafety.org](mailto:dpo@atriasafety.org) or email [help@atriasafety.org](mailto:help@atriasafety.org). We will respond within **30 days** as required by GDPR. For erasure requests, you may also open a support ticket in our Discord at [atrisfty.org/discord](https://atrisfty.org/discord).
 
 If you believe we have not handled your data lawfully, you have the right to lodge a complaint with your local supervisory authority. In the UK, this is the [Information Commissioner's Office (ICO)](https://ico.org.uk/). In Ireland, this is the [Data Protection Commission (DPC)](https://www.dataprotection.ie/).
 
 ---
 
-## 10. International Data Transfers
+## 11. International Data Transfers & EU Representative
 
 Some of our third-party processors (including OpenRouter and Polar.sh) are based in the United States. Where we transfer personal data outside the EEA, we rely on:
 
 - **Standard Contractual Clauses (SCCs)** approved by the European Commission; and/or
 - The processor's participation in recognised cross-border data transfer frameworks.
+
+Our **Data Protection Officer (DPO) is based within the European Union** and serves as our EU representative for the purposes of GDPR Article 27. You may contact them directly at [dpo@atriasafety.org](mailto:dpo@atriasafety.org) for any queries relating to the processing of EU personal data.
 
 You may contact us at [gdpr@atriasafety.org](mailto:gdpr@atriasafety.org) for further information on the specific safeguards in place.
 
@@ -194,15 +215,11 @@ Wren is not directed at children under the age of 13. We do not knowingly collec
 
 ---
 
-## 12. Server Owner Responsibilities
+## 12. Our Role as Data Controller
 
-Discord Server Owners who install Wren act as independent **Data Controllers** for the data of their community members. By installing Wren, you agree to:
+Atria acts as the **Data Controller** for all personal data processed in connection with the Service. This means we determine the purposes and means of processing your data, and we are responsible for ensuring that processing is lawful, fair, and transparent.
 
-- Inform your server members that Wren is present and may process their messages.
-- Not use Wren to collect sensitive personal data (e.g., health data, financial details beyond what is incidental to normal conversation) without appropriate safeguards.
-- Comply with GDPR (or equivalent applicable law) in your jurisdiction as an independent data controller.
-
-Atria acts as a **Data Processor** on your behalf for the purposes of operating the bot within your server.
+Discord Server Owners who install Wren are authorised users of the Service. While Server Owners configure how Wren behaves in their servers and can view certain data (such as conversation memories stored for their server), they do not independently determine the purposes or means of processing — Atria retains that responsibility. Server Owners are expected to inform their members that Wren is present and processes messages, and not to configure Wren in ways that would cause Atria to process data unlawfully.
 
 ---
 

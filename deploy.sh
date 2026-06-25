@@ -70,8 +70,8 @@ else
     read -p "OpenRouter Model [mistralai/mistral-large-2411]: " OPENROUTER_MODEL
     OPENROUTER_MODEL=${OPENROUTER_MODEL:-mistralai/mistral-large-2411}
     read -p "Brave Search API Key (Optional, press enter to skip): " BRAVE_SEARCH_API_KEY
-    read -p "API Listen Port [42011]: " API_PORT
-    API_PORT=${API_PORT:-42011}
+    read -p "API Listen Port [4167]: " API_PORT
+    API_PORT=${API_PORT:-4167}
     read -p "PostHog API Key (Optional, for observability): " POSTHOG_API_KEY
     
     echo -e "${BLUE}=== DATABASE CONFIGURATION ===${NC}"

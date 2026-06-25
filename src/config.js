@@ -28,7 +28,7 @@ export function loadConfig() {
     braveApiKey: process.env.BRAVE_SEARCH_API_KEY || null,
     databaseUrl: process.env.DATABASE_URL,
     tenantSecretEncKey: Buffer.from(encKey, 'base64'),
-    apiPort: Number(process.env.API_PORT || 42011),
+    apiPort: Number(process.env.API_PORT || 4167),
     nodeEnv: process.env.NODE_ENV || 'development',
   };
   return _config;

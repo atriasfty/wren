@@ -233,7 +233,9 @@ export async function handleUpgrade(interaction) {
     const checkoutBody = {
       productId,
       successUrl: `https://discord.com/channels/${interaction.guild.id}`,
-      metadata: { tenantId: interaction.guild.id }
+      customerExternalId: interaction.user.id,
+      metadata: { tenantId: interaction.guild.id, ownerId: interaction.user.id },
+      customerMetadata: { discordId: interaction.user.id }
     };
     if (isSmallServer) {
       checkoutBody.discountId = '5549ff1d-7616-45e7-ad0b-ba68937274a0';
@@ -256,6 +258,27 @@ export async function handleUsage(interaction) {
   return ephemeral(`You are currently on the **${tier.toUpperCase()}** plan.\nUsage this month: **${used} / ${limit}** messages.`);
 }
 
+export async function handleManage(interaction) {
+  const { ctx } = await loadCtx(interaction);
+  if (!ctx) return ephemeral('Server not set up.');
+  if (ctx.tenant.subscriptionOwnerId && ctx.tenant.subscriptionOwnerId !== interaction.user.id) {
+    return ephemeral('Only the user who originally purchased the subscription can manage it.');
+  }
+  if (!ctx.tenant.polarCustomerId) {
+    return ephemeral('No active subscription found to manage.');
+  }
+  try {
+    const polar = new Polar({ accessToken: process.env.POLAR_ACCESS_TOKEN || '' });
+    const session = await polar.customerSessions.create({
+      customerId: ctx.tenant.polarCustomerId,
+    });
+    return ephemeral(`Manage your subscription here:\n${session.customerPortalUrl}`);
+  } catch (err) {
+    console.error('Customer portal error:', err);
+    return ephemeral('Failed to generate management link.');
+  }
+}
+
 export async function dispatchGarminCommand(interaction) {
   const group = interaction.options.getSubcommandGroup();
   const sub = interaction.options.getSubcommand();
@@ -275,6 +298,8 @@ export async function dispatchGarminCommand(interaction) {
       reply = await handleUpgrade(interaction);
     } else if (sub === 'usage') {
       reply = await handleUsage(interaction);
+    } else if (sub === 'manage') {
+      reply = await handleManage(interaction);
     } else {
       reply = ephemeral('Unknown command.');
     }

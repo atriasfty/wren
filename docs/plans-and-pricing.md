@@ -27,10 +27,16 @@ Built for the largest and most active ERLC communities. With 5,000 messages, you
 ## Special Offer for Smaller Communities
 If your Discord server has **under 500 members**, you are automatically eligible for a **25% discount for your first 3 months** on either paid tier! Just run the upgrade command in your server to claim it.
 
-## How to Check Your Usage & Upgrade
+## How to Check Your Usage & Manage Your Plan
 You can manage your billing directly from Discord using these commands:
 
 * **`/wren usage`** — Check what plan you are currently on and exactly how many messages you've used this billing cycle.
 * **`/wren upgrade [plan]`** — Generates a secure Polar.sh checkout link so you can upgrade your server in seconds. If you qualify for the small-server discount, it's applied automatically!
+* **`/wren manage`** — If you are the person who purchased the active subscription, this command will generate a secure link to the Customer Portal where you can update your payment method, upgrade, downgrade, or cancel your subscription at any time.
 
 _Message limits automatically reset exactly one month from the day you subscribe._
+
+### Double Subscriptions
+If someone else in your server tries to purchase a subscription when you already have one active:
+1. **Lower Tier:** If the new subscription is a lower tier than the current one, the new one will be cancelled immediately to preserve your higher limits.
+2. **Higher/Equal Tier:** If the new subscription is equal or higher, your original subscription will be gracefully cancelled (and you'll receive a DM notifying you), and the server will adopt the new subscription limits immediately.

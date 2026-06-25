@@ -2,7 +2,7 @@ import express from 'express';
 import { hashToken } from '../tenant/crypto.js';
 import { findTenantByTokenHash, updateSubscription } from '../tenant/store.js';
 import { resolveTenantById, setEncryptionKey } from '../tenant/resolve.js';
-import { Webhooks } from '@polar-sh/sdk/webhooks';
+import { validateEvent } from '@polar-sh/sdk/webhooks';
 import { runAssistantPipeline } from '../ai/pipeline.js';
 import { loadConfig } from '../config.js';
 
@@ -35,7 +35,7 @@ function checkRateLimit(tokenHash, limit = 20, windowMs = 60_000) {
   return true;
 }
 
-export async function createApiServer() {
+export async function createApiServer(client) {
   const cfg = loadConfig();
   setEncryptionKey(cfg.tenantSecretEncKey);
 
@@ -57,25 +57,114 @@ export async function createApiServer() {
       const webhookSecret = process.env.POLAR_WEBHOOK_SECRET;
       if (!webhookSecret) return res.status(500).json({ error: 'Webhook secret not configured' });
       
-      const payload = Webhooks.verify({
-        body: req.rawBody ? req.rawBody.toString('utf8') : JSON.stringify(req.body),
-        headers: req.headers,
-      }, webhookSecret);
+      const payload = validateEvent(
+        req.rawBody ? req.rawBody.toString('utf8') : JSON.stringify(req.body),
+        req.headers,
+        webhookSecret
+      );
 
       const event = payload;
       if (event.type === 'subscription.created' || event.type === 'subscription.updated') {
         const sub = event.data;
         const tenantId = sub.metadata?.tenantId;
+        const ownerId = sub.metadata?.ownerId;
+        const customerId = sub.customer_id;
         const productId = sub.product_id;
         let tier = 'free';
         if (productId === process.env.POLAR_CORE_PRODUCT_ID) tier = 'core';
         else if (productId === process.env.POLAR_PRO_PRODUCT_ID) tier = 'pro';
         
-        if (tenantId) await updateSubscription(tenantId, tier, sub.id);
+        if (tenantId) {
+          const { resolveTenantById } = await import('../tenant/resolve.js');
+          const ctx = await resolveTenantById(tenantId);
+          
+          if (ctx) {
+            const oldSubId = ctx.tenant.polarSubscriptionId;
+            const oldTier = ctx.tenant.subscriptionTier || 'free';
+            const oldOwnerId = ctx.tenant.subscriptionOwnerId;
+
+            if (oldSubId && oldSubId !== sub.id && oldTier !== 'free') {
+              const tierValue = { free: 0, core: 1, pro: 2 };
+              const oldVal = tierValue[oldTier] || 0;
+              const newVal = tierValue[tier] || 0;
+
+              let subToCancel = null;
+              let userToDm = null;
+              let cancelledTier = null;
+              let isReplaced = true;
+
+              if (newVal < oldVal) {
+                subToCancel = sub.id;
+                userToDm = ownerId;
+                cancelledTier = tier;
+                isReplaced = false;
+              } else {
+                subToCancel = oldSubId;
+                userToDm = oldOwnerId;
+                cancelledTier = oldTier;
+                isReplaced = true;
+              }
+
+              if (subToCancel) {
+                try {
+                  const { Polar } = await import('@polar-sh/sdk');
+                  const polar = new Polar({ accessToken: process.env.POLAR_ACCESS_TOKEN || '' });
+                  await polar.subscriptions.update({
+                    id: subToCancel,
+                    subscriptionUpdate: { cancelAtPeriodEnd: true }
+                  });
+                  
+                  if (userToDm && client) {
+                    const user = await client.users.fetch(userToDm).catch(() => null);
+                    if (user) {
+                      await user.send(`⚠️ Your Wren **${cancelledTier.toUpperCase()}** subscription for server \`${ctx.tenant.displayName}\` was automatically cancelled because someone else purchased a higher or equivalent tier subscription. You retain access until the end of the billing period.`);
+                    }
+                  }
+                } catch (err) {
+                  console.error('[webhook] failed to cancel double sub:', err.message);
+                }
+              }
+
+              if (!isReplaced) {
+                return res.json({ ok: true, note: 'ignored lower tier' });
+              }
+            }
+          }
+
+          await updateSubscription(tenantId, tier, sub.id, ownerId, customerId);
+          // Try to send a success message to the guild
+          if (client) {
+            try {
+              const guild = await client.guilds.fetch(tenantId).catch(() => null);
+              if (guild) {
+                let targetChannel = null;
+                if (ctx?.tenant?.statusChannelId) {
+                  targetChannel = await guild.channels.fetch(ctx.tenant.statusChannelId).catch(() => null);
+                }
+                if (!targetChannel) {
+                  const channels = await guild.channels.fetch();
+                  targetChannel = channels.find(c => c.isTextBased() && c.permissionsFor(guild.members.me).has('SendMessages'));
+                }
+                if (targetChannel) {
+                  await targetChannel.send(`🎉 **Success!** This server has just been upgraded to the **${tier.toUpperCase()}** plan!\nYour new message limits are now active. Thanks for supporting Wren!`);
+                }
+              }
+            } catch (err) {
+              console.error('[webhook] failed to send upgrade message:', err.message);
+            }
+          }
+        }
       } else if (event.type === 'subscription.canceled') {
         const sub = event.data;
         const tenantId = sub.metadata?.tenantId;
-        if (tenantId) await updateSubscription(tenantId, 'free', null);
+        if (tenantId) {
+          const { resolveTenantById } = await import('../tenant/resolve.js');
+          const ctx = await resolveTenantById(tenantId);
+          // Only downgrade to free if the canceled sub is the currently active one
+          if (ctx && ctx.tenant.polarSubscriptionId === sub.id) {
+            await updateSubscription(tenantId, 'free', null, null, null);
+          }
+        }
       }
       
       res.json({ ok: true });
@@ -142,10 +231,10 @@ export async function createApiServer() {
   return app;
 }
 
-export async function startApiServer() {
-  const app = await createApiServer();
+export async function startApiServer(client) {
+  const app = await createApiServer(client);
   const cfg = loadConfig();
-  const port = cfg.apiPort || 42011;
+  const port = cfg.apiPort || 4167;
   return new Promise((resolve) => {
     const server = app.listen(port, () => {
       console.log(`[api] listening on :${port}`);

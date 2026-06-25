@@ -86,7 +86,7 @@ async function main() {
   setInterval(() => syncAllGuilds(client).catch(() => {}), 3 * 60 * 1000);
   setInterval(() => pruneExpiredEvents().catch(() => {}), 60 * 60 * 1000);
 
-  await startApiServer();
+  await startApiServer(client);
 
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);

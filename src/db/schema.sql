@@ -155,3 +155,11 @@ DO $$ BEGIN
   ALTER TABLE tenants ADD COLUMN polar_subscription_id TEXT;
 EXCEPTION WHEN duplicate_column THEN NULL;
 END $$;
+DO $$ BEGIN
+  ALTER TABLE tenants ADD COLUMN subscription_owner_id TEXT;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE tenants ADD COLUMN polar_customer_id TEXT;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;

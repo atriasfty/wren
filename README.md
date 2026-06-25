@@ -12,7 +12,7 @@ Multi-tenant Discord bot for ERLC (Emergency Response: Liberty County) servers. 
 - **POW**: per-tenant token, AES-256-GCM encrypted at rest, key in env.
 - **PRC**: per-tenant ERLC server key, encrypted at rest.
 - **Permission gate**: deny by default — every tool requires a `tenant_role_policy` row; rank resolved from `tenant_roles` + Discord guild permissions.
-- **REST API**: `POST /v1/chat`, `GET /v1/info` on `:42011` (configurable). Bearer-token auth backed by `tenant_api_tokens`.
+- **REST API**: `POST /v1/chat`, `GET /v1/info` on `:4167` (configurable). Bearer-token auth backed by `tenant_api_tokens`.
 
 ## Quick start
 
@@ -35,7 +35,7 @@ On boot Wren registers `/wren` in every guild it is a member of and (re)starts t
 | `BRAVE_SEARCH_API_KEY` | yes | https://brave.com/search/api/ |
 | `DATABASE_URL` | yes | Postgres connection string. |
 | `TENANT_SECRET_ENC_KEY` | yes | base64 of 32 random bytes. Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` |
-| `API_PORT` | no | REST API listen port (default 42011). |
+| `API_PORT` | no | REST API listen port (default 4167). |
 
 **Rotate `DATABASE_URL` after first run.** The string is in this README's git history; the password should not be considered secret.
 

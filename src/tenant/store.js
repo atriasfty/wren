@@ -141,6 +141,8 @@ function rowToTenant(row, encKey) {
     monthlyMessageCount: row.monthly_message_count || 0,
     billingCycleReset: row.billing_cycle_reset,
     polarSubscriptionId: row.polar_subscription_id,
+    subscriptionOwnerId: row.subscription_owner_id,
+    polarCustomerId: row.polar_customer_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -432,13 +434,15 @@ export async function incrementMessageUsage(tenantId) {
   return r.rows[0]?.monthly_message_count || 0;
 }
 
-export async function updateSubscription(tenantId, tier, polarSubId = null) {
+export async function updateSubscription(tenantId, tier, polarSubId = null, ownerId = null, customerId = null) {
   await query(
     `UPDATE tenants SET 
        subscription_tier = $1, 
        polar_subscription_id = COALESCE($2, polar_subscription_id),
+       subscription_owner_id = COALESCE($4, subscription_owner_id),
+       polar_customer_id = COALESCE($5, polar_customer_id),
        updated_at = NOW() 
      WHERE tenant_id = $3`,
-    [tier, polarSubId, tenantId]
+    [tier, polarSubId, tenantId, ownerId, customerId]
   );
 }

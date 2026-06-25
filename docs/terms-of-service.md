@@ -53,7 +53,7 @@ Discord servers with fewer than 500 members at the time of purchase may be eligi
 
 ### 3.4 Price Changes
 
-We may change the price of any plan at any time. We will provide **at least 30 days' written notice** (by email or via an announcement in our Discord server at [atrisfty.org/discord](https://atrisfty.org/discord)) before any price change takes effect for existing subscribers. Continued use of the Service after the new price takes effect constitutes your acceptance of the new price.
+We may change the price of any plan at any time. We will provide **at least 30 days' written notice** (by email or via an announcement in our Discord server at [atriasfty.org/discord](https://atriasfty.org/discord)) before any price change takes effect for existing subscribers. Continued use of the Service after the new price takes effect constitutes your acceptance of the new price.
 
 ### 3.5 Message Limits
 
@@ -174,15 +174,15 @@ THE SERVICE IS PROVIDED **"AS IS"** AND **"AS AVAILABLE"** WITHOUT WARRANTY OF A
 
 ---
 
-## 11. Limitation of Liability
+## 12. Limitation of Liability
 
 TO THE FULLEST EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL ATRIA, THE HACK FOUNDATION, THEIR OFFICERS, DIRECTORS, EMPLOYEES, AGENTS, OR LICENSORS BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, PUNITIVE, OR EXEMPLARY DAMAGES WHATSOEVER, INCLUDING BUT NOT LIMITED TO DAMAGES FOR LOSS OF PROFITS, GOODWILL, DATA, OR OTHER INTANGIBLE LOSSES, ARISING OUT OF OR RELATING TO YOUR USE OF OR INABILITY TO USE THE SERVICE.
 
-**Atria's total cumulative liability to you for any and all claims arising out of or related to these Terms or the Service shall be zero (£0 / $0).** We operate as a nonprofit-affiliated project and disclaim all financial liability to the fullest extent permitted by law.
+**Atria's total cumulative liability to you for any and all claims arising out of or related to these Terms or the Service shall not exceed the amount paid by you to Atria in the three (3) months preceding the claim.** We operate as a nonprofit-affiliated project and disclaim financial liability beyond this amount to the fullest extent permitted by law.
 
 ---
 
-## 12. Indemnification
+## 13. Indemnification
 
 You agree to indemnify, defend, and hold harmless Atria, The Hack Foundation, and their respective officers, directors, employees, and agents from and against any and all claims, damages, losses, liabilities, costs, and expenses (including reasonable legal fees) arising out of or relating to:
 
@@ -193,34 +193,34 @@ You agree to indemnify, defend, and hold harmless Atria, The Hack Foundation, an
 
 ---
 
-## 13. Dispute Resolution
+## 14. Dispute Resolution
 
-### 13.1 Informal Resolution
+### 14.1 Informal Resolution
 
 Before initiating any formal dispute, you agree to first attempt to resolve the matter informally by contacting us at:
 
 - **Email:** [help@atriasafety.org](mailto:help@atriasafety.org)
-- **Discord:** [atrisfty.org/discord](https://atrisfty.org/discord) — open a support ticket
+- **Discord:** [atriasfty.org/discord](https://atriasfty.org/discord) — open a support ticket
 
 We will attempt to respond to all complaints within **14 business days**.
 
-### 13.2 Binding Arbitration
+### 14.2 Binding Arbitration
 
-If the dispute is not resolved informally within 30 days, **all disputes, controversies, or claims** arising out of or relating to these Terms or the Service — except as provided in Section 13.3 — shall be finally resolved by **binding arbitration** administered under the rules of the American Arbitration Association (AAA) or JAMS, as mutually agreed. Arbitration shall be conducted in English on a **remote / virtual** basis.
+If the dispute is not resolved informally within 30 days, **all disputes, controversies, or claims** arising out of or relating to these Terms or the Service — except as provided in Section 14.3 — shall be finally resolved by **binding arbitration** administered under the rules of the American Arbitration Association (AAA) or JAMS, as mutually agreed. Arbitration shall be conducted in English on a **remote / virtual** basis.
 
 **BY AGREEING TO THESE TERMS, YOU WAIVE YOUR RIGHT TO A JURY TRIAL AND YOUR RIGHT TO PARTICIPATE IN A CLASS ACTION LAWSUIT.**
 
-### 13.3 IP Infringement — Court Jurisdiction
+### 14.3 IP Infringement — Court Jurisdiction
 
-Notwithstanding Section 13.2, any claim arising from or related to actual or alleged infringement of Atria's or The Hack Foundation's intellectual property rights may be brought in a court of competent jurisdiction. Both parties consent to the exclusive jurisdiction of the courts located in the **State of California, United States** for such matters.
+Notwithstanding Section 14.2, any claim arising from or related to actual or alleged infringement of Atria's or The Hack Foundation's intellectual property rights may be brought in a court of competent jurisdiction. Both parties consent to the exclusive jurisdiction of the courts located in the **State of California, United States** for such matters.
 
-### 13.4 Governing Law
+### 14.4 Governing Law
 
 These Terms shall be governed by and construed in accordance with the laws of the **State of California, United States**, without regard to its conflict of law provisions.
 
 ---
 
-## 14. Changes to These Terms
+## 15. Changes to These Terms
 
 We may update these Terms at any time. When we do, we will update the "Last Updated" date above. **Your continued use of the Service after changes are posted constitutes your acceptance of the revised Terms.** We encourage you to review these Terms periodically.
 
@@ -228,13 +228,13 @@ For material changes, we will make reasonable efforts to notify active paid subs
 
 ---
 
-## 15. Miscellaneous
+## 16. Miscellaneous
 
 - **Entire Agreement:** These Terms, together with our [Privacy Policy](privacy-policy.md), constitute the entire agreement between you and Atria regarding the Service.
 - **Severability:** If any provision of these Terms is found unenforceable, the remaining provisions will remain in full force and effect.
 - **No Waiver:** Our failure to enforce any right or provision of these Terms will not be considered a waiver of those rights.
 - **Assignment:** You may not assign your rights or obligations under these Terms without our prior written consent. We may assign our rights freely.
-- **Support:** For general support and questions, contact us at [help@atriasafety.org](mailto:help@atriasafety.org) or join our Discord at [atrisfty.org/discord](https://atrisfty.org/discord).
+- **Support:** For general support and questions, contact us at [help@atriasafety.org](mailto:help@atriasafety.org) or join our Discord at [atriasfty.org/discord](https://atriasfty.org/discord).
 - **Contact:** For any legal questions about these Terms, contact us at [help@atriasafety.org](mailto:help@atriasafety.org).
 
 ---

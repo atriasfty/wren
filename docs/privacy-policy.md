@@ -112,7 +112,7 @@ Because Wren operates entirely within Discord, **Discord Inc. independently proc
 
 ---
 
-## 6. Third-Party Services We Use
+## 7. Third-Party Services We Use
 
 Your data may be transmitted to the following third-party processors in order to operate the Service:
 
@@ -139,7 +139,7 @@ All AI prompts (the messages you send to Wren) and the AI's responses are transm
 
 ---
 
-## 7. Data Retention
+## 8. Data Retention
 
 | Data Category | Retention Period |
 |---|---|
@@ -149,11 +149,11 @@ All AI prompts (the messages you send to Wren) and the AI's responses are transm
 | **Processed event deduplication records** | Automatically purged after their expiry timestamp |
 | **Billing & subscription records** | Retained for 7 years from the end of the subscription to comply with financial record-keeping obligations |
 | **API tokens** (hashes) | Retained until revoked by the Server Owner |
-| **All data** | Deleted within 30 days of a verified erasure request (see Section 9) |
+| **All data** | Deleted within 30 days of a verified erasure request (see Section 11) |
 
 ---
 
-## 8. Security
+## 9. Security
 
 We implement the following technical and organisational measures to protect your data:
 
@@ -165,7 +165,7 @@ We implement the following technical and organisational measures to protect your
 
 ---
 
-## 8. Data Breach Notification
+## 10. Data Breach Notification
 
 In the event of a personal data breach, Atria will:
 
@@ -176,7 +176,7 @@ If you believe you have discovered a security vulnerability or data breach affec
 
 ---
 
-## 9. Your Rights Under GDPR
+## 11. Your Rights Under GDPR
 
 If you are located in the European Economic Area (EEA), United Kingdom, or Switzerland, you have the following rights:
 
@@ -190,13 +190,13 @@ If you are located in the European Economic Area (EEA), United Kingdom, or Switz
 | **Right to Object (Art. 21)** | Object to processing based on legitimate interests. |
 | **Right to Withdraw Consent (Art. 7(3))** | Where processing is based on consent, withdraw it at any time. |
 
-**To exercise any of these rights**, contact our DPO at [dpo@atriasafety.org](mailto:dpo@atriasafety.org) or email [help@atriasafety.org](mailto:help@atriasafety.org). We will respond within **30 days** as required by GDPR. For erasure requests, you may also open a support ticket in our Discord at [atrisfty.org/discord](https://atrisfty.org/discord).
+**To exercise any of these rights**, contact our DPO at [dpo@atriasafety.org](mailto:dpo@atriasafety.org) or email [help@atriasafety.org](mailto:help@atriasafety.org). We will respond within **30 days** as required by GDPR. For erasure requests, you may also open a support ticket in our Discord at [atriasfty.org/discord](https://atriasfty.org/discord).
 
 If you believe we have not handled your data lawfully, you have the right to lodge a complaint with your local supervisory authority. In the UK, this is the [Information Commissioner's Office (ICO)](https://ico.org.uk/). In Ireland, this is the [Data Protection Commission (DPC)](https://www.dataprotection.ie/).
 
 ---
 
-## 11. International Data Transfers & EU Representative
+## 12. International Data Transfers & EU Representative
 
 Some of our third-party processors (including OpenRouter and Polar.sh) are based in the United States. Where we transfer personal data outside the EEA, we rely on:
 
@@ -209,13 +209,13 @@ You may contact us at [gdpr@atriasafety.org](mailto:gdpr@atriasafety.org) for fu
 
 ---
 
-## 11. Children's Privacy
+## 13. Children's Privacy
 
 Wren is not directed at children under the age of 13. We do not knowingly collect personal data from children. Discord itself requires users to be at least 13 years old. If you believe a child has provided us with data, please contact us immediately at [gdpr@atriasafety.org](mailto:gdpr@atriasafety.org) and we will delete it promptly.
 
 ---
 
-## 12. Our Role as Data Controller
+## 14. Our Role as Data Controller
 
 Atria acts as the **Data Controller** for all personal data processed in connection with the Service. This means we determine the purposes and means of processing your data, and we are responsible for ensuring that processing is lawful, fair, and transparent.
 
@@ -223,13 +223,13 @@ Discord Server Owners who install Wren are authorised users of the Service. Whil
 
 ---
 
-## 13. Changes to This Policy
+## 15. Changes to This Policy
 
 We may update this Privacy Policy from time to time. When we make significant changes, we will update the "Last Updated" date at the top of this document. We encourage you to review this policy periodically. Continued use of Wren after changes constitutes acceptance of the updated policy.
 
 ---
 
-## 14. Contact Us
+## 16. Contact Us
 
 For any privacy-related questions or requests:
 

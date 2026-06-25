@@ -231,16 +231,16 @@ export async function handleUpgrade(interaction) {
     const polar = new Polar({ accessToken: process.env.POLAR_ACCESS_TOKEN || '' });
     const isSmallServer = interaction.guild.memberCount < 500;
     const checkoutBody = {
-      productId,
+      products: [productId],
       successUrl: `https://discord.com/channels/${interaction.guild.id}`,
-      customerExternalId: interaction.user.id,
+      externalCustomerId: interaction.user.id,
       metadata: { tenantId: interaction.guild.id, ownerId: interaction.user.id },
       customerMetadata: { discordId: interaction.user.id }
     };
     if (isSmallServer) {
       checkoutBody.discountId = '5549ff1d-7616-45e7-ad0b-ba68937274a0';
     }
-    const checkout = await polar.checkouts.custom.create(checkoutBody);
+    const checkout = await polar.checkouts.create(checkoutBody);
     return ephemeral(`Here is your checkout link for the **${plan.toUpperCase()}** plan${isSmallServer ? ' (with your 25% discount applied!)' : ''}:\n${checkout.url}`);
   } catch (err) {
     console.error('Checkout error:', err);

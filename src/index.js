@@ -11,7 +11,7 @@ initObservability();
 
 import { loadConfig } from './config.js';
 import { runMigrations } from './db/migrate.js';
-import { closePool } from './db/pool.js';
+import { closePool, query } from './db/pool.js';
 import { setEncryptionKey } from './tenant/resolve.js';
 import { listTenants } from './tenant/store.js';
 import { createClient } from './discord/client.js';
@@ -57,6 +57,18 @@ async function main() {
         try { await interaction.reply({ content: publicInteractionError(), ephemeral: true }); } catch {}
       }
       return;
+    }
+
+    if (interaction.isButton()) {
+      if (interaction.customId === 'agree_tos') {
+        try {
+          await query('INSERT INTO user_agreements (discord_id) VALUES ($1) ON CONFLICT DO NOTHING', [interaction.user.id]);
+          await interaction.reply({ content: 'Thank you for agreeing to the Terms of Service and Privacy Policy! You can now use Wren.', ephemeral: true });
+        } catch (err) {
+          console.error('[slash] button failed:', err);
+          await interaction.reply({ content: 'Failed to record agreement.', ephemeral: true });
+        }
+      }
     }
     if (
       interaction.isStringSelectMenu() ||

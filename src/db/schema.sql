@@ -163,3 +163,18 @@ DO $$ BEGIN
   ALTER TABLE tenants ADD COLUMN polar_customer_id TEXT;
 EXCEPTION WHEN duplicate_column THEN NULL;
 END $$;
+
+CREATE TABLE IF NOT EXISTS user_agreements (
+  discord_id TEXT PRIMARY KEY,
+  agreed_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS global_bans (
+  discord_id TEXT PRIMARY KEY,
+  expires_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS global_state (
+  key TEXT PRIMARY KEY,
+  value JSONB NOT NULL
+);

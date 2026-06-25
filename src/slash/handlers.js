@@ -1,4 +1,4 @@
-import { PermissionFlagsBits } from 'discord.js';
+import { PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import {
   resolveTenantByGuildId,
   invalidateTenant,
@@ -261,22 +261,72 @@ export async function handleUsage(interaction) {
 export async function handleManage(interaction) {
   const { ctx } = await loadCtx(interaction);
   if (!ctx) return ephemeral('Server not set up.');
-  if (ctx.tenant.subscriptionOwnerId && ctx.tenant.subscriptionOwnerId !== interaction.user.id) {
-    return ephemeral('Only the user who originally purchased the subscription can manage it.');
+
+  const polar = new Polar({ accessToken: process.env.POLAR_ACCESS_TOKEN || '' });
+  
+  let serverPortalUrl = null;
+  let userPortalUrl = null;
+
+  if (ctx.tenant.polarCustomerId) {
+    if (!ctx.tenant.subscriptionOwnerId || ctx.tenant.subscriptionOwnerId === interaction.user.id) {
+      try {
+        const session = await polar.customerSessions.create({
+          customerId: ctx.tenant.polarCustomerId,
+        });
+        serverPortalUrl = session.customerPortalUrl;
+      } catch (err) {
+        console.error('Server customer portal error:', err);
+      }
+    }
   }
-  if (!ctx.tenant.polarCustomerId) {
-    return ephemeral('No active subscription found to manage.');
-  }
+
   try {
-    const polar = new Polar({ accessToken: process.env.POLAR_ACCESS_TOKEN || '' });
-    const session = await polar.customerSessions.create({
-      customerId: ctx.tenant.polarCustomerId,
-    });
-    return ephemeral(`Manage your subscription here:\n${session.customerPortalUrl}`);
+    const customers = await polar.customers.list({ externalCustomerId: interaction.user.id });
+    if (customers.items && customers.items.length > 0) {
+      const myCustomer = customers.items[0];
+      const session = await polar.customerSessions.create({
+        customerId: myCustomer.id,
+      });
+      userPortalUrl = session.customerPortalUrl;
+    }
   } catch (err) {
-    console.error('Customer portal error:', err);
-    return ephemeral('Failed to generate management link.');
+    console.error('User customer portal error:', err);
   }
+
+  const components = [];
+  const row = new ActionRowBuilder();
+
+  let message = `**Server Subscription:**\nTier: ${ctx.tenant.subscriptionTier || 'free'}\nUsage: ${ctx.tenant.monthlyMessageCount || 0} msgs\n`;
+
+  if (serverPortalUrl) {
+    row.addComponents(
+      new ButtonBuilder()
+        .setLabel('Manage Server Subscription')
+        .setStyle(ButtonStyle.Link)
+        .setURL(serverPortalUrl)
+    );
+  } else if (ctx.tenant.polarCustomerId) {
+    message += `\n*(You cannot manage the server subscription as you are not the owner.)*\n`;
+  } else {
+    message += `\n*(No active paid server subscription found.)*\n`;
+  }
+
+  if (userPortalUrl) {
+    row.addComponents(
+      new ButtonBuilder()
+        .setLabel('Manage Personal Subscriptions')
+        .setStyle(ButtonStyle.Link)
+        .setURL(userPortalUrl)
+    );
+  }
+
+  if (row.components.length > 0) {
+    components.push(row);
+  } else if (!serverPortalUrl && !userPortalUrl) {
+    message += `\nNo active subscriptions found for you or this server.`;
+  }
+
+  return { content: message, components, ephemeral: true };
 }
 
 export async function dispatchGarminCommand(interaction) {

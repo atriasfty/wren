@@ -212,17 +212,22 @@ export async function handleAtriaCommands(message) {
         return true;
       }
       execute = async () => {
-        const res = await query("SELECT tenant_id, status_channel_id, security_role_id FROM tenants WHERE status_channel_id IS NOT NULL");
+        const res = await query("SELECT tenant_id, status_channel_id, last_active_channel_id, security_role_id FROM tenants WHERE (status_channel_id IS NOT NULL AND status_channel_id != '') OR (last_active_channel_id IS NOT NULL AND last_active_channel_id != '')");
         let sent = 0;
+        let failed = 0;
         for (const row of res.rows) {
           try {
-            const channel = await message.client.channels.fetch(row.status_channel_id);
+            const targetChannelId = (row.status_channel_id && row.status_channel_id !== '') ? row.status_channel_id : row.last_active_channel_id;
+            const channel = await message.client.channels.fetch(targetChannelId);
             const ping = row.security_role_id ? `<@&${row.security_role_id}> ` : '';
             await channel.send(`${ping}**ATRIA PLATFORM BROADCAST:**\n${msg}`);
             sent++;
-          } catch (e) {}
+          } catch (e) {
+            console.error(`[broadcast error] tenant ${row.tenant_id} channel ${row.status_channel_id}:`, e.message);
+            failed++;
+          }
         }
-        await message.reply(`Broadcast sent to ${sent} servers.`);
+        await message.reply(`Broadcast sent to ${sent} servers. (Failed: ${failed})`);
       };
     } else if (command === 'pause') {
       execute = async () => {

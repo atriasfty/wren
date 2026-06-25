@@ -210,6 +210,7 @@ export function attachMessageHandler(client) {
         imageUrls,
         actor,
       });
+      query('UPDATE tenants SET last_active_channel_id = $1 WHERE tenant_id = $2', [message.channel.id, message.guild.id]).catch(e => console.error('[message] Failed to update last active channel:', e));
     } catch (err) {
       console.error('[message] pipeline error:', err);
       try { await message.reply(publicErrorMessage()); } catch {}

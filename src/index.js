@@ -63,11 +63,20 @@ async function main() {
       if (interaction.customId === 'agree_tos') {
         try {
           await query('INSERT INTO user_agreements (discord_id) VALUES ($1) ON CONFLICT DO NOTHING', [interaction.user.id]);
-          await interaction.reply({ content: 'Thank you for agreeing to the Terms of Service and Privacy Policy! You can now use Wren.', ephemeral: true });
+          if (interaction.message.reference?.messageId) {
+            await interaction.reply({ content: 'Thank you for agreeing to the Terms of Service and Privacy Policy! Processing your original request...', ephemeral: true });
+            const originalMsg = await interaction.channel.messages.fetch(interaction.message.reference.messageId).catch(()=>null);
+            if (originalMsg) {
+              interaction.client.emit('messageCreate', originalMsg);
+            }
+          } else {
+            await interaction.reply({ content: 'Thank you for agreeing to the Terms of Service and Privacy Policy! You can now use Wren.', ephemeral: true });
+          }
         } catch (err) {
           console.error('[slash] button failed:', err);
           await interaction.reply({ content: 'Failed to record agreement.', ephemeral: true });
         }
+        return;
       }
     }
     if (

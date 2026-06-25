@@ -10,6 +10,8 @@ const MOD_TOOLS = new Set([
   'ban_player', 'kick_player', 'kill_player', 'tp_player', 'send_pm',
   'mod_player', 'unmod_player', 'admin_player', 'unadmin_player',
   'purge_messages', 'bring_all_staff', 'pm_all_staff', 'log_punishment',
+  'get_vehicles', 'get_wanted_players', 'get_player_location',
+  'get_server_briefing', 'get_player_profile',
 ]);
 
 function rejectTarget(username) {
@@ -134,6 +136,71 @@ export async function executeTool(tenantCtx, name, args, actor) {
         };
         break;
       }
+      case 'get_vehicles': {
+        const info = await prc.getServerInfo(tenantCtx);
+        result = { success: true, vehicles: info.Vehicles || [] };
+        break;
+      }
+      case 'get_wanted_players': {
+        const players = await prc.getOnlinePlayers(tenantCtx);
+        const wanted = players.filter(p => p.wantedStars > 0).map(p => ({
+          username: p.username,
+          wantedStars: p.wantedStars,
+          team: p.team
+        }));
+        result = { success: true, total: wanted.length, wantedPlayers: wanted };
+        break;
+      }
+      case 'get_player_location': {
+        const p = await prc.findPlayer(tenantCtx, args.username);
+        if (!p) return { success: false, error: `Player ${args.username} is not online` };
+        if (!p.location) return { success: false, error: `Location data not available for ${args.username}` };
+        result = { 
+          success: true, 
+          username: p.username, 
+          location: p.location 
+        };
+        break;
+      }
+      case 'get_server_briefing': {
+        const info = await prc.getServerInfo(tenantCtx);
+        const players = await prc.getOnlinePlayers(tenantCtx);
+        const killLogs = await prc.getKillLogs(tenantCtx, { limit: 10 });
+        const staffOnline = players.filter((p) => ['Server Moderator', 'Server Administrator', 'Server Owner'].includes(p.permission));
+        const wantedPlayers = players.filter((p) => p.wantedStars > 0);
+        const emergencyCalls = (info.EmergencyCalls || []).map((c) => ({
+          description: c.Description,
+          team: c.Team,
+          location: c.PositionDescriptor,
+          responders: c.Players?.length || 0,
+        }));
+        const modcalls = (info.ModCalls || []).slice(0, 5).map((m) => ({
+          caller: m.Caller?.split(':')[0],
+          timestamp: m.Timestamp,
+        }));
+        const queueSize = (info.Queue || []).length;
+        const vehicles = (info.Vehicles || []);
+        const govVehicles = vehicles.filter((v) => {
+          const ownerName = v.Owner?.split(':')[0];
+          const ownerPlayer = players.find((p) => p.username === ownerName);
+          return ownerPlayer && !['Server Moderator', 'Server Administrator', 'Server Owner'].includes(ownerPlayer.permission) && /police|sheriff|swat|fire|ems|ambulance/i.test(v.Name || '');
+        });
+        result = {
+          success: true,
+          playerCount: players.length,
+          maxPlayers: info.MaxPlayers,
+          queueSize,
+          staffOnline: staffOnline.map((s) => ({ username: s.username, team: s.team, location: s.location })),
+          wantedPlayers: wantedPlayers.map((p) => ({ username: p.username, stars: p.wantedStars, team: p.team, location: p.location })),
+          activeEmergencyCalls: emergencyCalls,
+          recentModcalls: modcalls,
+          recentKills: killLogs.map((k) => ({ killer: k.killerName, killed: k.killedName, timestamp: k.timestamp })),
+          totalVehicles: vehicles.length,
+          civiliansInGovVehicles: govVehicles.map((v) => ({ vehicle: v.Name, owner: v.Owner?.split(':')[0] })),
+          serverName: info.Name || 'ERLC Server',
+        };
+        break;
+      }
       case 'get_server_stats': {
         const [players, info, staff] = await Promise.all([
           prc.getOnlinePlayers(tenantCtx),
@@ -224,6 +291,79 @@ export async function executeTool(tenantCtx, name, args, actor) {
           isBanned: data.isBanned,
           hasVerifiedBadge: data.hasVerifiedBadge,
         };
+        break;
+      }
+      case 'get_player_profile': {
+        // --- online status & in-game data ---
+        const player = await prc.findPlayer(tenantCtx, args.username);
+        const profile = { success: true, query: args.username, online: !!player };
+        if (player) {
+          profile.username = player.username;
+          profile.team = player.team;
+          profile.permission = player.permission;
+          profile.callsign = player.callsign || 'None';
+          profile.wantedStars = player.wantedStars || 0;
+          profile.location = player.location || null;
+
+          // --- vehicle ownership ---
+          try {
+            const info = await prc.getServerInfo(tenantCtx);
+            const vehicles = (info.Vehicles || []).filter((v) => {
+              const ownerName = v.Owner?.split(':')[0];
+              return ownerName?.toLowerCase() === player.username.toLowerCase();
+            });
+            profile.vehicles = vehicles.map((v) => ({ name: v.Name, plate: v.Plate, texture: v.Texture, color: v.ColorName }));
+          } catch { profile.vehicles = []; }
+
+          // --- kill/death activity ---
+          try {
+            const killLogs = await prc.getKillLogs(tenantCtx);
+            const name = player.username.toLowerCase();
+            profile.recentKills = killLogs.filter((k) => k.killerName.toLowerCase() === name).slice(0, 5).map((k) => ({ killed: k.killedName, timestamp: k.timestamp }));
+            profile.recentDeaths = killLogs.filter((k) => k.killedName.toLowerCase() === name).slice(0, 5).map((k) => ({ killer: k.killerName, timestamp: k.timestamp }));
+          } catch { profile.recentKills = []; profile.recentDeaths = []; }
+
+          // --- command log activity ---
+          try {
+            const cmdLogs = await prc.getCommandLogs(tenantCtx);
+            const name = player.username.toLowerCase();
+            profile.recentCommands = cmdLogs.filter((c) => c.playerName.toLowerCase() === name).slice(0, 5).map((c) => ({ command: c.command, timestamp: c.timestamp }));
+          } catch { profile.recentCommands = []; }
+        }
+
+        // --- roblox account info ---
+        try {
+          const u = await prc.getRobloxUserId(tenantCtx, args.username);
+          if (u) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 8_000);
+            let res;
+            try { res = await fetch(`https://users.roblox.com/v1/users/${u.userId}`, { signal: controller.signal }); }
+            finally { clearTimeout(timer); }
+            if (res.ok) {
+              const data = await res.json();
+              profile.roblox = {
+                username: data.name,
+                displayName: data.displayName,
+                id: data.id,
+                accountCreated: data.created,
+                isBanned: data.isBanned,
+                hasVerifiedBadge: data.hasVerifiedBadge,
+              };
+            }
+          }
+        } catch { /* roblox lookup failed, not critical */ }
+
+        // --- POW punishment history ---
+        try {
+          const r = await pow.getPunishments(tenantCtx, args.username, null);
+          profile.punishments = {
+            total: r.punishments.length,
+            recent: r.punishments.slice(0, 5).map((p) => ({ type: p.type, reason: p.reason, date: p.createdAt, server: p.server })),
+          };
+        } catch { profile.punishments = { total: 0, recent: [] }; }
+
+        result = profile;
         break;
       }
       case 'analyze_player_activity': {

@@ -1,7 +1,8 @@
 import express from 'express';
 import { hashToken } from '../tenant/crypto.js';
-import { findTenantByTokenHash } from '../tenant/store.js';
+import { findTenantByTokenHash, updateSubscription } from '../tenant/store.js';
 import { resolveTenantById, setEncryptionKey } from '../tenant/resolve.js';
+import { Webhooks } from '@polar-sh/sdk/webhooks';
 import { runAssistantPipeline } from '../ai/pipeline.js';
 import { loadConfig } from '../config.js';
 
@@ -39,7 +40,10 @@ export async function createApiServer() {
   setEncryptionKey(cfg.tenantSecretEncKey);
 
   const app = express();
-  app.use(express.json({ limit: '256kb' }));
+  app.use(express.json({ 
+    limit: '256kb',
+    verify: (req, res, buf) => { req.rawBody = buf; }
+  }));
 
   app.use((req, res, next) => {
     res.setHeader('X-Powered-By', 'wren');
@@ -47,6 +51,39 @@ export async function createApiServer() {
   });
 
   app.get('/healthz', (_req, res) => res.json({ ok: true }));
+
+  app.post('/webhooks/polar', async (req, res) => {
+    try {
+      const webhookSecret = process.env.POLAR_WEBHOOK_SECRET;
+      if (!webhookSecret) return res.status(500).json({ error: 'Webhook secret not configured' });
+      
+      const payload = Webhooks.verify({
+        body: req.rawBody ? req.rawBody.toString('utf8') : JSON.stringify(req.body),
+        headers: req.headers,
+      }, webhookSecret);
+
+      const event = payload;
+      if (event.type === 'subscription.created' || event.type === 'subscription.updated') {
+        const sub = event.data;
+        const tenantId = sub.metadata?.tenantId;
+        const productId = sub.product_id;
+        let tier = 'free';
+        if (productId === process.env.POLAR_CORE_PRODUCT_ID) tier = 'core';
+        else if (productId === process.env.POLAR_PRO_PRODUCT_ID) tier = 'pro';
+        
+        if (tenantId) await updateSubscription(tenantId, tier, sub.id);
+      } else if (event.type === 'subscription.canceled') {
+        const sub = event.data;
+        const tenantId = sub.metadata?.tenantId;
+        if (tenantId) await updateSubscription(tenantId, 'free', null);
+      }
+      
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('[webhook] polar validation failed:', err.message);
+      res.status(400).json({ error: 'Webhook validation failed' });
+    }
+  });
 
   async function auth(req, res, next) {
     const auth = req.headers.authorization || '';

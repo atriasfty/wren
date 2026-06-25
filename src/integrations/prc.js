@@ -1,5 +1,5 @@
 function baseUrl(tenantCtx) {
-  return tenantCtx.tenant.prcBaseUrl || process.env.PRC_BASE_URL || 'https://api.erlc.gg/v1';
+  return tenantCtx.tenant.prcBaseUrl || process.env.PRC_BASE_URL || 'https://api.erlc.gg/v2';
 }
 
 function serverKey(tenantCtx) {
@@ -51,21 +51,24 @@ export async function getRobloxUserId(tenantCtx, username) {
 }
 
 export async function getOnlinePlayers(tenantCtx) {
-  const res = await fetch(`${baseUrl(tenantCtx)}/server/players`, {
-    headers: { 'Server-Key': serverKey(tenantCtx) },
-  });
-  if (!res.ok) return [];
-  const data = await res.json();
-  return data.map((player) => {
-    const [username, idStr] = player.Player.split(':');
-    return {
-      username,
-      userId: parseInt(idStr, 10),
-      permission: player.Permission,
-      team: player.Team,
-      callsign: player.Callsign,
-    };
-  });
+  try {
+    const data = await getServerInfo(tenantCtx);
+    if (!data.Players) return [];
+    return data.Players.map((player) => {
+      const [username, idStr] = player.Player.split(':');
+      return {
+        username,
+        userId: parseInt(idStr, 10),
+        permission: player.Permission,
+        team: player.Team,
+        callsign: player.Callsign,
+        location: player.Location,
+        wantedStars: player.WantedStars,
+      };
+    });
+  } catch (err) {
+    return [];
+  }
 }
 
 export async function findPlayer(tenantCtx, partialName) {
@@ -81,7 +84,8 @@ export async function findPlayer(tenantCtx, partialName) {
 }
 
 export async function getServerInfo(tenantCtx) {
-  const res = await fetch(`${baseUrl(tenantCtx)}/server`, {
+  const query = '?Players=true&Staff=true&JoinLogs=true&Queue=true&KillLogs=true&CommandLogs=true&ModCalls=true&EmergencyCalls=true&Vehicles=true';
+  const res = await fetch(`${baseUrl(tenantCtx)}/server${query}`, {
     headers: { 'Server-Key': serverKey(tenantCtx) },
   });
   if (!res.ok) throw new Error(`PRC error ${res.status}`);
@@ -89,53 +93,70 @@ export async function getServerInfo(tenantCtx) {
 }
 
 export async function getServerStaff(tenantCtx) {
-  const res = await fetch(`${baseUrl(tenantCtx)}/server/staff`, {
-    headers: { 'Server-Key': serverKey(tenantCtx) },
-  });
-  if (!res.ok) throw new Error(`PRC error ${res.status}`);
-  return res.json();
+  const data = await getServerInfo(tenantCtx);
+  return data.Staff || {};
 }
 
 export async function getCommandLogs(tenantCtx, { limit } = {}) {
-  const res = await fetch(`${baseUrl(tenantCtx)}/server/commandlogs`, {
-    headers: { 'Server-Key': serverKey(tenantCtx) },
-  });
-  if (!res.ok) return [];
-  const logs = await res.json();
-  if (typeof limit === 'number') return logs.slice(0, limit);
-  return logs;
+  try {
+    const data = await getServerInfo(tenantCtx);
+    if (!data.CommandLogs) return [];
+    const logs = data.CommandLogs.map((l) => ({
+      playerName: l.Player.split(':')[0],
+      command: l.Command,
+      timestamp: l.Timestamp,
+    }));
+    return typeof limit === 'number' ? logs.slice(0, limit) : logs;
+  } catch (err) {
+    return [];
+  }
 }
 
 export async function getJoinLogs(tenantCtx, { limit } = {}) {
-  const res = await fetch(`${baseUrl(tenantCtx)}/server/joinlogs`, {
-    headers: { 'Server-Key': serverKey(tenantCtx) },
-  });
-  if (!res.ok) return [];
-  const logs = await res.json();
-  if (typeof limit === 'number') return logs.slice(0, limit);
-  return logs;
+  try {
+    const data = await getServerInfo(tenantCtx);
+    if (!data.JoinLogs) return [];
+    const logs = data.JoinLogs.map((l) => ({
+      join: l.Join,
+      playerName: l.Player.split(':')[0],
+      timestamp: l.Timestamp,
+    }));
+    return typeof limit === 'number' ? logs.slice(0, limit) : logs;
+  } catch (err) {
+    return [];
+  }
 }
 
 export async function getKillLogs(tenantCtx, { limit } = {}) {
-  const res = await fetch(`${baseUrl(tenantCtx)}/server/killlogs`, {
-    headers: { 'Server-Key': serverKey(tenantCtx) },
-  });
-  if (!res.ok) return [];
-  const logs = await res.json();
-  if (typeof limit === 'number') return logs.slice(0, limit);
-  return logs;
+  try {
+    const data = await getServerInfo(tenantCtx);
+    if (!data.KillLogs) return [];
+    const logs = data.KillLogs.map((l) => ({
+      killerName: l.Killer.split(':')[0],
+      killedName: l.Killed.split(':')[0],
+      timestamp: l.Timestamp,
+    }));
+    return typeof limit === 'number' ? logs.slice(0, limit) : logs;
+  } catch (err) {
+    return [];
+  }
 }
 
 export async function getModcalls(tenantCtx, { sinceTs, limit } = {}) {
-  const res = await fetch(`${baseUrl(tenantCtx)}/server/modcalls`, {
-    headers: { 'Server-Key': serverKey(tenantCtx) },
-  });
-  if (!res.ok) return [];
-  const logs = await res.json();
-  let out = logs;
-  if (typeof sinceTs === 'number') out = out.filter((m) => (m.timestamp || 0) > sinceTs);
-  if (typeof limit === 'number') out = out.slice(0, limit);
-  return out;
+  try {
+    const data = await getServerInfo(tenantCtx);
+    if (!data.ModCalls) return [];
+    let out = data.ModCalls.map((l) => ({
+      caller: l.Caller.split(':')[0],
+      moderator: l.Moderator ? l.Moderator.split(':')[0] : null,
+      timestamp: l.Timestamp,
+    }));
+    if (typeof sinceTs === 'number') out = out.filter((m) => (m.timestamp || 0) > sinceTs);
+    if (typeof limit === 'number') out = out.slice(0, limit);
+    return out;
+  } catch (err) {
+    return [];
+  }
 }
 
 export async function banPlayer(tenantCtx, username, reason = 'No reason provided', duration = 0) {

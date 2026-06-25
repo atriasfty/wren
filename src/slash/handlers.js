@@ -217,6 +217,45 @@ export async function handleIngest(interaction) {
   return ephemeral(`Unknown subcommand: ${sub}`);
 }
 
+import { Polar } from '@polar-sh/sdk';
+
+export async function handleUpgrade(interaction) {
+  if (!checkManageGuild(interaction)) return ephemeral('You need ManageGuild permission for this.');
+  const { ctx } = await loadCtx(interaction);
+  if (!ctx) return ephemeral('Server not set up.');
+  const plan = interaction.options.getString('plan');
+  const productId = plan === 'core' ? process.env.POLAR_CORE_PRODUCT_ID : process.env.POLAR_PRO_PRODUCT_ID;
+  if (!productId) return ephemeral('Billing is not fully configured yet (missing product IDs).');
+
+  try {
+    const polar = new Polar({ accessToken: process.env.POLAR_ACCESS_TOKEN || '' });
+    const isSmallServer = interaction.guild.memberCount < 500;
+    const checkoutBody = {
+      productId,
+      successUrl: `https://discord.com/channels/${interaction.guild.id}`,
+      metadata: { tenantId: interaction.guild.id }
+    };
+    if (isSmallServer) {
+      checkoutBody.discountId = '5549ff1d-7616-45e7-ad0b-ba68937274a0';
+    }
+    const checkout = await polar.checkouts.custom.create(checkoutBody);
+    return ephemeral(`Here is your checkout link for the **${plan.toUpperCase()}** plan${isSmallServer ? ' (with your 25% discount applied!)' : ''}:\n${checkout.url}`);
+  } catch (err) {
+    console.error('Checkout error:', err);
+    return ephemeral('Failed to generate checkout link.');
+  }
+}
+
+export async function handleUsage(interaction) {
+  const { ctx } = await loadCtx(interaction);
+  if (!ctx) return ephemeral('Server not set up.');
+  const tier = ctx.tenant.subscriptionTier || 'free';
+  const used = ctx.tenant.monthlyMessageCount || 0;
+  const limits = { free: 10, core: 1000, pro: 5000 };
+  const limit = limits[tier] || 10;
+  return ephemeral(`You are currently on the **${tier.toUpperCase()}** plan.\nUsage this month: **${used} / ${limit}** messages.`);
+}
+
 export async function dispatchGarminCommand(interaction) {
   const group = interaction.options.getSubcommandGroup();
   const sub = interaction.options.getSubcommand();
@@ -224,6 +263,7 @@ export async function dispatchGarminCommand(interaction) {
   const readOnly = new Set([
     'config:view', 'policy:view', 'sources:list',
     'bans:list', 'memory:list', 'ingest:status',
+    ':usage'
   ]);
   const key = `${group ?? ''}:${sub ?? ''}`;
 
@@ -231,6 +271,10 @@ export async function dispatchGarminCommand(interaction) {
   if (group === null) {
     if (sub === 'setup') {
       reply = await handleSetup(interaction);
+    } else if (sub === 'upgrade') {
+      reply = await handleUpgrade(interaction);
+    } else if (sub === 'usage') {
+      reply = await handleUsage(interaction);
     } else {
       reply = ephemeral('Unknown command.');
     }

@@ -3,6 +3,7 @@
 ## Starting
 * [Welcome to Wren](README.md)
 * [Configuration Guide](configuration.md)
+* [Plans & Pricing](plans-and-pricing.md)
 * [Features Overview](features.md)
 
 ## Features

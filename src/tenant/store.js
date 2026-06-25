@@ -17,6 +17,11 @@ const DEFAULT_POLICY = {
   log_punishment: 'staff',
   save_memory_server: 'mod',
   save_memory_user: 'user',
+  get_vehicles: 'staff',
+  get_wanted_players: 'staff',
+  get_player_location: 'staff',
+  get_server_briefing: 'staff',
+  get_player_profile: 'staff',
   get_server_stats: 'user',
   list_online_players: 'user',
   check_if_online: 'user',
@@ -132,6 +137,10 @@ function rowToTenant(row, encKey) {
     responseStyle: row.response_style,
     raidAutoPunish: row.raid_auto_punish,
     extraConfig: row.extra_config || {},
+    subscriptionTier: row.subscription_tier || 'free',
+    monthlyMessageCount: row.monthly_message_count || 0,
+    billingCycleReset: row.billing_cycle_reset,
+    polarSubscriptionId: row.polar_subscription_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -409,5 +418,27 @@ export async function revokeApiToken({ tenantId, tokenHash }) {
   await query(
     `UPDATE tenant_api_tokens SET revoked_at = NOW() WHERE tenant_id = $1 AND token_hash = $2`,
     [tenantId, tokenHash],
+  );
+}
+
+export async function incrementMessageUsage(tenantId) {
+  const r = await query(
+    `UPDATE tenants SET 
+       monthly_message_count = CASE WHEN NOW() > billing_cycle_reset THEN 1 ELSE monthly_message_count + 1 END,
+       billing_cycle_reset = CASE WHEN NOW() > billing_cycle_reset THEN NOW() + interval '1 month' ELSE billing_cycle_reset END
+     WHERE tenant_id = $1 RETURNING monthly_message_count`,
+    [tenantId]
+  );
+  return r.rows[0]?.monthly_message_count || 0;
+}
+
+export async function updateSubscription(tenantId, tier, polarSubId = null) {
+  await query(
+    `UPDATE tenants SET 
+       subscription_tier = $1, 
+       polar_subscription_id = COALESCE($2, polar_subscription_id),
+       updated_at = NOW() 
+     WHERE tenant_id = $3`,
+    [tier, polarSubId, tenantId]
   );
 }

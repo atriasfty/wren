@@ -20,6 +20,13 @@ This makes it super easy to get help or just have a fun chat without leaving you
 
 Wren is specifically integrated with Emergency Response: Liberty County! To start talking to Wren in the game, all you have to do is open your chat and type `:pm wren` followed by your message. Wren will immediately receive it and reply to you!
 
+### In-Game Server Insights
+
+Wren provides deep server insights directly in Discord. Without leaving your chat, you can:
+* **Track Vehicles:** View a live list of all spawned vehicles, including their owners, plates, and liveries to catch griefers.
+* **Locate Players:** Get the exact street address, postal code, and coordinates of any online player.
+* **Monitor Wanted Levels:** Instantly pull a list of all players who currently have wanted stars.
+
 ## Configuration
 
 To set up the Roblox integration, server administrators can use the `/wren config view` command to open the configuration panel.

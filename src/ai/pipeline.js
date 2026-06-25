@@ -4,7 +4,7 @@ import { retrieveSources } from '../rag/retrieve.js';
 import { executeTool } from './executor.js';
 import { buildSystemPrompt } from './prompts.js';
 import { loadConfig } from '../config.js';
-import { addMemory } from '../tenant/store.js';
+import { addMemory, incrementMessageUsage } from '../tenant/store.js';
 import { actorKey } from './utils.js';
 
 let _client = null;
@@ -37,6 +37,15 @@ export async function runAssistantPipeline(tenantCtx, {
   isInGame = false,
   history = [],
 }) {
+  const tier = tenantCtx.tenant.subscriptionTier || 'free';
+  const limits = { free: 10, core: 1000, pro: 5000 };
+  const limit = limits[tier] || 10;
+  
+  const used = await incrementMessageUsage(tenantCtx.tenantId);
+  if (used > limit) {
+    return { text: `⚠️ You've hit your monthly message limit of **${limit}** for the **${tier.toUpperCase()}** plan. Use \`/wren upgrade\` to increase your limits!`, error: null };
+  }
+
   const sys = buildSystemPrompt(tenantCtx, { actorKey: actorKey(actor), actor });
 
   let ragContext = '';

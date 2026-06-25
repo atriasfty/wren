@@ -6,6 +6,10 @@ Hello there! Welcome to the official documentation for Wren. Wren is your smart,
 Wren is always learning and getting better!
 {% endhint %}
 
+{% hint style="info" %}
+**Want to invite Wren to your server?** Click [here to add Wren](http://atriasfty.org/add-wren) to your Discord!
+{% endhint %}
+
 ## What can Wren do?
 
 Wren isn't just a simple bot. It connects to your world and helps you out with all sorts of things. Whether you are chatting in Discord, playing games in Roblox, or trying to find information online, Wren is here to assist. 

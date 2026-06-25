@@ -139,3 +139,19 @@ DO $$ BEGIN
   ALTER TABLE tenants ADD COLUMN admin_role_id TEXT;
 EXCEPTION WHEN duplicate_column THEN NULL;
 END $$;
+DO $$ BEGIN
+  ALTER TABLE tenants ADD COLUMN subscription_tier TEXT NOT NULL DEFAULT 'free';
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE tenants ADD COLUMN monthly_message_count INT NOT NULL DEFAULT 0;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE tenants ADD COLUMN billing_cycle_reset TIMESTAMPTZ NOT NULL DEFAULT (NOW() + interval '1 month');
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE tenants ADD COLUMN polar_subscription_id TEXT;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;

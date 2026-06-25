@@ -40,6 +40,11 @@ These tools are available to anyone who can talk to Wren:
 ### Staff Role
 Everything above, plus:
 
+* **View spawned vehicles** and their owners
+* **Find player locations** (street address and coordinates)
+* **Monitor wanted players** and their star levels
+* **Get a full server briefing** — a complete situational overview including staff positions, wanted players, emergency calls, kills, and queue
+* **Profile a player** — a comprehensive background check combining in-game data, Roblox account info, vehicles, kill history, and punishment records
 * **Kick** a player from the ERLC server
 * **Kill** a player in-game
 * **Teleport** one player to another

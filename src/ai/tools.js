@@ -20,6 +20,11 @@ const TOOL_DEFS = [
   { name: 'summarize_chat', description: 'Return a recent message transcript from a Discord channel for summarization.', params: { type: 'object', properties: { channel_id: { type: 'string' }, message_count: { type: 'integer' } }, required: ['channel_id'] } },
   { name: 'purge_messages', description: 'Delete a number of recent messages from a Discord channel.', params: { type: 'object', properties: { channel_id: { type: 'string' }, count: { type: 'integer' } }, required: ['channel_id', 'count'] } },
   // ERLC info
+  { name: 'get_vehicles', description: 'List all vehicles currently spawned in the server, including owners and liveries.', params: { type: 'object', properties: {} } },
+  { name: 'get_wanted_players', description: 'List players who currently have wanted stars.', params: { type: 'object', properties: {} } },
+  { name: 'get_player_location', description: 'Get the street address, postal code, and coordinates of a player.', params: { type: 'object', properties: { username: { type: 'string' } }, required: ['username'] } },
+  { name: 'get_server_briefing', description: 'Get a full situational overview of the server right now: player count, staff positions, wanted players, emergency calls, recent kills, modcalls, queue, and suspicious vehicles. Use when someone asks "what\'s going on" or wants a status update.', params: { type: 'object', properties: {} } },
+  { name: 'get_player_profile', description: 'Get a comprehensive profile of a player: online status, location, wanted stars, vehicle, team, callsign, Roblox account age, kill/death history, command usage, and punishment history. Use when someone asks to "tell me about" a player or wants a full background check.', params: { type: 'object', properties: { username: { type: 'string' } }, required: ['username'] } },
   { name: 'get_server_stats', description: 'Get current server stats: players online, max, staff online.', params: { type: 'object', properties: {} } },
   { name: 'list_online_players', description: 'List all players currently online, grouped by rank.', params: { type: 'object', properties: {} } },
   { name: 'check_if_online', description: 'Check if a specific player is online.', params: { type: 'object', properties: { username: { type: 'string' } }, required: ['username'] } },

@@ -38,7 +38,12 @@ function buildCommandTree() {
                 .addChoices({ name: 'all', value: 'all' }, { name: 'channels', value: 'channels' }, { name: 'websites', value: 'websites' }, { name: 'documents', value: 'documents' })))
           .addSubcommand((s) => s.setName('status').setDescription('Show ingestion status'))
       )
-      .addSubcommand((s) => s.setName('setup').setDescription('Initialise Wren for this server')),
+      .addSubcommand((s) => s.setName('setup').setDescription('Initialise Wren for this server'))
+      .addSubcommand((s) =>
+        s.setName('upgrade').setDescription('Upgrade your server\'s Wren plan')
+          .addStringOption((o) => o.setName('plan').setDescription('The plan to upgrade to').setRequired(true).addChoices({ name: 'Core ($10/mo - 1k messages)', value: 'core' }, { name: 'Pro ($25/mo - 5k messages)', value: 'pro' }))
+      )
+      .addSubcommand((s) => s.setName('usage').setDescription('Check your current billing cycle usage')),
   ].map((c) => c.toJSON());
 }
 

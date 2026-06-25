@@ -21,3 +21,7 @@
 * [What is Wren Memory?](what-is-wren-memory.md)
 * [How Does Search Work?](how-does-search-work.md)
 * [Frequently Asked Questions](faq.md)
+
+## Legal
+
+* [Privacy Policy](privacy-policy.md)

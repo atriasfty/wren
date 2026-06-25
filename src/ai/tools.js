@@ -37,6 +37,7 @@ const TOOL_DEFS = [
   { name: 'save_memory', description: 'Save a fact to long-term memory. type=server for global rules (staff only), type=user for personal facts.', params: { type: 'object', properties: { content: { type: 'string' }, type: { type: 'string', enum: ['server', 'user'] } }, required: ['content', 'type'] } },
   // web
   { name: 'search_web', description: 'Search the internet for real-time information.', params: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } },
+  { name: 'read_webpage', description: 'Fetch and read the content of up to 5 web pages, converted to markdown for easy reading.', params: { type: 'object', properties: { urls: { type: 'array', items: { type: 'string' }, description: 'List of URLs to fetch (up to 5).' } }, required: ['urls'] } },
 ];
 
 export function getToolsForMistral() {

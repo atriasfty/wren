@@ -479,6 +479,32 @@ export async function executeTool(tenantCtx, name, args, actor) {
         result = { success: true, results };
         break;
       }
+      case 'read_webpage': {
+        const TurndownService = (await import('turndown')).default;
+        const turndownService = new TurndownService();
+        const results = [];
+        const urlsToFetch = (args.urls || []).slice(0, 5);
+        for (const url of urlsToFetch) {
+          try {
+            const resp = await fetch(url);
+            if (!resp.ok) {
+              results.push({ url, error: `HTTP ${resp.status} ${resp.statusText}` });
+              continue;
+            }
+            const html = await resp.text();
+            // Strip scripts and styles to prevent massive markdown conversions
+            const cleanHtml = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+                                  .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
+            const markdown = turndownService.turndown(cleanHtml);
+            // Truncate to save context window space (e.g., 8000 chars per page max)
+            results.push({ url, content: markdown.slice(0, 8000) });
+          } catch (e) {
+            results.push({ url, error: e.message });
+          }
+        }
+        result = { success: true, results };
+        break;
+      }
       default:
         return { success: false, error: `Unknown tool: ${name}` };
     }

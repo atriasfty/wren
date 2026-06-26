@@ -7,7 +7,8 @@ import {
   EndBehaviorType,
 } from '@discordjs/voice';
 import prism from 'prism-media';
-import { WaveFile } from 'wavefile';
+import wavefilePkg from 'wavefile';
+const { WaveFile } = wavefilePkg;
 import { env, pipeline } from '@xenova/transformers';
 import fs from 'fs/promises';
 import fsSync from 'fs';

@@ -66,7 +66,17 @@ export async function registerCommandsGlobally(client) {
 }
 
 export async function syncAllGuilds(client) {
-  // We now register globally instead of per-guild to ensure immediate syncing
-  // regardless of client.guilds.cache state at boot.
+  // Register globally for all new and existing guilds
   await registerCommandsGlobally(client);
+
+  // Clean up any legacy guild-specific commands to prevent "doubled" commands
+  const cfg = loadConfig();
+  const rest = new REST({ version: '10' }).setToken(cfg.discordToken);
+  for (const guild of client.guilds.cache.values()) {
+    try {
+      await rest.put(Routes.applicationGuildCommands(client.user.id, guild.id), { body: [] });
+    } catch (e) {
+      // Ignore if we lack access
+    }
+  }
 }

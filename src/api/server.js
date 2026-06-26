@@ -52,6 +52,7 @@ export async function createApiServer(client) {
   });
 
   app.get('/healthz', (_req, res) => res.json({ ok: true }));
+  app.get('/health', (_req, res) => res.json({ ok: true }));
 
   app.use('/api/mcp', createMcpRouter(client));
 

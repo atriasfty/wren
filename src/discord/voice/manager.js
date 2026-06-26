@@ -169,14 +169,18 @@ async function playCharm(player) {
   } catch {
     console.log('[voice] Generating charm noise...');
     const sampleRate = 44100;
-    const duration = 0.5;
+    const duration = 0.8;
     const samples = new Float64Array(sampleRate * duration);
-    // C6 and E6 sine wave chime with a sharp decay envelope
+    // Whimsical arpeggio: C6, E6, G6, C7 staggered with loud volume
     for (let i = 0; i < samples.length; i++) {
       const t = i / sampleRate;
-      const envelope = Math.exp(-t * 15); // Fast decay
-      const wave = (Math.sin(2 * Math.PI * 1046.50 * t) + Math.sin(2 * Math.PI * 1318.51 * t)) / 2;
-      samples[i] = wave * envelope * 32767 * 0.5; // Half volume
+      const note1 = t >= 0 ? Math.sin(2 * Math.PI * 1046.50 * t) * Math.exp(-t * 10) : 0;
+      const note2 = t >= 0.05 ? Math.sin(2 * Math.PI * 1318.51 * (t - 0.05)) * Math.exp(-(t - 0.05) * 10) : 0;
+      const note3 = t >= 0.1 ? Math.sin(2 * Math.PI * 1567.98 * (t - 0.1)) * Math.exp(-(t - 0.1) * 10) : 0;
+      const note4 = t >= 0.15 ? Math.sin(2 * Math.PI * 2093.00 * (t - 0.15)) * Math.exp(-(t - 0.15) * 10) : 0;
+      
+      const wave = (note1 + note2 + note3 + note4) / 4;
+      samples[i] = wave * 32767 * 0.95; // Much louder (95% volume instead of 50%)
     }
     const wav = new WaveFile();
     wav.fromScratch(1, sampleRate, '16', samples);
@@ -344,21 +348,16 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId) {
   const cfg = loadConfig();
   let finalTranscript;
   try {
-    const payload = {
-      model: 'openai/whisper-large-v3',
-      input_audio: {
-        data: wavBuffer.toString('base64'),
-        format: 'wav'
-      }
-    };
+    const formData = new FormData();
+    formData.append('model', 'openai/whisper-large-v3');
+    formData.append('file', new Blob([wavBuffer], { type: 'audio/wav' }), 'audio.wav');
 
     const res = await fetch('https://openrouter.ai/api/v1/audio/transcriptions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${cfg.openRouterApiKey}`,
-        'Content-Type': 'application/json'
+        'Authorization': `Bearer ${cfg.openRouterApiKey}`
       },
-      body: JSON.stringify(payload)
+      body: formData
     });
 
     if (!res.ok) {

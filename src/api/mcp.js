@@ -114,7 +114,7 @@ export function createMcpRouter(client) {
         }
       } catch (err) {
         console.error(`[mcp] Failed to resolve discord member ${discordId} in guild ${tenantId}:`, err);
-        throw new Error('Failed to verify Discord permissions. Are you still in the server?');
+        throw new Error('Failed to verify Discord permissions. Are you still in the server?', { cause: err });
       }
 
       try {

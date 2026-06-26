@@ -253,7 +253,7 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId) {
   console.log(`[voice] Wake word detected: "${text}" from user ${userId}`);
   
   // Check ToS Agreement
-  let hasConsented = false;
+  let hasConsented;
   try {
     const res = await query('SELECT 1 FROM user_agreements WHERE discord_id = $1', [userId]);
     hasConsented = res.rows.length > 0;

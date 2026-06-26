@@ -446,3 +446,10 @@ export async function updateSubscription(tenantId, tier, polarSubId = null, owne
     [tier, polarSubId, tenantId, ownerId, customerId]
   );
 }
+
+export async function logAudit(tenantId, actor, action, metadata = {}) {
+  await query(
+    'INSERT INTO audit_log (tenant_id, actor, action, metadata) VALUES ($1, $2, $3, $4)',
+    [tenantId, actor, action, metadata]
+  );
+}

@@ -22,27 +22,30 @@ import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'disc
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-let owwModel = null;
+let initPromise = null;
 async function getWakeWordModel() {
-  if (!owwModel) {
-    const keywordPath = path.join(__dirname, '..', '..', '..', 'hey_wren.onnx');
-    if (!fsSync.existsSync(keywordPath)) {
-      throw new Error(`Wake word model not found at ${keywordPath}. Please download it from openwakeword.com and place it in the project root.`);
-    }
-    
-    const modelsDir = path.join(__dirname, '..', '..', '..', 'models');
-    const { Model } = await import('openwakeword-js');
-    
-    owwModel = new Model({
-      wakewordModels: [keywordPath],
-      melspectrogramModelPath: path.join(modelsDir, 'melspectrogram.onnx'),
-      embeddingModelPath: path.join(modelsDir, 'embedding_model.onnx'),
-      inferenceFramework: 'onnx',
-      wasmPaths: path.join(__dirname, '..', '..', '..', 'node_modules', 'onnxruntime-web', 'dist/')
-    });
-    await owwModel.init();
+  if (!initPromise) {
+    initPromise = (async () => {
+      const keywordPath = path.join(__dirname, '..', '..', '..', 'hey_wren.onnx');
+      if (!fsSync.existsSync(keywordPath)) {
+        throw new Error(`Wake word model not found at ${keywordPath}. Please download it from openwakeword.com and place it in the project root.`);
+      }
+      
+      const modelsDir = path.join(__dirname, '..', '..', '..', 'models');
+      const { Model } = await import('openwakeword-js');
+      
+      const owwModel = new Model({
+        wakewordModels: [keywordPath],
+        melspectrogramModelPath: path.join(modelsDir, 'melspectrogram.onnx'),
+        embeddingModelPath: path.join(modelsDir, 'embedding_model.onnx'),
+        inferenceFramework: 'onnx',
+        wasmPaths: path.join(__dirname, '..', '..', '..', 'node_modules', 'onnxruntime-web', 'dist/')
+      });
+      await owwModel.init();
+      return owwModel;
+    })();
   }
-  return owwModel;
+  return initPromise;
 }
 
 const activeGuilds = new Map();

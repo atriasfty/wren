@@ -19,6 +19,7 @@ import { resolveTenantByGuildId } from '../../tenant/resolve.js';
 import { runAssistantPipeline } from '../../ai/pipeline.js';
 import { query } from '../../db/pool.js';
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import OpenAI, { toFile } from 'openai';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -305,28 +306,21 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId) {
   const wavBuffer = wav.toBuffer();
   
   const cfg = loadConfig();
+  const openai = new OpenAI({ apiKey: cfg.openRouterApiKey, baseURL: 'https://openrouter.ai/api/v1' });
   
-  // Prepare multipart form data manually or via FormData
-  const formData = new FormData();
-  formData.append('file', new Blob([wavBuffer], { type: 'audio/wav' }), 'audio.wav');
-  formData.append('model', 'groq/whisper-large-v3');
-  
-  const sttRes = await fetch('https://openrouter.ai/api/v1/audio/transcriptions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${cfg.openRouterApiKey}`
-    },
-    body: formData
-  });
-  
-  if (!sttRes.ok) {
-    console.error('[voice] STT failed:', await sttRes.text());
+  let finalTranscript;
+  try {
+    const audioFile = await toFile(Buffer.from(wavBuffer), 'audio.wav', { type: 'audio/wav' });
+    const sttRes = await openai.audio.transcriptions.create({
+      file: audioFile,
+      model: 'groq/whisper-large-v3'
+    });
+    finalTranscript = sttRes.text;
+  } catch (err) {
+    console.error('[voice] STT failed:', err);
     state.isSpeaking = false;
     return;
   }
-  
-  const sttData = await sttRes.json();
-  const finalTranscript = sttData.text;
   console.log(`[voice] Final Transcript: "${finalTranscript}"`);
   
   if (!finalTranscript || finalTranscript.trim() === '') {

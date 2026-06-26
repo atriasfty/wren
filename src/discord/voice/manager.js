@@ -12,7 +12,7 @@ const { WaveFile } = wavefilePkg;
 import fs from 'fs/promises';
 import fsSync from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { loadConfig } from '../../config.js';
 import { resolveTenantByGuildId } from '../../tenant/resolve.js';
 import { runAssistantPipeline } from '../../ai/pipeline.js';
@@ -35,10 +35,11 @@ async function getWakeWordModel() {
       const { Model } = await import('openwakeword-js');
       
       const owwModel = new Model({
-        wakewordModels: [keywordPath],
-        melspectrogramModelPath: path.join(modelsDir, 'melspectrogram.onnx'),
-        embeddingModelPath: path.join(modelsDir, 'embedding_model.onnx'),
+        wakewordModels: [pathToFileURL(keywordPath).href],
+        melspectrogramModelPath: pathToFileURL(path.join(modelsDir, 'melspectrogram.onnx')).href,
+        embeddingModelPath: pathToFileURL(path.join(modelsDir, 'embedding_model.onnx')).href,
         inferenceFramework: 'onnx',
+        // onnxruntime-web may need standard paths, but it's safe to provide the path
         wasmPaths: path.join(__dirname, '..', '..', '..', 'node_modules', 'onnxruntime-web', 'dist/')
       });
       await owwModel.init();

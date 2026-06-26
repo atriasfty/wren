@@ -5,6 +5,7 @@ import { resolveTenantById, setEncryptionKey } from '../tenant/resolve.js';
 import { validateEvent } from '@polar-sh/sdk/webhooks';
 import { runAssistantPipeline } from '../ai/pipeline.js';
 import { loadConfig } from '../config.js';
+import { createMcpRouter } from './mcp.js';
 
 const SCOPES = new Set(['chat', 'mod']);
 
@@ -51,6 +52,8 @@ export async function createApiServer(client) {
   });
 
   app.get('/healthz', (_req, res) => res.json({ ok: true }));
+
+  app.use('/api/mcp', createMcpRouter(client));
 
   app.post('/webhooks/polar', async (req, res) => {
     try {

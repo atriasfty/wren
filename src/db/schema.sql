@@ -182,3 +182,14 @@ CREATE TABLE IF NOT EXISTS global_state (
   key TEXT PRIMARY KEY,
   value JSONB NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS user_mcp_tokens (
+  token_id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id   TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+  discord_id  TEXT NOT NULL,
+  token_hash  TEXT NOT NULL UNIQUE,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_used_at TIMESTAMPTZ,
+  revoked_at  TIMESTAMPTZ,
+  UNIQUE(tenant_id, discord_id)
+);

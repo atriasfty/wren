@@ -229,6 +229,47 @@ export async function handleAtriaCommands(message) {
         }
         await message.reply(`Broadcast sent to ${sent} servers. (Failed: ${failed})`);
       };
+    } else if (command === 'wipe') {
+      const type = args[1]?.toLowerCase();
+      const targetId = args[2];
+      
+      if (!type || !targetId) {
+        await message.reply('Usage: `$atria wipe <server|user> <id>`');
+        return true;
+      }
+      
+      if (type === 'server') {
+        execute = async () => {
+          const res = await query('DELETE FROM tenants WHERE tenant_id = $1 RETURNING *', [targetId]);
+          if (res.rowCount > 0) {
+            await message.reply(`Server ${targetId} and all associated data have been wiped.`);
+          } else {
+            await message.reply(`Server ${targetId} not found.`);
+          }
+        };
+      } else if (type === 'user') {
+        execute = async () => {
+          await query('DELETE FROM user_agreements WHERE discord_id = $1', [targetId]);
+          await query('DELETE FROM global_bans WHERE discord_id = $1', [targetId]);
+          await query('DELETE FROM tenant_memory WHERE user_key = $1', [`discord:${targetId}`]);
+          await message.reply(`User ${targetId}'s ToS agreement, global bans, and memories have been wiped.`);
+        };
+      } else {
+        await message.reply('Invalid wipe type. Use "server" or "user".');
+        return true;
+      }
+    } else if (command === 'bypass') {
+      const targetServerId = args[1];
+      if (!targetServerId) {
+        await message.reply('Usage: `$atria bypass <server_id>`');
+        return true;
+      }
+      execute = async () => {
+        const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+        const value = { tenantId: targetServerId, expiresAt };
+        await query("INSERT INTO global_state (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2", [`bypass:${message.author.id}`, JSON.stringify(value)]);
+        await message.reply(`Bypass granted for server **${targetServerId}** for 15 minutes. You can now use \`/wren config\` in that server.`);
+      };
     } else if (command === 'pause') {
       execute = async () => {
         await query("INSERT INTO global_state (key, value) VALUES ('paused', $1) ON CONFLICT (key) DO UPDATE SET value = $1", [JSON.stringify({ paused: true })]);

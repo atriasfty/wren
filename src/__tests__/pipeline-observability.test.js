@@ -28,6 +28,11 @@ vi.mock('../config.js', () => ({
   })
 }));
 
+vi.mock('../tenant/store.js', () => ({
+  incrementMessageUsage: vi.fn().mockResolvedValue(1),
+  addMemory: vi.fn(),
+}));
+
 describe('observability tracing in assistant pipeline', () => {
   let memoryExporter;
   let provider;

@@ -19,6 +19,7 @@ Here are some cool things Wren can do for you:
 * **Remember things:** Wren can learn facts about you and the rules of your server.
 * **Connect to Roblox:** You can talk to Wren directly through private messages in games like ERLC!
 * **Search the web:** If Wren doesn't know something, it can look it up for you.
+* **Bring Your Own AI (MCP):** Connect powerful desktop agents like Claude Desktop directly to your server using the Model Context Protocol. This innovative feature gives your personal AI the exact same access to manage and moderate your community as the Discord bot itself.
 
 ## Getting Started
 

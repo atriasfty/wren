@@ -1,4 +1,4 @@
-const TOOL_DEFS = [
+export const TOOL_DEFS = [
   // moderation
   { name: 'ban_player', description: 'Ban a player from the ERLC server. Use only with explicit authorization and a clear reason.', params: { type: 'object', properties: { username: { type: 'string' }, reason: { type: 'string' }, duration: { type: 'number', description: 'Minutes. 0 = permanent.' } }, required: ['username', 'reason'] } },
   { name: 'kick_player', description: 'Kick a player from the ERLC server.', params: { type: 'object', properties: { username: { type: 'string' }, reason: { type: 'string' } }, required: ['username', 'reason'] } },

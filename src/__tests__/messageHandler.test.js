@@ -23,6 +23,13 @@ vi.mock('../tenant/store.js', () => ({
   createTenant: vi.fn().mockResolvedValue(),
 }));
 
+vi.mock('../db/pool.js', () => ({
+  query: vi.fn(async (q) => {
+    if (q.includes('user_agreements')) return { rows: [{ "1": 1 }] };
+    return { rows: [] };
+  }),
+}));
+
 // We mock guards.js with the path relative to the test file
 vi.mock('../discord/guards.js', () => ({
   enforceBan: (...args) => mocks.enforceBan(...args),

@@ -66,7 +66,7 @@ export async function buildMainPanel(tenantId) {
 
   const embed = new EmbedBuilder()
     .setTitle(`Wren configuration — ${t.displayName}`)
-    .setColor(0x5865f2)
+    .setColor(0x0bb0d1)
     .setDescription('Pick a category below to view and edit your settings.')
     .addFields(
       { name: 'Identity',  value: `Display name: **${t.displayName}**\nBot name: **${t.botDisplayName}**\nIn-game handle: **${t.inGameHandle}**`, inline: false },
@@ -95,7 +95,7 @@ export async function buildCategoryPanel(tenantId, category) {
   const fields = Object.entries(CONFIG_FIELDS).filter(([, f]) => f.category === category);
   const embed = new EmbedBuilder()
     .setTitle(`${category} — ${t.displayName}`)
-    .setColor(0x5865f2)
+    .setColor(0x0bb0d1)
     .setDescription('Pick a setting below to edit it. Your changes save when you submit the form.')
     .addFields(fields.map(([key, f]) => ({
       name: f.label,
@@ -131,7 +131,7 @@ export async function buildValueSelectPanel(tenantId, fieldKey) {
 
   const embed = new EmbedBuilder()
     .setTitle(field.label)
-    .setColor(0x5865f2)
+    .setColor(0x0bb0d1)
     .setDescription('Pick a value below. The change saves immediately.');
 
   let picker;

@@ -342,31 +342,23 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId) {
   const wavBuffer = wav.toBuffer();
   
   const cfg = loadConfig();
-  
   let finalTranscript;
   try {
-    const boundary = '----OpenRouterFormBoundary' + Math.random().toString(36).substring(2);
-    const header = Buffer.from(
-      `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="file"; filename="audio.wav"\r\n` +
-      `Content-Type: audio/wav\r\n\r\n`
-    );
-    const footer = Buffer.from(
-      `\r\n--${boundary}\r\n` + 
-      `Content-Disposition: form-data; name="model"\r\n\r\n` +
-      `groq/whisper-large-v3\r\n` +
-      `--${boundary}--\r\n`
-    );
-
-    const payload = Buffer.concat([header, Buffer.from(wavBuffer), footer]);
+    const payload = {
+      model: 'openai/whisper-large-v3',
+      input_audio: {
+        data: wavBuffer.toString('base64'),
+        format: 'wav'
+      }
+    };
 
     const res = await fetch('https://openrouter.ai/api/v1/audio/transcriptions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${cfg.openRouterApiKey}`,
-        'Content-Type': `multipart/form-data; boundary=${boundary}`
+        'Content-Type': 'application/json'
       },
-      body: new Uint8Array(payload)
+      body: JSON.stringify(payload)
     });
 
     if (!res.ok) {

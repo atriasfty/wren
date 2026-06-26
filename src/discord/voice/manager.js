@@ -9,7 +9,6 @@ import {
 import prism from 'prism-media';
 import wavefilePkg from 'wavefile';
 const { WaveFile } = wavefilePkg;
-import { env, pipeline } from '@xenova/transformers';
 import fs from 'fs/promises';
 import fsSync from 'fs';
 import path from 'path';
@@ -19,23 +18,31 @@ import { resolveTenantByGuildId } from '../../tenant/resolve.js';
 import { runAssistantPipeline } from '../../ai/pipeline.js';
 import { query } from '../../db/pool.js';
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
-import OpenAI, { toFile } from 'openai';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Disable local cache for Transformers if desired, but we want caching so it only downloads once
-env.cacheDir = path.join(__dirname, '..', '..', '..', '.cache', 'transformers');
-env.allowLocalModels = true;
-
-// Lazy-load the wake word model to avoid blocking boot
-let wakeWordModelPromise = null;
-function getWakeWordModel() {
-  if (!wakeWordModelPromise) {
-    console.log('[voice] Loading local wake-word model (Xenova/whisper-tiny.en)...');
-    wakeWordModelPromise = pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny.en', { quantized: true });
+let owwModel = null;
+async function getWakeWordModel() {
+  if (!owwModel) {
+    const keywordPath = path.join(__dirname, '..', '..', '..', 'hey_wren.onnx');
+    if (!fsSync.existsSync(keywordPath)) {
+      throw new Error(`Wake word model not found at ${keywordPath}. Please download it from openwakeword.com and place it in the project root.`);
+    }
+    
+    const modelsDir = path.join(__dirname, '..', '..', '..', 'models');
+    const { Model } = await import('openwakeword-js');
+    
+    owwModel = new Model({
+      wakewordModels: [keywordPath],
+      melspectrogramModelPath: path.join(modelsDir, 'melspectrogram.onnx'),
+      embeddingModelPath: path.join(modelsDir, 'embedding_model.onnx'),
+      inferenceFramework: 'onnx',
+      wasmPaths: path.join(__dirname, '..', '..', '..', 'node_modules', 'onnxruntime-web', 'dist/')
+    });
+    await owwModel.init();
   }
-  return wakeWordModelPromise;
+  return owwModel;
 }
 
 const activeGuilds = new Map();
@@ -232,26 +239,35 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId) {
   const state = activeGuilds.get(guildId);
   if (!state) return;
 
-  // 1. Convert PCM to Float32Array for local Xenova Whisper Tiny
+  // 1. Process PCM chunks with OpenWakeWord for wake-word detection
+  const oww = await getWakeWordModel();
+  const frameLength = 1280; // openwakeword-js chunk size
+  
   // pcmBuffer is 16-bit little endian, 16000Hz, mono.
-  const float32Array = new Float32Array(pcmBuffer.length / 2);
-  for (let i = 0; i < pcmBuffer.length / 2; i++) {
-    const int16 = pcmBuffer.readInt16LE(i * 2);
-    float32Array[i] = int16 / 32768.0;
+  const int16Array = new Int16Array(pcmBuffer.buffer, pcmBuffer.byteOffset, pcmBuffer.length / 2);
+  let detected = false;
+  
+  for (let i = 0; i < int16Array.length - frameLength; i += frameLength) {
+    const frame = int16Array.subarray(i, i + frameLength);
+    const scores = await oww.predict(frame);
+    
+    for (const score of Object.values(scores)) {
+      if (score > 0.5) {
+        detected = true;
+        break;
+      }
+    }
+    if (detected) break;
   }
 
-  const transcriber = await getWakeWordModel();
-  const localResult = await transcriber(float32Array, { language: 'english' });
-  const text = localResult.text.toLowerCase();
-  
-  if (!text.includes('wren') && !text.includes('ren')) {
+  if (!detected) {
     // Not addressed to Wren
     return;
   }
   
   // 2. We heard the wake word! Let's lock the state so Wren doesn't listen to itself.
   state.isSpeaking = true;
-  console.log(`[voice] Wake word detected: "${text}" from user ${userId}`);
+  console.log(`[voice] Wake word detected: "hey wren" from user ${userId}`);
   
   // Check ToS Agreement
   let hasConsented;
@@ -306,16 +322,38 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId) {
   const wavBuffer = wav.toBuffer();
   
   const cfg = loadConfig();
-  const openai = new OpenAI({ apiKey: cfg.openRouterApiKey, baseURL: 'https://openrouter.ai/api/v1' });
   
   let finalTranscript;
   try {
-    const audioFile = await toFile(Buffer.from(wavBuffer), 'audio.wav', { type: 'audio/wav' });
-    const sttRes = await openai.audio.transcriptions.create({
-      file: audioFile,
-      model: 'groq/whisper-large-v3'
+    const boundary = '----OpenRouterFormBoundary' + Math.random().toString(36).substring(2);
+    const header = Buffer.from(
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="file"; filename="audio.wav"\r\n` +
+      `Content-Type: audio/wav\r\n\r\n`
+    );
+    const footer = Buffer.from(
+      `\r\n--${boundary}\r\n` + 
+      `Content-Disposition: form-data; name="model"\r\n\r\n` +
+      `groq/whisper-large-v3\r\n` +
+      `--${boundary}--\r\n`
+    );
+
+    const payload = Buffer.concat([header, Buffer.from(wavBuffer), footer]);
+
+    const res = await fetch('https://openrouter.ai/api/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${cfg.openRouterApiKey}`,
+        'Content-Type': `multipart/form-data; boundary=${boundary}`
+      },
+      body: new Uint8Array(payload)
     });
-    finalTranscript = sttRes.text;
+
+    if (!res.ok) {
+      throw new Error(`OpenRouter STT failed: ${res.status} ${await res.text()}`);
+    }
+    const data = await res.json();
+    finalTranscript = data.text;
   } catch (err) {
     console.error('[voice] STT failed:', err);
     state.isSpeaking = false;

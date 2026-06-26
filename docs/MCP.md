@@ -8,6 +8,8 @@ By adding Wren as an MCP server, your desktop AI inherits all of the intelligenc
 
 ## Installation
 
+> **Important Prerequisite:** Before using this feature, make sure Wren is completely set up in your Discord server. Wren needs to be fully connected to your game server so that your AI can actually see what's happening in-game and take actions.
+
 In your Discord server, run the slash command:
 `/wren mcp`
 

@@ -22,6 +22,22 @@ import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'disc
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Node.js undici fetch() does not support file:// protocol.
+// We polyfill it here so onnxruntime-web can fetch local model files.
+const originalFetch = globalThis.fetch;
+globalThis.fetch = async (url, options) => {
+  if (typeof url === 'string' && url.startsWith('file://')) {
+    const filePath = fileURLToPath(url);
+    const data = await fs.readFile(filePath);
+    return new globalThis.Response(data);
+  } else if (url instanceof globalThis.URL && url.protocol === 'file:') {
+    const filePath = fileURLToPath(url);
+    const data = await fs.readFile(filePath);
+    return new globalThis.Response(data);
+  }
+  return originalFetch(url, options);
+};
+
 let initPromise = null;
 async function getWakeWordModel() {
   if (!initPromise) {

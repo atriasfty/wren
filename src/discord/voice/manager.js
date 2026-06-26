@@ -340,24 +340,30 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId) {
   // Play the charm noise
   await playCharm(state.player);
 
-  // 3. Package PCM into a WAV file to send to OpenRouter (Groq Whisper)
+  // 3. Package PCM into a WAV file to send to OpenRouter
   const wav = new WaveFile();
-  wav.fromScratch(1, 16000, '16', pcmBuffer);
-  const wavBuffer = wav.toBuffer();
+  const samples = new Int16Array(pcmBuffer.buffer, pcmBuffer.byteOffset, pcmBuffer.byteLength / 2);
+  wav.fromScratch(1, 16000, '16', samples);
+  const wavBytes = wav.toBuffer();
   
   const cfg = loadConfig();
   let finalTranscript;
   try {
-    const formData = new FormData();
-    formData.append('model', 'openai/whisper-large-v3');
-    formData.append('file', new Blob([wavBuffer], { type: 'audio/wav' }), 'audio.wav');
+    const payload = {
+      model: 'openai/whisper-large-v3',
+      input_audio: {
+        data: wavBytes.toString('base64'),
+        format: 'wav'
+      }
+    };
 
     const res = await fetch('https://openrouter.ai/api/v1/audio/transcriptions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${cfg.openRouterApiKey}`
+        'Authorization': `Bearer ${cfg.openRouterApiKey}`,
+        'Content-Type': 'application/json'
       },
-      body: formData
+      body: JSON.stringify(payload)
     });
 
     if (!res.ok) {

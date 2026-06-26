@@ -136,6 +136,15 @@ export async function handleAtriaCommands(message) {
             await message.reply(`User ID ${targetId} was not in the consent database.`);
           }
         };
+      } else if (action === 'give') {
+        if (!targetId) {
+          await message.reply('Missing user ID.');
+          return true;
+        }
+        execute = async () => {
+          await query('INSERT INTO user_agreements (discord_id) VALUES ($1) ON CONFLICT DO NOTHING', [targetId]);
+          await message.reply(`Manually marked user ID ${targetId} as having consented to ToS.`);
+        };
       } else {
         const checkTargetId = args[1];
         if (!checkTargetId) {

@@ -55,6 +55,7 @@ export function buildSystemPrompt(tenantCtx, { actorKey = null, actor = null, ch
   const parts = [
     `You are ${tenantCtx.tenant.botDisplayName}, a helpful assistant for the ${tenantCtx.tenant.displayName} Discord community and its ERLC server.`,
     `You are currently running on the following AI model: ${cfg.openRouterModel}`,
+    mode === 'voice' ? `\nVOICE MODE ACTIVE:\nKeep your responses extremely short, concise, and conversational. Do not output long monologues, lists, or markdown tables. Your response will be spoken aloud to the user in a voice channel. Limit your response to 1-3 short sentences.` : '',
     identityBlock(actor),
     serverInfoBlock(tenantCtx),
     sourcesBlock(tenantCtx),

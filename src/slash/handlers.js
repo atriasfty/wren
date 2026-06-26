@@ -29,6 +29,7 @@ import {
   applyFieldEdit,
   CONFIG_FIELDS,
 } from './configPanel.js';
+import { handleVoice } from '../discord/voice/manager.js';
 
 const CONFIG_CATEGORY_FOR_FIELD = Object.fromEntries(
   Object.entries(CONFIG_FIELDS).map(([k, f]) => [k, f.category])
@@ -387,6 +388,7 @@ export async function dispatchGarminCommand(interaction) {
         case 'bans': reply = await handleBans(interaction); break;
         case 'memory': reply = await handleMemory(interaction); break;
         case 'ingest': reply = await handleIngest(interaction); break;
+        case 'voice': reply = await handleVoice(interaction); break;
         default: reply = ephemeral(`Unknown group: ${group}`);
       }
     }

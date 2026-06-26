@@ -37,6 +37,7 @@ export async function runAssistantPipeline(tenantCtx, {
   channelId = null,
   isInGame = false,
   history = [],
+  mode = 'discord',
 }) {
   const tier = tenantCtx.tenant.subscriptionTier || 'free';
   const limits = { free: 10, core: 1000, pro: 5000 };
@@ -47,7 +48,7 @@ export async function runAssistantPipeline(tenantCtx, {
     return { text: `⚠️ You've hit your monthly message limit of **${limit}** for the **${tier.toUpperCase()}** plan. Use \`/wren upgrade\` to increase your limits!`, error: null };
   }
 
-  const sys = buildSystemPrompt(tenantCtx, { actorKey: actorKey(actor), actor, channelId });
+  const sys = buildSystemPrompt(tenantCtx, { actorKey: actorKey(actor), actor, channelId, mode });
 
   let ragContext = '';
   try {

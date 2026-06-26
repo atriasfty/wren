@@ -45,7 +45,12 @@ function buildCommandTree() {
       )
       .addSubcommand((s) => s.setName('usage').setDescription('Check your current billing cycle usage'))
       .addSubcommand((s) => s.setName('manage').setDescription('Manage your server\'s Wren subscription'))
-      .addSubcommand((s) => s.setName('mcp').setDescription('Generate an MCP API key and connection instructions')),
+      .addSubcommand((s) => s.setName('mcp').setDescription('Generate an MCP API key and connection instructions'))
+      .addSubcommandGroup((g) =>
+        g.setName('voice').setDescription('Manage Wren\'s voice channel presence')
+          .addSubcommand((s) => s.setName('join').setDescription('Command Wren to join your current voice channel'))
+          .addSubcommand((s) => s.setName('leave').setDescription('Command Wren to leave the voice channel'))
+      ),
   ].map((c) => c.toJSON());
 }
 

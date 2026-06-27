@@ -176,6 +176,36 @@ async function playCharm(player) {
   player.play(resource);
 }
 
+async function playGotItCharm(player) {
+  const charmPath = path.join(__dirname, '..', '..', '..', 'data', 'charm_down.wav');
+  try {
+    await fs.access(charmPath);
+  } catch {
+    console.log('[voice] Generating got-it charm noise...');
+    const sampleRate = 44100;
+    const duration = 0.8;
+    const samples = new Float64Array(sampleRate * duration);
+    // Downward arpeggio: C7, G6, E6, C6 staggered with loud volume
+    for (let i = 0; i < samples.length; i++) {
+      const t = i / sampleRate;
+      const note1 = t >= 0 ? Math.sin(2 * Math.PI * 2093.00 * t) * Math.exp(-t * 10) : 0;
+      const note2 = t >= 0.05 ? Math.sin(2 * Math.PI * 1567.98 * (t - 0.05)) * Math.exp(-(t - 0.05) * 10) : 0;
+      const note3 = t >= 0.1 ? Math.sin(2 * Math.PI * 1318.51 * (t - 0.1)) * Math.exp(-(t - 0.1) * 10) : 0;
+      const note4 = t >= 0.15 ? Math.sin(2 * Math.PI * 1046.50 * (t - 0.15)) * Math.exp(-(t - 0.15) * 10) : 0;
+      
+      const wave = (note1 + note2 + note3 + note4) / 4;
+      samples[i] = wave * 32767 * 0.95; // Much louder (95% volume instead of 50%)
+    }
+    const wav = new WaveFile();
+    wav.fromScratch(1, sampleRate, '16', samples);
+    await fs.mkdir(path.dirname(charmPath), { recursive: true });
+    await fs.writeFile(charmPath, wav.toBuffer());
+  }
+  
+  const resource = createAudioResource(charmPath);
+  player.play(resource);
+}
+
 async function playUnconsented(player) {
   const unconsentedPath = path.join(__dirname, '..', '..', '..', 'data', 'unconsented.mp3');
   try {
@@ -235,7 +265,7 @@ function setupVoiceReceiver(connection, guildId, discordChannelId) {
       if (pcmBuffer.length < 48000 * 2 * 0.5) return;
       
       try {
-        await processAudio(pcmBuffer, userId, guildId, discordChannelId);
+        await processAudio(pcmBuffer, userId, guildId, discordChannelId, connection);
       } catch (err) {
         console.error('[voice] Audio processing failed:', err);
       }
@@ -243,48 +273,90 @@ function setupVoiceReceiver(connection, guildId, discordChannelId) {
   });
 }
 
-async function processAudio(pcmBuffer, userId, guildId, discordChannelId) {
+async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connection) {
   const state = activeGuilds.get(guildId);
   if (!state) return;
 
   // pcmBuffer is 16-bit little endian, 48000Hz, mono.
   const int16Array = new Int16Array(pcmBuffer.buffer, pcmBuffer.byteOffset, pcmBuffer.length / 2);
   
-  // Downsample 48kHz to 16kHz for OpenWakeWord via 3:1 decimation
-  const pcm16k = new Int16Array(Math.floor(int16Array.length / 3));
-  for (let i = 0; i < pcm16k.length; i++) {
-    pcm16k[i] = int16Array[i * 3];
-  }
-
-  // 1. Process PCM chunks with OpenWakeWord for wake-word detection
-  const oww = await getWakeWordModel();
-  const frameLength = 1280; // openwakeword-js chunk size
-  let detected = false;
-  
-  for (let i = 0; i < pcm16k.length - frameLength; i += frameLength) {
-    const frame = pcm16k.subarray(i, i + frameLength);
-    const scores = await oww.predict(frame);
-    
-    for (const score of Object.values(scores)) {
-      if (score > 0.5) {
-        detected = true;
-        break;
-      }
+  if (!state.isWaitingForPrompt) {
+    // Stage 1: Waiting for wake word
+    // Downsample 48kHz to 16kHz for OpenWakeWord via 3:1 decimation
+    const pcm16k = new Int16Array(Math.floor(int16Array.length / 3));
+    for (let i = 0; i < pcm16k.length; i++) {
+      pcm16k[i] = int16Array[i * 3];
     }
-    if (detected) break;
-  }
 
-  if (!detected) {
-    // Not addressed to Wren
+    const oww = await getWakeWordModel();
+    const frameLength = 1280; // openwakeword-js chunk size
+    let detected = false;
+    
+    for (let i = 0; i < pcm16k.length - frameLength; i += frameLength) {
+      const frame = pcm16k.subarray(i, i + frameLength);
+      const scores = await oww.predict(frame);
+      
+      for (const score of Object.values(scores)) {
+        if (score > 0.5) {
+          detected = true;
+          break;
+        }
+      }
+      if (detected) break;
+    }
+
+    if (!detected) {
+      // Not addressed to Wren
+      return;
+    }
+    
+    // Clear the openwakeword internal buffers to prevent double chimes
+    oww.reset();
+    
+    // We heard the wake word!
+    console.log(`[voice] Wake word detected: "hey wren" from user ${userId}`);
+    
+    // Play the first charm
+    await playCharm(state.player);
+    
+    // Enter stage 2: listening for the prompt from this user
+    state.isWaitingForPrompt = true;
+    state.listeningToUser = userId;
+    
+    // Clear any existing timeout
+    if (state.promptTimeout) clearTimeout(state.promptTimeout);
+    
+    // Auto-reset if the user doesn't say anything for 10 seconds
+    state.promptTimeout = setTimeout(() => {
+      if (state.isWaitingForPrompt && state.listeningToUser === userId) {
+        state.isWaitingForPrompt = false;
+        state.listeningToUser = null;
+        console.log(`[voice] Prompt timeout for user ${userId}`);
+      }
+    }, 10000);
+    
     return;
   }
   
-  // Clear the openwakeword internal buffers to prevent double chimes
-  oww.reset();
+  // Stage 2: We are waiting for a prompt.
+  // Ensure it's from the same user who activated the wake word
+  if (state.listeningToUser !== userId) {
+    return;
+  }
   
-  // 2. We heard the wake word! Let's lock the state so Wren doesn't listen to itself.
+  // Clear the timeout since they spoke
+  if (state.promptTimeout) {
+    clearTimeout(state.promptTimeout);
+    state.promptTimeout = null;
+  }
+  
+  // Play the second 'got it' charm
+  await playGotItCharm(state.player);
+  
+  // Lock the state so Wren doesn't listen to itself while processing/speaking
   state.isSpeaking = true;
-  console.log(`[voice] Wake word detected: "hey wren" from user ${userId}`);
+  state.isWaitingForPrompt = false;
+  state.listeningToUser = null;
   
   // Check ToS Agreement
   let hasConsented;

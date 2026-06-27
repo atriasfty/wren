@@ -127,3 +127,13 @@ main().catch((err) => {
   console.error('[boot] fatal:', err);
   process.exit(1);
 });
+
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException] fatal:', err);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection] fatal:', reason);
+  process.exit(1);
+});

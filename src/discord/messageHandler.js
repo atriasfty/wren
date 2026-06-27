@@ -5,7 +5,9 @@ import { ingestDiscordMessage, removeDiscordMessageChunks } from '../rag/ingest.
 import { query } from '../db/pool.js';
 import { handleAtriaCommands } from './atriaCommands.js';
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
-import pdfParse from 'pdf-parse';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const pdfParse = require('pdf-parse');
 
 const MAX_RESPONSE_LEN = 1900;
 

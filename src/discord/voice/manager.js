@@ -337,7 +337,7 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId) {
   try {
     const payload = {
       model: 'nvidia/parakeet-tdt-0.6b-v3',
-      audio: {
+      input_audio: {
         data: wavBytes.toString('base64'),
         format: 'wav'
       }

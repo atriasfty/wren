@@ -21,7 +21,9 @@
 
 * [How to Talk to Wren](how-to-talk-to-wren.md)
 * [What is Wren Memory?](what-is-wren-memory.md)
+* [How to Give Wren Your Server's Info](how-to-give-wren-info.md)
 * [How Does Search Work?](how-does-search-work.md)
+* [Troubleshooting](troubleshooting.md)
 * [Frequently Asked Questions](faq.md)
 
 ## Legal

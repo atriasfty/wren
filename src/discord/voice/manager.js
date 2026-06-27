@@ -5,6 +5,8 @@ import {
   createAudioResource,
   AudioPlayerStatus,
   EndBehaviorType,
+  entersState,
+  VoiceConnectionStatus
 } from '@discordjs/voice';
 import prism from 'prism-media';
 import wavefilePkg from 'wavefile';
@@ -102,6 +104,13 @@ async function joinChannel(interaction) {
       channelId: channel.id,
       guild: channel.guild
     });
+    
+    // Wait for connection to be ready before playing anything, otherwise audio drops
+    try {
+      await entersState(connection, VoiceConnectionStatus.Ready, 20e3);
+    } catch (e) {
+      console.warn('[voice] Connection did not become Ready within 20s. Proceeding anyway.');
+    }
     
     // Play privacy disclaimer
     await playDisclaimer(channel.guild.id, player);
@@ -349,21 +358,27 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId) {
   const cfg = loadConfig();
   let finalTranscript;
   try {
-    const payload = {
-      model: 'openai/whisper-large-v3',
-      input_audio: {
-        data: wavBytes.toString('base64'),
-        format: 'wav'
-      }
-    };
+    const boundary = 'WrenBotBoundary' + Math.random().toString(36).substring(2);
+    const header = Buffer.from(
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="file"; filename="audio.wav"\r\n` +
+      `Content-Type: audio/wav\r\n\r\n`
+    );
+    const mid = Buffer.from(
+      `\r\n--${boundary}\r\n` + 
+      `Content-Disposition: form-data; name="model"\r\n\r\n` +
+      `openai/whisper-large-v3\r\n` +
+      `--${boundary}--\r\n`
+    );
+    const payload = Buffer.concat([header, wavBytes, mid]);
 
     const res = await fetch('https://openrouter.ai/api/v1/audio/transcriptions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${cfg.openRouterApiKey}`,
-        'Content-Type': 'application/json'
+        'Content-Type': `multipart/form-data; boundary=${boundary}`
       },
-      body: JSON.stringify(payload)
+      body: payload
     });
 
     if (!res.ok) {

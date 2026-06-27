@@ -135,7 +135,7 @@ async function leaveChannel(interaction) {
 }
 
 async function playDisclaimer(guildId, player) {
-  const disclaimerPath = path.join(__dirname, '..', '..', '..', 'data', 'disclaimer.mp3');
+  const disclaimerPath = path.join(__dirname, '..', '..', '..', 'data', 'disclaimer.wav');
   try {
     await fs.mkdir(path.dirname(disclaimerPath), { recursive: true });
     try {
@@ -367,7 +367,7 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId) {
     const mid = Buffer.from(
       `\r\n--${boundary}\r\n` + 
       `Content-Disposition: form-data; name="model"\r\n\r\n` +
-      `openai/whisper-large-v3\r\n` +
+      `nvidia/parakeet-tdt-0.6b-v3\r\n` +
       `--${boundary}--\r\n`
     );
     const payload = Buffer.concat([header, wavBytes, mid]);

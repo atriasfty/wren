@@ -217,8 +217,9 @@ function setupVoiceReceiver(connection, guildId, discordChannelId) {
       end: { behavior: EndBehaviorType.AfterSilence, duration: 1000 },
     });
     
-    // We decode to 16kHz mono PCM for Whisper compatibility. (16000 * 0.02s = 320 samples per frame)
-    const opusDecoder = new prism.opus.Decoder({ rate: 16000, channels: 1, frameSize: 320 });
+    // Discord sends 48kHz stereo Opus packets.
+    // We decode natively at 48kHz to preserve audio quality.
+    const opusDecoder = new prism.opus.Decoder({ rate: 48000, channels: 1, frameSize: 960 });
     const pcmChunks = [];
     
     audioStream.pipe(opusDecoder);
@@ -230,8 +231,8 @@ function setupVoiceReceiver(connection, guildId, discordChannelId) {
     opusDecoder.on('end', async () => {
       if (pcmChunks.length === 0) return;
       const pcmBuffer = Buffer.concat(pcmChunks);
-      // Ignore extremely short audio bursts (less than 0.5s)
-      if (pcmBuffer.length < 16000 * 2 * 0.5) return;
+      // Ignore extremely short audio bursts (less than 0.5s at 48kHz)
+      if (pcmBuffer.length < 48000 * 2 * 0.5) return;
       
       try {
         await processAudio(pcmBuffer, userId, guildId, discordChannelId);
@@ -246,16 +247,22 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId) {
   const state = activeGuilds.get(guildId);
   if (!state) return;
 
+  // pcmBuffer is 16-bit little endian, 48000Hz, mono.
+  const int16Array = new Int16Array(pcmBuffer.buffer, pcmBuffer.byteOffset, pcmBuffer.length / 2);
+  
+  // Downsample 48kHz to 16kHz for OpenWakeWord via 3:1 decimation
+  const pcm16k = new Int16Array(Math.floor(int16Array.length / 3));
+  for (let i = 0; i < pcm16k.length; i++) {
+    pcm16k[i] = int16Array[i * 3];
+  }
+
   // 1. Process PCM chunks with OpenWakeWord for wake-word detection
   const oww = await getWakeWordModel();
   const frameLength = 1280; // openwakeword-js chunk size
-  
-  // pcmBuffer is 16-bit little endian, 16000Hz, mono.
-  const int16Array = new Int16Array(pcmBuffer.buffer, pcmBuffer.byteOffset, pcmBuffer.length / 2);
   let detected = false;
   
-  for (let i = 0; i < int16Array.length - frameLength; i += frameLength) {
-    const frame = int16Array.subarray(i, i + frameLength);
+  for (let i = 0; i < pcm16k.length - frameLength; i += frameLength) {
+    const frame = pcm16k.subarray(i, i + frameLength);
     const scores = await oww.predict(frame);
     
     for (const score of Object.values(scores)) {
@@ -328,8 +335,7 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId) {
 
   // 3. Package PCM into a WAV file to send to OpenRouter
   const wav = new WaveFile();
-  const samples = new Int16Array(pcmBuffer.buffer, pcmBuffer.byteOffset, pcmBuffer.byteLength / 2);
-  wav.fromScratch(1, 16000, '16', samples);
+  wav.fromScratch(1, 48000, '16', int16Array);
   const wavBytes = wav.toBuffer();
   
   const cfg = loadConfig();

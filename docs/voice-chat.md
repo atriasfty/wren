@@ -22,7 +22,7 @@ To make Wren leave, simply type `/wren voice leave`, or wait for Wren to automat
 
 To keep the service fast and responsive, Voice Chat usage is limited based on your server's subscription tier. Usage is calculated based on "active time"—the time between when Wren hears the wake word (the upward charm) and when you finish speaking your prompt (the downward charm).
 
-- **Free Tier**: 0 Voice Minutes (Voice Chat is disabled)
+- **Free Tier**: 2 Voice Minutes per month
 - **Core Tier**: 30 Voice Minutes per month
 - **Pro Tier**: 120 Voice Minutes per month
 

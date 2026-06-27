@@ -348,7 +348,7 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
     const voiceSecs = t.monthly_voice_time_seconds || 0;
     const tier = t.subscription_tier || 'free';
     
-    let maxVoiceSecs = 0;
+    let maxVoiceSecs = 2 * 60; // 2 minutes for free tier
     if (tier === 'core') maxVoiceSecs = 30 * 60;
     if (tier === 'pro') maxVoiceSecs = 120 * 60;
     
@@ -565,6 +565,14 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
     return;
   }
   
+  // Clean text for TTS (remove emojis, markdown, URLs)
+  const cleanTtsText = aiResult.text
+    .replace(/\s?⚠️\s?/g, ' Warning: ')
+    .replace(/[*_~`]/g, '')
+    .replace(/https?:\/\/[^\s]+/g, 'the link')
+    .replace(/\//g, ' ')
+    .trim();
+  
   // 5. Generate TTS via Kokoro 82M
   const ttsRes = await fetch('https://openrouter.ai/api/v1/audio/speech', {
     method: 'POST',
@@ -574,7 +582,7 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
     },
     body: JSON.stringify({
       model: 'hexgrad/kokoro-82m',
-      input: aiResult.text,
+      input: cleanTtsText,
       voice: 'am_fenrir', // Best default voice
       response_format: 'mp3'
     })

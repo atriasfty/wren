@@ -6,19 +6,22 @@ Wren uses a usage-based subscription model to cover the costs of its advanced AI
 
 ### 🌱 Free Plan
 
-**Cost:** Free forever **Included:** 10 messages per month
+**Cost:** Free forever  
+**Included:** 10 messages per month | 2 Voice Minutes
 
 Perfect for testing Wren in a private server or getting a feel for the features before rolling it out to your staff team.
 
 ### 🚀 Core Plan
 
-**Cost:** $10 / month **Included:** 1,000 messages per month
+**Cost:** $10 / month  
+**Included:** 1,000 messages per month | 30 Voice Minutes
 
 The Core plan is designed for medium-sized roleplay servers. This gives your staff plenty of overhead to use Wren for moderation, looking up player profiles, and keeping tabs on the server without worrying about hitting a limit every day.
 
 ### 🌟 Pro Plan
 
-**Cost:** $25 / month **Included:** 5,000 messages per month
+**Cost:** $25 / month  
+**Included:** 5,000 messages per month | 120 Voice Minutes
 
 Built for the largest and most active ERLC communities. With 5,000 messages, your staff can rely on Wren for anything they may need.
 

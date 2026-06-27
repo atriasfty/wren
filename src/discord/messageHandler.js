@@ -5,6 +5,7 @@ import { ingestDiscordMessage, removeDiscordMessageChunks } from '../rag/ingest.
 import { query } from '../db/pool.js';
 import { handleAtriaCommands } from './atriaCommands.js';
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import pdfParse from 'pdf-parse';
 
 const MAX_RESPONSE_LEN = 1900;
 
@@ -199,6 +200,36 @@ export function attachMessageHandler(client) {
       .filter((a) => a.contentType?.startsWith?.('image/'))
       .map((a) => a.url);
 
+    let documentsText = '';
+    for (const a of message.attachments.values()) {
+      const isRawText = a.contentType?.startsWith('text/') ||
+                        a.contentType === 'application/json' ||
+                        a.contentType === 'application/xml' ||
+                        /\.(txt|csv|md|json|xml|yaml|yml|js|py|html|css|log)$/i.test(a.name);
+
+      if (isRawText) {
+        try {
+          const res = await fetch(a.url);
+          const txt = await res.text();
+          documentsText += `\n\n--- Attachment: ${a.name} ---\n${txt}`;
+        } catch (e) {
+          console.error('[message] Failed to read txt attachment:', e);
+        }
+      } else if (a.contentType === 'application/pdf' || a.name?.endsWith('.pdf')) {
+        try {
+          const res = await fetch(a.url);
+          const buffer = await res.arrayBuffer();
+          const pdfData = await pdfParse(Buffer.from(buffer));
+          documentsText += `\n\n--- Attachment: ${a.name} ---\n${pdfData.text}`;
+        } catch (e) {
+          console.error('[message] Failed to read pdf attachment:', e);
+        }
+      }
+    }
+    if (documentsText.length > 20000) {
+      documentsText = documentsText.substring(0, 20000) + '\n...[TRUNCATED due to length]';
+    }
+
     await message.channel.sendTyping().catch(() => {});
     const typingInterval = setInterval(() => {
       message.channel.sendTyping().catch(() => {});
@@ -210,6 +241,7 @@ export function attachMessageHandler(client) {
         question,
         channelContext,
         imageUrls,
+        documentsText,
         actor,
         channelId: message.channel.id,
       });

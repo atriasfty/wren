@@ -33,6 +33,7 @@ export async function runAssistantPipeline(tenantCtx, {
   question,
   channelContext = null,
   imageUrls = [],
+  documentsText = '',
   actor,
   channelId = null,
   isInGame = false,
@@ -65,6 +66,7 @@ export async function runAssistantPipeline(tenantCtx, {
     { type: 'text', text: normaliseWhitespace(question) },
     ...(channelContext ? [{ type: 'text', text: `\n\nRECENT CHANNEL MESSAGES:\n${channelContext}` }] : []),
     ...(ragContext ? [{ type: 'text', text: ragContext }] : []),
+    ...(documentsText ? [{ type: 'text', text: `\n\nATTACHED DOCUMENTS:\n${documentsText}` }] : []),
     ...(imageUrls?.length ? imageUrls.map((u) => ({ type: 'image_url', image_url: { url: u } })) : []),
   ];
 

@@ -280,13 +280,14 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
   // pcmBuffer is 16-bit little endian, 48000Hz, mono.
   const int16Array = new Int16Array(pcmBuffer.buffer, pcmBuffer.byteOffset, pcmBuffer.length / 2);
   
+  // Downsample 48kHz to 16kHz for OpenWakeWord and Parakeet STT via 3:1 decimation
+  const pcm16k = new Int16Array(Math.floor(int16Array.length / 3));
+  for (let i = 0; i < pcm16k.length; i++) {
+    pcm16k[i] = int16Array[i * 3];
+  }
+
   if (!state.isWaitingForPrompt) {
     // Stage 1: Waiting for wake word
-    // Downsample 48kHz to 16kHz for OpenWakeWord via 3:1 decimation
-    const pcm16k = new Int16Array(Math.floor(int16Array.length / 3));
-    for (let i = 0; i < pcm16k.length; i++) {
-      pcm16k[i] = int16Array[i * 3];
-    }
 
     const oww = await getWakeWordModel();
     const frameLength = 1280; // openwakeword-js chunk size
@@ -407,7 +408,7 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
 
   // 3. Package PCM into a WAV file to send to OpenRouter
   const wav = new WaveFile();
-  wav.fromScratch(1, 48000, '16', int16Array);
+  wav.fromScratch(1, 16000, '16', pcm16k);
   const wavBytes = wav.toBuffer();
   
   const cfg = loadConfig();

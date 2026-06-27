@@ -15,11 +15,6 @@ If a user asks "How do I join the server?" or "What is the code?", do not answer
 
 Wren will read the context of the user's message, scan your server's documentation, and reply with the correct answer. This trains users to rely on the AI rather than pinging staff for simple queries.
 
-## 2. Assisting with Support Tickets
-
-If your server uses a ticketing system, Wren can be configured to automatically reply to the first message in a ticket. 
-
-If Wren gives a good answer but the user is still confused, you can step in. If the user starts asking new questions inside the ticket, you can ping Wren again to grab specific documentation links without having to search for them manually.
 
 ## 3. Managing Bad Actors (Bans)
 

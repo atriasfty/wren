@@ -37,12 +37,9 @@ export const CONFIG_FIELDS = {
   erlcServerKey: { dbField: 'erlc_server_key_enc', kind: 'secret', label: 'ERLC server key', category: 'Secrets', placeholder: 'paste from the PRC dashboard' },
   powToken:      { dbField: 'pow_token_enc',       kind: 'secret', label: 'POW token',       category: 'Secrets', placeholder: 'paste your POW API token' },
 
-  // Tickets
-  ticketAutoresponderEnabled: { dbField: 'ticket_autoresponder_enabled', kind: 'boolean', label: 'Autoresponder On/Off', category: 'Tickets' },
-  ticketCategoryId:           { dbField: 'ticket_category_id',           kind: 'channel_multi', label: 'Ticket Categories', category: 'Tickets', channelTypes: [ChannelType.GuildCategory] },
 };
 
-export const CONFIG_CATEGORIES = ['Identity', 'Channels', 'Behaviour', 'Secrets', 'Tickets'];
+export const CONFIG_CATEGORIES = ['Identity', 'Channels', 'Behaviour', 'Secrets'];
 
 const SAFE = /^[\w\s.,:;'"!?()@&/\-+=#%]+$/;
 
@@ -79,7 +76,6 @@ export async function buildMainPanel(tenantId) {
       { name: 'Channels',  value: `Status: ${t.statusChannelId ? `<#${t.statusChannelId}>` : '—'}\nERLC log: ${t.erlcLogChannelId ? `<#${t.erlcLogChannelId}>` : '—'}\nLeadership role: ${t.leadershipRoleId ? `<@&${t.leadershipRoleId}>` : '—'}\nAdmin role: ${t.adminRoleId ? `<@&${t.adminRoleId}>` : '—'}\nMod role: ${t.modRoleId ? `<@&${t.modRoleId}>` : '—'}`, inline: false },
       { name: 'Behaviour', value: `Core info: ${t.coreInfo ? `${t.coreInfo.slice(0, 100)}${t.coreInfo.length > 100 ? '…' : ''}` : '—'}`, inline: false },
       { name: 'Secrets',   value: `ERLC key: ${t.erlcServerKey ? '•••• set' : '—'}\nPOW token: ${t.powToken ? '•••• set' : '—'}`, inline: false },
-      { name: 'Tickets',   value: `Autoresponder: ${t.ticketAutoresponderEnabled ? 'On' : 'Off'}\nCategories: ${t.ticketCategoryId ? t.ticketCategoryId.split(',').map(id => `<#${id}>`).join(' ') : '—'}`, inline: false },
     )
     .setFooter({ text: 'Wren · settings panel' });
 

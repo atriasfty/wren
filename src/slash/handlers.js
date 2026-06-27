@@ -495,14 +495,6 @@ export async function handleComponentInteraction(interaction) {
     const category = interaction.values?.[0];
     if (!category) return;
     
-    if (category === 'Tickets') {
-      if (ctx.tenant.subscriptionTier !== 'pro') {
-        const err = ephemeral('⭐️ **The Ticket Autoresponder requires Wren Pro.**\nUpgrade using `/wren upgrade pro` to automate your support tickets with AI!');
-        if (interaction.replied || interaction.deferred) return interaction.followUp(err);
-        return interaction.reply(err);
-      }
-    }
-
     const panel = await buildCategoryPanel(tenantId, category);
     if (!panel) return;
     return interaction.update(panelPayload(panel));

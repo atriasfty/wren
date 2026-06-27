@@ -27,7 +27,6 @@ Your monthly message limit applies to the number of times Wren has to generate a
 
 **This includes:**
 - Replying to a user who pinged `@Wren`.
-- Replying to a user in a support ticket.
 - Replying to a user in a Voice Channel.
 
 **This DOES NOT include:**

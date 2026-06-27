@@ -15,7 +15,7 @@
 * [POW Integration](pow-integration.md)
 * [Smart Web Search](smart-web-search.md)
 * [Voice Chat](voice-chat.md)
-* [Ticket Autoresponder](ticket-autoresponder.md)
+
 * [MCP Integration](MCP.md)
 * [Permissions](permissions.md)
 * [Role-Based Access Control (RBAC) Guide](role-based-access-control.md)

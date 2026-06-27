@@ -17,7 +17,6 @@ import { listTenants } from './tenant/store.js';
 import { createClient } from './discord/client.js';
 import { attachMessageHandler } from './discord/messageHandler.js';
 import { attachIngameBridge } from './discord/ingameBridge.js';
-import { attachTicketHandler } from './discord/ticketHandler.js';
 import { dispatchGarminCommand, handleComponentInteraction } from './slash/handlers.js';
 import { syncAllGuilds } from './slash/register.js';
 import { startApiServer } from './api/server.js';
@@ -46,8 +45,6 @@ async function main() {
 
   attachMessageHandler(client);
   attachIngameBridge(client);
-  attachTicketHandler(client);
-  
   client.on('voiceStateUpdate', handleVoiceStateUpdate);
 
   client.on('interactionCreate', async (interaction) => {
@@ -83,39 +80,6 @@ async function main() {
         } catch (err) {
           console.error('[slash] button failed:', err);
           await interaction.reply({ content: 'Failed to record agreement.', ephemeral: true });
-        }
-        return;
-      }
-      
-      if (interaction.customId === 'agree_ticket_tos') {
-        try {
-          await query('INSERT INTO user_agreements (discord_id) VALUES ($1) ON CONFLICT DO NOTHING', [interaction.user.id]);
-          await interaction.update({ content: 'Thank you! I am reviewing your ticket now...', embeds: [], components: [] });
-
-          const tenantCtx = await resolveTenantByGuildId(interaction.guild.id);
-          if (!tenantCtx) return;
-
-          const channelContext = await fetchChannelContext(interaction.channel, interaction.message.id, client.user.id, 15);
-          const question = `Please review this support ticket and provide assistance to the user:\n\n${channelContext || '(No context provided)'}`;
-
-          const actor = { kind: 'discord', member: interaction.member, id: interaction.user.id, isTicket: true };
-
-          const result = await runAssistantPipeline(tenantCtx, {
-            question,
-            channelContext: null, // we already put it in the question
-            imageUrls: [],
-            actor,
-            channelId: interaction.channel.id,
-          });
-
-          const chunks = splitForDiscord(result.text || '');
-          await interaction.channel.send({ content: chunks[0] || '\u2026', allowedMentions: { parse: [] } });
-          for (let i = 1; i < chunks.length; i++) {
-            await interaction.channel.send({ content: chunks[i], allowedMentions: { parse: [] } });
-          }
-        } catch (err) {
-          console.error('[ticket] agree_ticket_tos failed:', err);
-          try { await interaction.channel.send('Sorry, I encountered an error while reviewing the ticket.'); } catch {}
         }
         return;
       }

@@ -5,6 +5,7 @@ export const RANK_ORDER = { owner: 4, leadership: 3, admin: 2, mod: 1, user: 0 }
 export function resolveActorRank(actor, tenantCtx) {
   if (!actor) return 'user';
   if (actor.kind === 'discord') {
+    if (actor.isTicket) return 'user'; // Force user rank for autoresponder
     const member = actor.member;
     if (!member) return 'user';
     if (member.id === member.guild?.ownerId) return 'owner';

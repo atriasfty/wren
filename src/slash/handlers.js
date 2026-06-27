@@ -507,8 +507,8 @@ export async function handleComponentInteraction(interaction) {
   }
 
   if (route === 'wren_cfg_value') {
-    const rawValue = interaction.values?.[0];
-    if (rawValue == null) return interaction.reply(ephemeral('No value selected.'));
+    const rawValue = interaction.values;
+    if (!rawValue || rawValue.length === 0) return interaction.reply(ephemeral('No value selected.'));
     const result = await applyFieldEdit(tenantId, fieldKey, rawValue);
     if (!result.ok) {
       return interaction.reply(ephemeral(`Error: ${result.error}`));

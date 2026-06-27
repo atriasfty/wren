@@ -25,6 +25,7 @@ export const CONFIG_FIELDS = {
   // Channels
   statusChannelId:    { dbField: 'status_channel_id',    kind: 'channel', label: 'Status channel',     category: 'Channels' },
   erlcLogChannelId:   { dbField: 'erlc_log_channel_id',  kind: 'channel', label: 'ERLC log channel',    category: 'Channels' },
+  ticketCategoryId:   { dbField: 'ticket_category_id',   kind: 'channel_multi', label: 'Ticket Categories (Pro)', category: 'Channels', channelTypes: [4] }, // Category channel type
   leadershipRoleId:   { dbField: 'leadership_role_id',   kind: 'role',    label: 'Leadership role',     category: 'Channels' },
   adminRoleId:        { dbField: 'admin_role_id',        kind: 'role',    label: 'Admin role',          category: 'Channels' },
   modRoleId:          { dbField: 'mod_role_id',          kind: 'role',    label: 'Mod role',            category: 'Channels' },
@@ -49,6 +50,7 @@ function fieldValueFor(field, tenant) {
     default:
       if (descriptor?.kind === 'boolean') return tenant[field.key] ? 'on' : 'off';
       if (descriptor?.kind === 'channel') return tenant[field.key] ? `<#${tenant[field.key]}>` : '—';
+      if (descriptor?.kind === 'channel_multi') return tenant[field.key] ? tenant[field.key].split(',').map(id => `<#${id}>`).join(' ') : '—';
       if (descriptor?.kind === 'role') return tenant[field.key] ? `<@&${tenant[field.key]}>` : '—';
       return tenant[field.key] || '—';
   }
@@ -70,7 +72,7 @@ export async function buildMainPanel(tenantId) {
     .setDescription('Pick a category below to view and edit your settings.')
     .addFields(
       { name: 'Identity',  value: `Display name: **${t.displayName}**\nBot name: **${t.botDisplayName}**\nIn-game handle: **${t.inGameHandle}**`, inline: false },
-      { name: 'Channels',  value: `Status: ${t.statusChannelId ? `<#${t.statusChannelId}>` : '—'}\nERLC log: ${t.erlcLogChannelId ? `<#${t.erlcLogChannelId}>` : '—'}\nLeadership role: ${t.leadershipRoleId ? `<@&${t.leadershipRoleId}>` : '—'}\nAdmin role: ${t.adminRoleId ? `<@&${t.adminRoleId}>` : '—'}\nMod role: ${t.modRoleId ? `<@&${t.modRoleId}>` : '—'}`, inline: false },
+      { name: 'Channels',  value: `Status: ${t.statusChannelId ? `<#${t.statusChannelId}>` : '—'}\nERLC log: ${t.erlcLogChannelId ? `<#${t.erlcLogChannelId}>` : '—'}\nTickets: ${t.ticketCategoryId ? t.ticketCategoryId.split(',').map(id => `<#${id}>`).join(' ') : '—'}\nLeadership role: ${t.leadershipRoleId ? `<@&${t.leadershipRoleId}>` : '—'}\nAdmin role: ${t.adminRoleId ? `<@&${t.adminRoleId}>` : '—'}\nMod role: ${t.modRoleId ? `<@&${t.modRoleId}>` : '—'}`, inline: false },
       { name: 'Behaviour', value: `Core info: ${t.coreInfo ? `${t.coreInfo.slice(0, 100)}${t.coreInfo.length > 100 ? '…' : ''}` : '—'}`, inline: false },
       { name: 'Secrets',   value: `ERLC key: ${t.erlcServerKey ? '•••• set' : '—'}\nPOW token: ${t.powToken ? '•••• set' : '—'}`, inline: false },
     )
@@ -135,12 +137,12 @@ export async function buildValueSelectPanel(tenantId, fieldKey) {
     .setDescription('Pick a value below. The change saves immediately.');
 
   let picker;
-  if (field.kind === 'channel') {
+  if (field.kind === 'channel' || field.kind === 'channel_multi') {
     picker = new ChannelSelectMenuBuilder()
       .setCustomId(`wren_cfg_value:${tenantId}:${fieldKey}`)
       .setPlaceholder(`Select ${field.label.toLowerCase()}…`)
       .setMinValues(1)
-      .setMaxValues(1);
+      .setMaxValues(field.kind === 'channel_multi' ? 10 : 1);
     if (field.channelTypes) picker.setChannelTypes(field.channelTypes);
   } else if (field.kind === 'role') {
     picker = new RoleSelectMenuBuilder()
@@ -180,7 +182,7 @@ export async function buildFieldModal(tenantId, fieldKey) {
     .setCustomId(`wren_cfg_modal:${tenantId}:${fieldKey}`)
     .setTitle(field.label);
 
-  if (['channel', 'role', 'boolean'].includes(field.kind)) return null;
+  if (['channel', 'channel_multi', 'role', 'boolean'].includes(field.kind)) return null;
 
   const isLong = field.kind === 'longtext' || field.kind === 'secret';
   const input = new TextInputBuilder()
@@ -216,8 +218,11 @@ export async function applyFieldEdit(tenantId, fieldKey, rawValue) {
   if (!field) return { ok: false, error: `Unknown field: ${fieldKey}` };
 
   let value = rawValue;
-  if (field.kind === 'channel' || field.kind === 'role') {
-    value = String(value);
+  if (field.kind === 'channel_multi') {
+    value = Array.isArray(value) ? value.map(String).join(',') : String(value);
+    if (!value.split(',').every(v => /^\d{17,20}$/.test(v))) return { ok: false, error: 'Invalid channel selection.' };
+  } else if (field.kind === 'channel' || field.kind === 'role') {
+    value = Array.isArray(value) ? String(value[0]) : String(value);
     if (!/^\d{17,20}$/.test(value)) return { ok: false, error: 'Pick a valid channel or role from the list.' };
   } else if (field.kind === 'boolean') {
     if (!['true', 'false'].includes(String(value))) return { ok: false, error: 'Pick on or off.' };

@@ -31,7 +31,7 @@ export function splitForDiscord(text, limit = MAX_RESPONSE_LEN) {
   return out;
 }
 
-async function fetchChannelContext(channel, beforeId, botId, count = 25) {
+export async function fetchChannelContext(channel, beforeId, botId, count = 25) {
   if (!channel?.isTextBased?.()) return null;
   try {
     const opts = { limit: count + 1 };

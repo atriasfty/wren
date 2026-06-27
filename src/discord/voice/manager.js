@@ -217,9 +217,8 @@ function setupVoiceReceiver(connection, guildId, discordChannelId) {
       end: { behavior: EndBehaviorType.AfterSilence, duration: 1000 },
     });
     
-    // Discord sends 48kHz stereo Opus packets.
-    // We decode to 16kHz mono PCM for Whisper compatibility.
-    const opusDecoder = new prism.opus.Decoder({ rate: 16000, channels: 1, frameSize: 960 });
+    // We decode to 16kHz mono PCM for Whisper compatibility. (16000 * 0.02s = 320 samples per frame)
+    const opusDecoder = new prism.opus.Decoder({ rate: 16000, channels: 1, frameSize: 320 });
     const pcmChunks = [];
     
     audioStream.pipe(opusDecoder);
@@ -338,7 +337,7 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId) {
   try {
     const payload = {
       model: 'nvidia/parakeet-tdt-0.6b-v3',
-      input_audio: {
+      audio: {
         data: wavBytes.toString('base64'),
         format: 'wav'
       }

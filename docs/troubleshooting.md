@@ -22,15 +22,12 @@ Below is a list of the exact error messages Wren might output and how to resolve
 
 ### `"You are blocked from using this bot."`
 **What it means:** Your Discord account has been banned from interacting with Wren. This can happen at the server level (if a server admin ran `/wren bans add target:@you`) or at the global level (if you violated Atria's Terms of Service).
-**How to fix:** If you believe this was an error, contact your server administrators. If they confirm you are not banned locally, you may have been globally banned by Atria Trust & Safety. 
+**How to fix:** If you believe this was an error, contact your server administrators. If they confirm you are not banned locally, you may have been globally banned for a Terms of Service violation.
 
 ### `"Wren is currently undergoing maintenance and is paused globally. Please try again later."`
-**What it means:** The Atria engineering team has temporarily paused the bot across all servers to push an update, fix a critical bug, or handle a database migration.
+**What it means:** The bot has been temporarily paused across all servers to push an update, fix a critical bug, or handle a database migration.
 **How to fix:** Just wait! Maintenance usually lasts less than 15 minutes. 
 
-### `"Billing is not fully configured yet (missing product IDs)."`
-**What it means:** You tried to upgrade to a paid plan, but the bot developer hasn't finished setting up the Stripe/Polar.sh integration in the background environment variables.
-**How to fix:** This is an internal error. Please contact Atria Support to let them know their billing environment variables are missing!
 
 ### `"Only the server owner can add server-scoped memory."`
 **What it means:** You tried to use `/wren memory add scope:server`. Server-scoped memories apply to *everyone* in the server permanently, so they are highly restricted.

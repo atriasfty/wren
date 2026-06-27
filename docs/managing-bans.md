@@ -43,4 +43,4 @@ The user will immediately be able to interact with the bot again.
 It is important to note the difference between a **Server Ban** (tenant ban) and a **Global Ban**.
 
 - **Server Bans:** These are the bans you manage using the commands above. They only apply to *your* specific Discord server. The user can still use Wren in other servers.
-- **Global Bans:** These are issued directly by the Atria Trust & Safety team. If a user violates the global Terms of Service (e.g., generating illegal content), they will be banned from using Wren *everywhere*. You cannot lift a Global Ban; the user must appeal directly to Atria Support.
+- **Global Bans:** These are issued for severe violations of the global Terms of Service (e.g., generating illegal content). A Global Ban prevents the user from using Wren *everywhere*. You cannot lift a Global Ban; the user must appeal directly to [support](contact-support.md).

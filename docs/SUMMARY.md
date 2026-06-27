@@ -31,6 +31,7 @@
 * [Managing Bans & Blocked Users](managing-bans.md)
 * [How Does Search Work?](how-does-search-work.md)
 * [Troubleshooting](troubleshooting.md)
+* [Contact Support](contact-support.md)
 * [Frequently Asked Questions](faq.md)
 
 ## Legal

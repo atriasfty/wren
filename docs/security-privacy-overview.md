@@ -38,6 +38,6 @@ Once you say the wake word, your speech is temporarily streamed to a transcripti
 ## Right to Erasure (GDPR)
 
 If you wish to have all of your personal data scrubbed from our systems, you can request a GDPR wipe. 
-The `$atria wipe user` command will permanently delete your AI memories, Terms of Service agreements, API tokens, and audit logs. 
+When requested, our privacy tools will permanently delete your AI memories, Terms of Service agreements, API tokens, and audit logs.
 
 *Note: For community safety and fraud prevention, we do not delete ban records. If you were banned from using Wren, that record will be retained indefinitely.*

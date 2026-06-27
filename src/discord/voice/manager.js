@@ -135,40 +135,15 @@ async function leaveChannel(interaction) {
 }
 
 async function playDisclaimer(guildId, player) {
-  const disclaimerPath = path.join(__dirname, '..', '..', '..', 'data', 'disclaimer.wav');
+  const disclaimerPath = path.join(__dirname, '..', '..', '..', 'data', 'disclaimer.mp3');
   try {
-    await fs.mkdir(path.dirname(disclaimerPath), { recursive: true });
-    try {
-      await fs.access(disclaimerPath);
-    } catch {
-      // Generate disclaimer once
-      console.log('[voice] Generating privacy disclaimer audio...');
-      const cfg = loadConfig();
-      const res = await fetch('https://openrouter.ai/api/v1/audio/speech', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${cfg.openRouterApiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: 'hexgrad/kokoro-82m',
-          input: 'Hi, I am Wren. I am now listening to this voice channel to assist you.',
-          voice: 'af_bella'
-        })
-      });
-      if (res.ok) {
-        const arrayBuffer = await res.arrayBuffer();
-        await fs.writeFile(disclaimerPath, Buffer.from(arrayBuffer));
-      } else {
-        console.error('[voice] Failed to generate disclaimer:', await res.text());
-        return;
-      }
-    }
-    const resource = createAudioResource(disclaimerPath);
-    player.play(resource);
-  } catch (err) {
-    console.error('[voice] Disclaimer error:', err);
+    await fs.access(disclaimerPath);
+  } catch {
+    console.error('[voice] Missing disclaimer.mp3 file');
+    return;
   }
+  const resource = createAudioResource(disclaimerPath);
+  player.play(resource);
 }
 
 async function playCharm(player) {
@@ -358,27 +333,21 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId) {
   const cfg = loadConfig();
   let finalTranscript;
   try {
-    const boundary = 'WrenBotBoundary' + Math.random().toString(36).substring(2);
-    const header = Buffer.from(
-      `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="file"; filename="audio.wav"\r\n` +
-      `Content-Type: audio/wav\r\n\r\n`
-    );
-    const mid = Buffer.from(
-      `\r\n--${boundary}\r\n` + 
-      `Content-Disposition: form-data; name="model"\r\n\r\n` +
-      `nvidia/parakeet-tdt-0.6b-v3\r\n` +
-      `--${boundary}--\r\n`
-    );
-    const payload = Buffer.concat([header, wavBytes, mid]);
+    const payload = {
+      model: 'nvidia/parakeet-tdt-0.6b-v3',
+      input_audio: {
+        data: wavBytes.toString('base64'),
+        format: 'wav'
+      }
+    };
 
     const res = await fetch('https://openrouter.ai/api/v1/audio/transcriptions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${cfg.openRouterApiKey}`,
-        'Content-Type': `multipart/form-data; boundary=${boundary}`
+        'Content-Type': 'application/json'
       },
-      body: payload
+      body: JSON.stringify(payload)
     });
 
     if (!res.ok) {

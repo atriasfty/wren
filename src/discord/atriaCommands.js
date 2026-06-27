@@ -259,9 +259,11 @@ export async function handleAtriaCommands(message) {
       } else if (type === 'user') {
         execute = async () => {
           await query('DELETE FROM user_agreements WHERE discord_id = $1', [targetId]);
-          await query('DELETE FROM global_bans WHERE discord_id = $1', [targetId]);
           await query('DELETE FROM tenant_memory WHERE user_key = $1', [`discord:${targetId}`]);
-          await message.reply(`User ${targetId}'s ToS agreement, global bans, and memories have been wiped.`);
+          await query('DELETE FROM user_mcp_tokens WHERE discord_id = $1', [targetId]);
+          await query('DELETE FROM audit_log WHERE actor = $1 OR target = $1', [`discord:${targetId}`]);
+          await query('DELETE FROM global_state WHERE key = $1', [`bypass:${targetId}`]);
+          await message.reply(`User ${targetId}'s ToS agreement, MCP tokens, audit logs, and memories have been wiped. Bans were retained.`);
         };
       } else {
         await message.reply('Invalid wipe type. Use "server" or "user".');

@@ -145,6 +145,7 @@ All AI prompts (the messages you send to Wren) and the AI's responses are transm
 |---|---|
 | **AI prompts, responses & channel context** (PostHog, EU) | **30 days** — automatically and permanently deleted after this period |
 | **Conversation memory** (tenant_memory table) | **Indefinitely** — retained until a Server Owner explicitly deletes it, or the server removes Wren. Server admins can view and manage all stored memories for their server. |
+| **Ban records** (Global bans and Per-server bans) | **Indefinitely** — retained permanently under Legitimate Interests (Art. 6(1)(f)) for fraud prevention, abuse detection, and community safety. These records are exempted from GDPR erasure requests. |
 | **Audit logs** | Retained indefinitely while the server remains active |
 | **Processed event deduplication records** | Automatically purged after their expiry timestamp |
 | **Billing & subscription records** | Retained for 7 years from the end of the subscription to comply with financial record-keeping obligations |
@@ -184,7 +185,7 @@ If you are located in the European Economic Area (EEA), United Kingdom, or Switz
 |---|---|
 | **Right of Access (Art. 15)** | Request a copy of the personal data we hold about you. |
 | **Right to Rectification (Art. 16)** | Request correction of inaccurate data. |
-| **Right to Erasure (Art. 17)** | Request deletion of your personal data ("right to be forgotten"). |
+| **Right to Erasure (Art. 17)** | Request deletion of your personal data ("right to be forgotten"). *Note: Ban records are retained under Legitimate Interests for safety and moderation.* |
 | **Right to Restriction (Art. 18)** | Request that we restrict processing of your data. |
 | **Right to Data Portability (Art. 20)** | Request your data in a structured, machine-readable format. We do not currently have an automated export tool — requests are fulfilled manually by our team, who will extract your data from our database and provide it to you. |
 | **Right to Object (Art. 21)** | Object to processing based on legitimate interests. |

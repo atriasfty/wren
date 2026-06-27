@@ -96,7 +96,7 @@ export function attachMessageHandler(client) {
       return;
     }
 
-    const actor = { kind: 'discord', member: message.member };
+    const actor = { kind: 'discord', member: message.member, id: message.author.id };
     const isUserBanned = await enforceBan(tenantCtx, actor);
 
     const isSourceChannel = tenantCtx.sources.some(

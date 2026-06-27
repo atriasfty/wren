@@ -607,14 +607,30 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
   const tempPath = path.join(__dirname, '..', '..', '..', 'data', `temp_${tempId}.mp3`);
   await fs.writeFile(tempPath, Buffer.from(audioArrayBuffer));
   
-  const resource = createAudioResource(tempPath);
-  state.player.play(resource);
-  
-  state.player.once(AudioPlayerStatus.Idle, () => {
-    // Done speaking, unlock
+  try {
+    const resource = createAudioResource(tempPath);
+    state.player.play(resource);
+  } catch (err) {
+    console.error('[voice] Failed to play TTS:', err.message);
     state.isSpeaking = false;
     fs.unlink(tempPath).catch(()=>{});
-  });
+    return;
+  }
+  
+  const onEnd = () => {
+    state.isSpeaking = false;
+    fs.unlink(tempPath).catch(()=>{});
+    state.player.off('error', onError);
+  };
+  const onError = (err) => {
+    console.error('[voice] Player error:', err.message);
+    state.isSpeaking = false;
+    fs.unlink(tempPath).catch(()=>{});
+    state.player.off(AudioPlayerStatus.Idle, onEnd);
+  };
+  
+  state.player.once(AudioPlayerStatus.Idle, onEnd);
+  state.player.once('error', onError);
 }
 
 export async function handleVoiceStateUpdate(oldState, newState) {

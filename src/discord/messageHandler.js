@@ -96,19 +96,16 @@ export function attachMessageHandler(client) {
       return;
     }
 
+    const actor = { kind: 'discord', member: message.member };
+    const isUserBanned = await enforceBan(tenantCtx, actor);
+
     const isSourceChannel = tenantCtx.sources.some(
       (s) => s.enabled && s.kind === 'discord_channel' && s.ref === message.channel.id
     );
-    if (isSourceChannel) {
+    if (isSourceChannel && !isUserBanned) {
       ingestDiscordMessage(tenantCtx, message).catch((err) => {
         console.error('[messageCreate] Auto-ingestion failed:', err.message);
       });
-    }
-
-    const actor = { kind: 'discord', member: message.member };
-    if (await enforceBan(tenantCtx, actor)) {
-      try { await message.reply('You are blocked from using this bot.'); } catch {}
-      return;
     }
 
     // Only respond if the bot is directly addressed at the start of the message,
@@ -121,6 +118,11 @@ export function attachMessageHandler(client) {
     const isReplyToBot = refMsg?.author?.id === client.user.id;
 
     if (!directlyMentioned && !isReplyToBot) return;
+
+    if (isUserBanned) {
+      try { await message.reply('You are blocked from using this bot.'); } catch {}
+      return;
+    }
 
     // Check global pause
     try {

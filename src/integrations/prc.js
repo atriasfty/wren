@@ -4,7 +4,7 @@ function baseUrl(tenantCtx) {
 
 function serverKey(tenantCtx) {
   if (!tenantCtx.tenant.erlcServerKey) {
-    throw new Error('Tenant has no ERLC server key configured. Run /wren config view and set it in Secrets.');
+    throw new Error('CRITICAL API KEY ERROR: Tenant has no ERLC server key configured. You must flag this to higher-ups/server owner immediately so they can set it in /wren config under Secrets.');
   }
   return tenantCtx.tenant.erlcServerKey;
 }
@@ -20,7 +20,12 @@ async function executeCommand(tenantCtx, command) {
   });
   if (!res.ok) {
     if (res.status === 422) throw new Error('Server has no players in it');
-    throw new Error(`PRC error ${res.status}`);
+    let errmsg = `PRC API error ${res.status}: ${res.statusText}`;
+    try {
+      const data = await res.json();
+      if (data.message) errmsg = `PRC API error ${res.status}: ${data.message}`;
+    } catch (e) { /* ignore */ }
+    throw new Error(errmsg);
   }
   return { success: true };
 }
@@ -107,7 +112,14 @@ export async function getServerInfo(tenantCtx, fields = null) {
   const res = await fetch(`${baseUrl(tenantCtx)}/server${query}`, {
     headers: { 'Server-Key': serverKey(tenantCtx) },
   });
-  if (!res.ok) throw new Error(`PRC error ${res.status}`);
+  if (!res.ok) {
+    let errmsg = `PRC API error ${res.status}: ${res.statusText}`;
+    try {
+      const data = await res.json();
+      if (data.message) errmsg = `PRC API error ${res.status}: ${data.message}`;
+    } catch (e) { /* ignore */ }
+    throw new Error(errmsg);
+  }
   return res.json();
 }
 

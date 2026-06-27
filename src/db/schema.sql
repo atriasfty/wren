@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS tenants (
   pow_base_url        TEXT,
   pow_token_enc       BYTEA,
   pow_server_a_id     TEXT,
+  ticket_autoresponder_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   ticket_category_id  TEXT,
   ticket_parent_id    TEXT,
   leadership_role_id  TEXT,
@@ -169,6 +170,10 @@ EXCEPTION WHEN duplicate_column THEN NULL;
 END $$;
 DO $$ BEGIN
   ALTER TABLE tenants ADD COLUMN monthly_voice_time_seconds INT NOT NULL DEFAULT 0;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE tenants ADD COLUMN ticket_autoresponder_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 EXCEPTION WHEN duplicate_column THEN NULL;
 END $$;
 

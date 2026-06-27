@@ -6,7 +6,7 @@ function baseUrl(tenantCtx) {
 
 function token(tenantCtx) {
   if (!tenantCtx.tenant.powToken) {
-    throw new Error('Tenant has no POW token configured. Run /wren config pow token:<token>');
+    throw new Error('CRITICAL API KEY ERROR: Tenant has no POW token configured. You must flag this to higher-ups/server owner immediately so they can set it in /wren config under Secrets.');
   }
   return tenantCtx.tenant.powToken;
 }

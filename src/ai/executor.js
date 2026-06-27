@@ -4,6 +4,7 @@ import { webSearch } from '../integrations/brave.js';
 import { audit, addMemory } from '../tenant/store.js';
 import { canRunTool, denialReason } from './policy.js';
 import { actorKey } from './utils.js';
+import { getClient } from '../discord/client.js';
 
 const BANNED_TARGETS = new Set(['all', 'everyone', 'everybody', '*', 'others', 'server', 'people']);
 const MOD_TOOLS = new Set([
@@ -25,7 +26,12 @@ function rejectTarget(username) {
 }
 
 function getGuild(tenantCtx, actor) {
-  return actor?.guild || null;
+  if (actor?.guild) return actor.guild;
+  const client = getClient();
+  if (client && tenantCtx?.tenantId) {
+    return client.guilds.cache.get(tenantCtx.tenantId) || null;
+  }
+  return null;
 }
 
 export async function executeTool(tenantCtx, name, args, actor) {

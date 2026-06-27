@@ -11,6 +11,7 @@ export function attachTicketHandler(client) {
     if (!tenantCtx) return;
     
     if (tenantCtx.tenant.subscriptionTier !== 'pro') return;
+    if (!tenantCtx.tenant.ticketAutoresponderEnabled) return;
 
     const ticketCategories = tenantCtx.tenant.ticketCategoryId;
     if (!ticketCategories) return;

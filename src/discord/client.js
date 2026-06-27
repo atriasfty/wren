@@ -1,6 +1,12 @@
 import { Client, GatewayIntentBits, Partials } from 'discord.js';
 import { loadConfig } from '../config.js';
 
+let currentClient = null;
+
+export function getClient() {
+  return currentClient;
+}
+
 export async function createClient() {
   const cfg = loadConfig();
 
@@ -22,5 +28,7 @@ export async function createClient() {
   await client.login(cfg.discordToken);
   await new Promise((resolve) => client.once('ready', () => resolve()));
   console.log(`[discord] logged in as ${client.user.tag} (${client.user.id})`);
+  
+  currentClient = client;
   return client;
 }

@@ -202,17 +202,16 @@ export async function executeTool(tenantCtx, name, args, actor) {
         break;
       }
       case 'get_server_stats': {
-        const [players, info, staff] = await Promise.all([
-          prc.getOnlinePlayers(tenantCtx),
-          prc.getServerInfo(tenantCtx),
-          prc.getServerStaff(tenantCtx),
-        ]);
-        const staffOnline = players.filter((p) => ['Server Moderator', 'Server Administrator', 'Server Owner'].includes(p.permission)).length;
+        const info = await prc.getServerInfo(tenantCtx, ['Players', 'Staff']);
+        const playersData = info.Players || [];
+        const staff = info.Staff || {};
+        
+        const staffOnline = playersData.filter((p) => ['Server Moderator', 'Server Administrator', 'Server Owner'].includes(p.Permission)).length;
         const totalAdmins = Object.keys(staff.Admins || {}).length;
         const totalMods = Object.keys(staff.Mods || {}).length;
         result = {
           success: true,
-          currentPlayers: players.length,
+          currentPlayers: playersData.length,
           maxPlayers: info.MaxPlayers,
           staffOnline,
           totalAdmins,

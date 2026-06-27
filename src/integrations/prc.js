@@ -25,18 +25,31 @@ async function executeCommand(tenantCtx, command) {
   return { success: true };
 }
 
+const ROBLOX_USER_CACHE = new Map();
+const CACHE_TTL = 3600 * 1000; // 1 hour
+
 export async function getRobloxUserId(tenantCtx, username) {
   const clean = (username || '').trim();
   if (!clean) return null;
+  const lower = clean.toLowerCase();
+  
+  const cached = ROBLOX_USER_CACHE.get(lower);
+  if (cached && cached.expires > Date.now()) {
+    return cached.data;
+  }
+  
   if (clean.length >= 4) {
     const online = await getOnlinePlayers(tenantCtx);
-    const lower = clean.toLowerCase();
     let match = online.find((p) => p.username.toLowerCase() === lower);
     if (!match) match = online.find((p) => p.username.toLowerCase().startsWith(lower));
     if (!match && clean.length >= 5) {
       match = online.find((p) => p.username.toLowerCase().includes(lower));
     }
-    if (match) return { userId: match.userId, username: match.username };
+    if (match) {
+      const data = { userId: match.userId, username: match.username };
+      ROBLOX_USER_CACHE.set(lower, { data, expires: Date.now() + CACHE_TTL });
+      return data;
+    }
   }
   if (clean.length < 3 || clean.length > 20) return null;
   const res = await fetch('https://users.roblox.com/v1/usernames/users', {
@@ -46,13 +59,17 @@ export async function getRobloxUserId(tenantCtx, username) {
   });
   if (!res.ok) return null;
   const data = await res.json();
-  if (data.data && data.data.length) return { userId: data.data[0].id, username: data.data[0].name };
+  if (data.data && data.data.length) {
+    const result = { userId: data.data[0].id, username: data.data[0].name };
+    ROBLOX_USER_CACHE.set(lower, { data: result, expires: Date.now() + CACHE_TTL });
+    return result;
+  }
   return null;
 }
 
 export async function getOnlinePlayers(tenantCtx) {
   try {
-    const data = await getServerInfo(tenantCtx);
+    const data = await getServerInfo(tenantCtx, ['Players']);
     if (!data.Players) return [];
     return data.Players.map((player) => {
       const [username, idStr] = player.Player.split(':');
@@ -83,8 +100,10 @@ export async function findPlayer(tenantCtx, partialName) {
   );
 }
 
-export async function getServerInfo(tenantCtx) {
-  const query = '?Players=true&Staff=true&JoinLogs=true&Queue=true&KillLogs=true&CommandLogs=true&ModCalls=true&EmergencyCalls=true&Vehicles=true';
+export async function getServerInfo(tenantCtx, fields = null) {
+  const query = (fields && Array.isArray(fields) && fields.length > 0)
+    ? '?' + fields.map(f => `${f}=true`).join('&')
+    : '?Players=true&Staff=true&JoinLogs=true&Queue=true&KillLogs=true&CommandLogs=true&ModCalls=true&EmergencyCalls=true&Vehicles=true';
   const res = await fetch(`${baseUrl(tenantCtx)}/server${query}`, {
     headers: { 'Server-Key': serverKey(tenantCtx) },
   });
@@ -93,13 +112,13 @@ export async function getServerInfo(tenantCtx) {
 }
 
 export async function getServerStaff(tenantCtx) {
-  const data = await getServerInfo(tenantCtx);
+  const data = await getServerInfo(tenantCtx, ['Staff']);
   return data.Staff || {};
 }
 
 export async function getCommandLogs(tenantCtx, { limit } = {}) {
   try {
-    const data = await getServerInfo(tenantCtx);
+    const data = await getServerInfo(tenantCtx, ['CommandLogs']);
     if (!data.CommandLogs) return [];
     const logs = data.CommandLogs.map((l) => ({
       playerName: l.Player.split(':')[0],
@@ -114,7 +133,7 @@ export async function getCommandLogs(tenantCtx, { limit } = {}) {
 
 export async function getJoinLogs(tenantCtx, { limit } = {}) {
   try {
-    const data = await getServerInfo(tenantCtx);
+    const data = await getServerInfo(tenantCtx, ['JoinLogs']);
     if (!data.JoinLogs) return [];
     const logs = data.JoinLogs.map((l) => ({
       join: l.Join,
@@ -129,7 +148,7 @@ export async function getJoinLogs(tenantCtx, { limit } = {}) {
 
 export async function getKillLogs(tenantCtx, { limit } = {}) {
   try {
-    const data = await getServerInfo(tenantCtx);
+    const data = await getServerInfo(tenantCtx, ['KillLogs']);
     if (!data.KillLogs) return [];
     const logs = data.KillLogs.map((l) => ({
       killerName: l.Killer.split(':')[0],
@@ -144,7 +163,7 @@ export async function getKillLogs(tenantCtx, { limit } = {}) {
 
 export async function getModcalls(tenantCtx, { sinceTs, limit } = {}) {
   try {
-    const data = await getServerInfo(tenantCtx);
+    const data = await getServerInfo(tenantCtx, ['ModCalls']);
     if (!data.ModCalls) return [];
     let out = data.ModCalls.map((l) => ({
       caller: l.Caller.split(':')[0],

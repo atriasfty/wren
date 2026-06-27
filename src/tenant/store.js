@@ -123,6 +123,7 @@ function rowToTenant(row, encKey) {
     prcBaseUrl: row.prc_base_url,
     powBaseUrl: row.pow_base_url,
     powServerAId: row.pow_server_a_id,
+    ticketAutoresponderEnabled: row.ticket_autoresponder_enabled,
     ticketCategoryId: row.ticket_category_id,
     ticketParentId: row.ticket_parent_id,
     leadershipRoleId: row.leadership_role_id,

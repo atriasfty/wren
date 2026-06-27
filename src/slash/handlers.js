@@ -253,12 +253,17 @@ export async function handleIngest(interaction, ctx) {
 
   if (sub === 'run') {
     const kind = interaction.options.getString('kind') || 'all';
-    await interaction.deferReply({ ephemeral: true });
+    
+    const initialEmbed = new EmbedBuilder()
+      .setColor(0x0bb0d1)
+      .setDescription('Starting ingestion...\n\n*This may take a while depending on the amount of users ingesting or the amount of sources.*');
+      
+    await interaction.reply({ embeds: [initialEmbed], ephemeral: true });
     try {
       const result = await ingestTenant(ctx, interaction.client, { kinds: [kind] });
-      await interaction.editReply({ embeds: [new EmbedBuilder().setColor(0x0bb0d1).setDescription(`Ingestion done. ${result.chunks} chunks from ${result.sources ?? 0} sources.`)] });
+      await interaction.editReply({ embeds: [new EmbedBuilder().setColor(0x0bb0d1).setDescription(`✅ Ingestion done. Processed ${result.chunks} chunks from ${result.sources ?? 0} sources.`)] });
     } catch (err) {
-      await interaction.editReply({ embeds: [new EmbedBuilder().setColor(0x0bb0d1).setDescription(`Ingestion failed: ${err.message}`)] });
+      await interaction.editReply({ embeds: [new EmbedBuilder().setColor(0xff3333).setDescription(`❌ Ingestion failed: ${err.message}`)] });
     }
     return null;
   }

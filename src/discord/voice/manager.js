@@ -20,6 +20,7 @@ import { resolveTenantByGuildId } from '../../tenant/resolve.js';
 import { runAssistantPipeline } from '../../ai/pipeline.js';
 import { query } from '../../db/pool.js';
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { spawn } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -354,66 +355,94 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
   // Play the second 'got it' charm
   await playGotItCharm(state.player);
   
-  // Lock the state so Wren doesn't listen to itself while processing/speaking
-  state.isSpeaking = true;
-  state.isWaitingForPrompt = false;
-  state.listeningToUser = null;
-  
-  // Check ToS Agreement
-  let hasConsented;
-  try {
-    const res = await query('SELECT 1 FROM user_agreements WHERE discord_id = $1', [userId]);
-    hasConsented = res.rows.length > 0;
-  } catch (err) {
-    console.error('[voice] ToS check error:', err);
-    state.isSpeaking = false;
-    return;
-  }
-
-  if (!hasConsented) {
-    console.log(`[voice] User ${userId} has not consented to ToS.`);
-    await playUnconsented(state.player);
-    
-    // Send DM
-    try {
-      const user = await state.guild.client.users.fetch(userId);
-      const embed = new EmbedBuilder()
-        .setTitle('Welcome to Wren!')
-        .setDescription('Before using Wren in Voice Chat, please accept our Terms of Service and Privacy Policy. By clicking "Agree", you agree to both documents.')
-        .setColor('#0099ff')
-        .addFields(
-          { name: 'Documentation', value: 'https://wren.atriasafety.org' },
-          { name: 'Terms of Service', value: 'http://atriasfty.org/wren-tos' },
-          { name: 'Privacy Policy', value: 'http://atriasfty.org/wren-privacy' }
-        );
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('agree_tos')
-          .setLabel('Agree')
-          .setStyle(ButtonStyle.Primary)
-      );
-      await user.send({ embeds: [embed], components: [row] });
-    } catch (dmErr) {
-      console.error('[voice] Could not send ToS DM:', dmErr);
-    }
-    
-    state.player.once(AudioPlayerStatus.Idle, () => {
-      state.isSpeaking = false;
-    });
-    return;
-  }
-
-  // Play the charm noise
-  await playCharm(state.player);
-
-  // 3. Package PCM into a WAV file to send to OpenRouter
-  const wav = new WaveFile();
-  wav.fromScratch(1, 16000, '16', pcm16k);
-  const wavBytes = wav.toBuffer();
-  
   const cfg = loadConfig();
   let finalTranscript;
   try {
+    // Lock the state so Wren doesn't listen to itself while processing/speaking
+    state.isSpeaking = true;
+    state.isWaitingForPrompt = false;
+    state.listeningToUser = null;
+    
+    // Check ToS Agreement
+    let hasConsented;
+    try {
+      const res = await query('SELECT 1 FROM user_agreements WHERE discord_id = $1', [userId]);
+      hasConsented = res.rows.length > 0;
+    } catch (err) {
+      console.error('[voice] ToS check error:', err);
+      state.isSpeaking = false;
+      return;
+    }
+  
+    if (!hasConsented) {
+      console.log(`[voice] User ${userId} has not consented to ToS.`);
+      await playUnconsented(state.player);
+      
+      // Send DM
+      try {
+        const user = await state.guild.client.users.fetch(userId);
+        const embed = new EmbedBuilder()
+          .setTitle('Welcome to Wren!')
+          .setDescription('Before using Wren in Voice Chat, please accept our Terms of Service and Privacy Policy. By clicking "Agree", you agree to both documents.')
+          .setColor('#0099ff')
+          .addFields(
+            { name: 'Documentation', value: 'https://wren.atriasafety.org' },
+            { name: 'Terms of Service', value: 'http://atriasfty.org/wren-tos' },
+            { name: 'Privacy Policy', value: 'http://atriasfty.org/wren-privacy' }
+          );
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId('agree_tos')
+            .setLabel('Agree')
+            .setStyle(ButtonStyle.Primary)
+        );
+        await user.send({ embeds: [embed], components: [row] });
+      } catch (dmErr) {
+        console.error('[voice] Could not send ToS DM:', dmErr);
+      }
+      
+      state.player.once(AudioPlayerStatus.Idle, () => {
+        state.isSpeaking = false;
+      });
+      return;
+    }
+  
+    // 3. Package PCM into a WAV file using FFmpeg for pristine high-quality 16kHz downsampling
+    const wavBytes = await new Promise((resolve, reject) => {
+      const ffmpeg = spawn('ffmpeg', [
+        '-f', 's16le',
+        '-ar', '48000',
+        '-ac', '1',
+        '-i', 'pipe:0',
+        '-f', 'wav',
+        '-ar', '16000',
+        '-ac', '1',
+        'pipe:1'
+      ]);
+
+      const chunks = [];
+      let stderrOut = '';
+
+      ffmpeg.stdout.on('data', chunk => chunks.push(chunk));
+      ffmpeg.stderr.on('data', chunk => stderrOut += chunk.toString());
+
+      ffmpeg.on('close', code => {
+        if (code !== 0) {
+          reject(new Error(`ffmpeg exited with code ${code}\n${stderrOut}`));
+        } else {
+          resolve(Buffer.concat(chunks));
+        }
+      });
+
+      ffmpeg.on('error', reject);
+      ffmpeg.stdin.write(pcmBuffer);
+      ffmpeg.stdin.end();
+    });
+    
+    // Check WAV payload validity by writing to disk for debugging
+    const debugWavPath = path.join(__dirname, '..', '..', '..', 'data', `debug_${Date.now()}.wav`);
+    await fs.writeFile(debugWavPath, wavBytes).catch(() => {});
+    
     const payload = {
       model: 'nvidia/parakeet-tdt-0.6b-v3',
       input_audio: {

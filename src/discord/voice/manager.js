@@ -264,6 +264,8 @@ function setupVoiceReceiver(connection, guildId, discordChannelId) {
   });
 }
 
+let owwLock = Promise.resolve();
+
 async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connection) {
   const state = activeGuilds.get(guildId);
   if (!state) return;
@@ -284,18 +286,29 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
     const frameLength = 1280; // openwakeword-js chunk size
     let detected = false;
     
-    for (let i = 0; i < pcm16k.length - frameLength; i += frameLength) {
-      const frame = pcm16k.subarray(i, i + frameLength);
-      const scores = await oww.predict(frame);
-      
-      for (const score of Object.values(scores)) {
-        if (score > 0.5) {
-          detected = true;
-          break;
+    await new Promise(resolve => {
+      owwLock = owwLock.then(async () => {
+        try {
+          for (let i = 0; i < pcm16k.length - frameLength; i += frameLength) {
+            const frame = pcm16k.subarray(i, i + frameLength);
+            const scores = await oww.predict(frame);
+            
+            for (const score of Object.values(scores)) {
+              if (score > 0.5) {
+                detected = true;
+                break;
+              }
+            }
+            if (detected) break;
+          }
+        } finally {
+          resolve();
         }
-      }
-      if (detected) break;
-    }
+      }).catch(err => {
+        console.error('[voice] Wake word prediction error:', err);
+        resolve();
+      });
+    });
 
     if (!detected) {
       // Not addressed to Wren

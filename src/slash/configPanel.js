@@ -52,7 +52,7 @@ function fieldValueFor(field, tenant) {
     case 'erlcServerKey': return tenant.erlcServerKey ? '•••••••• (set)' : '—';
     case 'powToken':      return tenant.powToken ? '•••••••• (set)' : '—';
     default:
-      if (descriptor?.kind === 'boolean') return tenant[field.key] ? 'on' : 'off';
+      if (descriptor?.kind === 'boolean') return tenant[field.key] ? 'On' : 'Off';
       if (descriptor?.kind === 'channel') return tenant[field.key] ? `<#${tenant[field.key]}>` : '—';
       if (descriptor?.kind === 'channel_multi') return tenant[field.key] ? tenant[field.key].split(',').map(id => `<#${id}>`).join(' ') : '—';
       if (descriptor?.kind === 'role') return tenant[field.key] ? `<@&${tenant[field.key]}>` : '—';
@@ -131,7 +131,7 @@ export async function buildCategoryPanel(tenantId, category) {
 
 export async function buildValueSelectPanel(tenantId, fieldKey) {
   const field = CONFIG_FIELDS[fieldKey];
-  if (!field || !['channel', 'role', 'boolean'].includes(field.kind)) return null;
+  if (!field || !['channel', 'channel_multi', 'role', 'boolean'].includes(field.kind)) return null;
 
   const ctx = await resolveTenantByGuildId(tenantId);
   if (!ctx) return null;

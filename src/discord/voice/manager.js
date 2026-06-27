@@ -221,31 +221,11 @@ async function playUnconsented(player) {
   const unconsentedPath = path.join(__dirname, '..', '..', '..', 'data', 'unconsented.mp3');
   try {
     await fs.access(unconsentedPath);
-  } catch {
-    console.log('[voice] Generating unconsented audio...');
-    const cfg = loadConfig();
-    const res = await fetch('https://openrouter.ai/api/v1/audio/speech', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${cfg.openRouterApiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: 'hexgrad/kokoro-82m',
-        input: "You haven't consented to my terms of service yet. I've sent you a direct message so you can consent.",
-        voice: 'am_fenrir'
-      })
-    });
-    if (res.ok) {
-      const arrayBuffer = await res.arrayBuffer();
-      await fs.writeFile(unconsentedPath, Buffer.from(arrayBuffer));
-    } else {
-      console.error('[voice] Failed to generate unconsented audio:', await res.text());
-      return;
-    }
+    const resource = createAudioResource(unconsentedPath);
+    player.play(resource);
+  } catch (err) {
+    console.error('[voice] unconsented.mp3 not found!');
   }
-  const resource = createAudioResource(unconsentedPath);
-  player.play(resource);
 }
 
 function setupVoiceReceiver(connection, guildId, discordChannelId) {
@@ -338,14 +318,14 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
     // Clear any existing timeout
     if (state.promptTimeout) clearTimeout(state.promptTimeout);
     
-    // Auto-reset if the user doesn't say anything for 10 seconds
+    // Auto-reset if the user doesn't say anything for 15 seconds
     state.promptTimeout = setTimeout(() => {
       if (state.isWaitingForPrompt && state.listeningToUser === userId) {
         state.isWaitingForPrompt = false;
         state.listeningToUser = null;
         console.log(`[voice] Prompt timeout for user ${userId}`);
       }
-    }, 10000);
+    }, 15000);
     
     return;
   }

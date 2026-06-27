@@ -13,6 +13,7 @@
 * [Roblox Integration](roblox-integration.md)
 * [POW Integration](pow-integration.md)
 * [Smart Web Search](smart-web-search.md)
+* [Voice Chat](voice-chat.md)
 * [MCP Integration](MCP.md)
 * [Permissions](permissions.md)
 

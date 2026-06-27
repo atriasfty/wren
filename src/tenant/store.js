@@ -81,8 +81,8 @@ export async function updateTenant(tenantId, patch, encKey) {
   const allowed = [
     'display_name','bot_display_name','in_game_handle','owner_discord_id',
     'prc_base_url','pow_base_url','pow_server_a_id',
-    'ticket_category_id','ticket_parent_id','leadership_role_id',
-    'mod_role_id','admin_role_id',
+    'ticket_autoresponder_enabled','ticket_category_id','ticket_parent_id',
+    'leadership_role_id','mod_role_id','admin_role_id',
     'status_channel_id','erlc_log_channel_id','in_game_pm_log_id',
     'raid_alert_channel','raid_alert_role',
     'core_info','response_style','raid_auto_punish','extra_config',

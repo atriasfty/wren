@@ -315,7 +315,8 @@ export async function handleManage(interaction) {
   const components = [];
   const row = new ActionRowBuilder();
 
-  let message = `**Server Subscription:**\nTier: ${ctx.tenant.subscriptionTier || 'free'}\nUsage: ${ctx.tenant.monthlyMessageCount || 0} msgs\n`;
+  const voiceMins = Math.round((ctx.tenant.monthlyVoiceTimeSeconds || 0) / 60);
+  let message = `**Server Subscription:**\nTier: ${ctx.tenant.subscriptionTier || 'free'}\nUsage: ${ctx.tenant.monthlyMessageCount || 0} msgs, ${voiceMins} voice mins\n`;
 
   if (serverPortalUrl) {
     row.addComponents(

@@ -17,6 +17,7 @@ import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { loadConfig } from '../../config.js';
 import { resolveTenantByGuildId } from '../../tenant/resolve.js';
+import { incrementVoiceTime } from '../../tenant/store.js';
 import { runAssistantPipeline } from '../../ai/pipeline.js';
 import { query } from '../../db/pool.js';
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
@@ -338,10 +339,29 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
     oww.reset();
     
     // We heard the wake word!
+    
+    // Check billing limits
+    const tenantCtx = await resolveTenantByGuildId(guildId);
+    if (!tenantCtx) return;
+    
+    const t = tenantCtx.tenant;
+    const voiceSecs = t.monthly_voice_time_seconds || 0;
+    const tier = t.subscription_tier || 'free';
+    
+    let maxVoiceSecs = 0;
+    if (tier === 'core') maxVoiceSecs = 30 * 60;
+    if (tier === 'pro') maxVoiceSecs = 120 * 60;
+    
+    if (voiceSecs >= maxVoiceSecs) {
+      console.log(`[voice] User ${userId} hit wake word, but tenant ${guildId} is out of voice minutes.`);
+      return;
+    }
+
     console.log(`[voice] Wake word detected: "hey wren" from user ${userId}`);
     
     // Play the first charm
     await playCharm(state.player);
+    state.promptStartTime = Date.now();
     
     // Enter stage 2: listening for the prompt from this user
     state.isWaitingForPrompt = true;
@@ -376,6 +396,12 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
   
   // Play the second 'got it' charm
   await playGotItCharm(state.player);
+  
+  if (state.promptStartTime) {
+    const activeTimeSeconds = Math.ceil((Date.now() - state.promptStartTime) / 1000);
+    await incrementVoiceTime(guildId, activeTimeSeconds);
+    state.promptStartTime = null;
+  }
   
   const cfg = loadConfig();
   let finalTranscript;

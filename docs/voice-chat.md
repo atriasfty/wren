@@ -18,6 +18,18 @@ To make Wren leave, simply type `/wren voice leave`, or wait for Wren to automat
 
 ---
 
+## Voice Chat Limits & Billing
+
+To keep the service fast and responsive, Voice Chat usage is limited based on your server's subscription tier. Usage is calculated based on "active time"—the time between when Wren hears the wake word (the upward charm) and when you finish speaking your prompt (the downward charm).
+
+- **Free Tier**: 0 Voice Minutes (Voice Chat is disabled)
+- **Core Tier**: 30 Voice Minutes per month
+- **Pro Tier**: 120 Voice Minutes per month
+
+Once your server exhausts its voice minutes, Wren will silently ignore the wake word until your billing cycle resets. You can view your current usage at any time with `/wren manage` or `$atria serverinfo`.
+
+---
+
 ## Terms of Service & Privacy
 
 Before Wren can listen to you, you must consent to our Terms of Service and Privacy Policy.

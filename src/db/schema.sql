@@ -167,6 +167,10 @@ DO $$ BEGIN
   ALTER TABLE tenants ADD COLUMN last_active_channel_id TEXT;
 EXCEPTION WHEN duplicate_column THEN NULL;
 END $$;
+DO $$ BEGIN
+  ALTER TABLE tenants ADD COLUMN monthly_voice_time_seconds INT NOT NULL DEFAULT 0;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
 
 CREATE TABLE IF NOT EXISTS user_agreements (
   discord_id TEXT PRIMARY KEY,

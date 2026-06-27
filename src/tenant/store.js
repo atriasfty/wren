@@ -427,11 +427,24 @@ export async function incrementMessageUsage(tenantId) {
   const r = await query(
     `UPDATE tenants SET 
        monthly_message_count = CASE WHEN NOW() > billing_cycle_reset THEN 1 ELSE monthly_message_count + 1 END,
+       monthly_voice_time_seconds = CASE WHEN NOW() > billing_cycle_reset THEN 0 ELSE monthly_voice_time_seconds END,
        billing_cycle_reset = CASE WHEN NOW() > billing_cycle_reset THEN NOW() + interval '1 month' ELSE billing_cycle_reset END
      WHERE tenant_id = $1 RETURNING monthly_message_count`,
     [tenantId]
   );
   return r.rows[0]?.monthly_message_count || 0;
+}
+
+export async function incrementVoiceTime(tenantId, seconds) {
+  const r = await query(
+    `UPDATE tenants SET 
+       monthly_voice_time_seconds = CASE WHEN NOW() > billing_cycle_reset THEN $2 ELSE monthly_voice_time_seconds + $2 END,
+       monthly_message_count = CASE WHEN NOW() > billing_cycle_reset THEN 0 ELSE monthly_message_count END,
+       billing_cycle_reset = CASE WHEN NOW() > billing_cycle_reset THEN NOW() + interval '1 month' ELSE billing_cycle_reset END
+     WHERE tenant_id = $1 RETURNING monthly_voice_time_seconds`,
+    [tenantId, seconds]
+  );
+  return r.rows[0]?.monthly_voice_time_seconds || 0;
 }
 
 export async function updateSubscription(tenantId, tier, polarSubId = null, ownerId = null, customerId = null) {

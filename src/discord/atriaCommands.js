@@ -63,7 +63,7 @@ export async function handleAtriaCommands(message) {
             { name: 'Display Name', value: t.displayName, inline: true },
             { name: 'Owner', value: t.ownerDiscordId ? `<@${t.ownerDiscordId}>` : 'None', inline: true },
             { name: 'Plan', value: t.subscriptionTier || 'free', inline: true },
-            { name: 'Usage', value: `${t.monthlyMessageCount || 0} msgs this cycle`, inline: true },
+            { name: 'Usage', value: `${t.monthlyMessageCount || 0} msgs, ${Math.round((t.monthlyVoiceTimeSeconds || 0) / 60)} voice mins`, inline: true },
             { name: 'Cycle Reset', value: t.billingCycleReset ? new Date(t.billingCycleReset).toLocaleString() : 'N/A', inline: true }
           );
         

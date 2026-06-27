@@ -22,6 +22,16 @@ import { query } from '../../db/pool.js';
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { spawn } from 'child_process';
 
+let ffmpegPath = 'ffmpeg';
+if (fsSync.existsSync('/usr/bin/ffmpeg')) {
+  ffmpegPath = '/usr/bin/ffmpeg';
+} else if (fsSync.existsSync('/opt/homebrew/bin/ffmpeg')) {
+  ffmpegPath = '/opt/homebrew/bin/ffmpeg';
+} else if (fsSync.existsSync('/usr/local/bin/ffmpeg')) {
+  ffmpegPath = '/usr/local/bin/ffmpeg';
+}
+process.env.FFMPEG_PATH = ffmpegPath;
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -527,7 +537,8 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
     body: JSON.stringify({
       model: 'hexgrad/kokoro-82m',
       input: aiResult.text,
-      voice: 'am_fenrir' // Best default voice
+      voice: 'am_fenrir', // Best default voice
+      response_format: 'mp3'
     })
   });
   

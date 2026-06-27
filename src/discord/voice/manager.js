@@ -192,7 +192,7 @@ async function playUnconsented(player) {
       body: JSON.stringify({
         model: 'hexgrad/kokoro-82m',
         input: "You haven't consented to my terms of service yet. I've sent you a direct message so you can consent.",
-        voice: 'af_bella'
+        voice: 'am_fenrir'
       })
     });
     if (res.ok) {
@@ -273,6 +273,9 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId) {
     return;
   }
   
+  // Clear the openwakeword internal buffers to prevent double chimes
+  oww.reset();
+  
   // 2. We heard the wake word! Let's lock the state so Wren doesn't listen to itself.
   state.isSpeaking = true;
   console.log(`[voice] Wake word detected: "hey wren" from user ${userId}`);
@@ -345,7 +348,9 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId) {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${cfg.openRouterApiKey}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://wren.atriasafety.org',
+        'X-OpenRouter-Title': 'Wren Voice Agent'
       },
       body: JSON.stringify(payload)
     });
@@ -406,7 +411,7 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId) {
     body: JSON.stringify({
       model: 'hexgrad/kokoro-82m',
       input: aiResult.text,
-      voice: 'af_bella' // Best default voice
+      voice: 'am_fenrir' // Best default voice
     })
   });
   

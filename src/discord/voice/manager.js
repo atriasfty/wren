@@ -52,31 +52,27 @@ globalThis.fetch = async (url, options) => {
   return originalFetch(url, options);
 };
 
-let initPromise = null;
-async function getWakeWordModel() {
-  if (!initPromise) {
-    initPromise = (async () => {
-      const keywordPath = path.join(__dirname, '..', '..', '..', 'hey_wren.onnx');
-      if (!fsSync.existsSync(keywordPath)) {
-        throw new Error(`Wake word model not found at ${keywordPath}. Please download it from openwakeword.com and place it in the project root.`);
-      }
-      
-      const modelsDir = path.join(__dirname, '..', '..', '..', 'models');
-      const { Model } = await import('openwakeword-js');
-      
-      const owwModel = new Model({
-        wakewordModels: [pathToFileURL(keywordPath).href],
-        melspectrogramModelPath: pathToFileURL(path.join(modelsDir, 'melspectrogram.onnx')).href,
-        embeddingModelPath: pathToFileURL(path.join(modelsDir, 'embedding_model.onnx')).href,
-        inferenceFramework: 'onnx',
-        // onnxruntime-web may need standard paths, but it's safe to provide the path
-        wasmPaths: path.join(__dirname, '..', '..', '..', 'node_modules', 'onnxruntime-web', 'dist/')
-      });
-      await owwModel.init();
-      return owwModel;
-    })();
+async function createWakeWordModel() {
+  const keywordPath = path.join(__dirname, '..', '..', '..', 'hey_wren.onnx');
+  if (!fsSync.existsSync(keywordPath)) {
+    throw new Error(`Wake word model not found at ${keywordPath}. Please download it from openwakeword.com and place it in the project root.`);
   }
-  return initPromise;
+  
+  const modelsDir = path.join(__dirname, '..', '..', '..', 'models');
+  const { Model } = await import('openwakeword-js');
+  
+  const owwModel = new Model({
+    wakewordModels: [pathToFileURL(keywordPath).href],
+    melspectrogramModelPath: pathToFileURL(path.join(modelsDir, 'melspectrogram.onnx')).href,
+    embeddingModelPath: pathToFileURL(path.join(modelsDir, 'embedding_model.onnx')).href,
+    vadModelPath: pathToFileURL(path.join(modelsDir, 'silero_vad.onnx')).href,
+    vadThreshold: 0.5,
+    inferenceFramework: 'onnx',
+    // onnxruntime-web may need standard paths, but it's safe to provide the path
+    wasmPaths: path.join(__dirname, '..', '..', '..', 'node_modules', 'onnxruntime-web', 'dist/')
+  });
+  await owwModel.init();
+  return owwModel;
 }
 
 const activeGuilds = new Map();
@@ -109,12 +105,17 @@ async function joinChannel(interaction) {
     // Create player and state
     const player = createAudioPlayer();
     connection.subscribe(player);
+    
+    // Load the wake word model for this specific guild
+    const owwModel = await createWakeWordModel();
+    
     activeGuilds.set(channel.guild.id, {
       connection,
       player,
       isSpeaking: false,
       channelId: channel.id,
-      guild: channel.guild
+      guild: channel.guild,
+      owwModel // Guild-specific instance
     });
     
     // Wait for connection to be ready before playing anything, otherwise audio drops
@@ -140,6 +141,10 @@ async function leaveChannel(interaction) {
   const connection = getVoiceConnection(interaction.guild.id);
   if (connection) {
     connection.destroy();
+    const state = activeGuilds.get(interaction.guild.id);
+    if (state) {
+      state.owwModel = null; // Free up WASM/Model memory
+    }
     activeGuilds.delete(interaction.guild.id);
     return { content: 'Left the voice channel.', ephemeral: true };
   }
@@ -302,7 +307,8 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
   if (!state.isWaitingForPrompt) {
     // Stage 1: Waiting for wake word
 
-    const oww = await getWakeWordModel();
+    const oww = state.owwModel;
+    if (!oww) return; // Ignore audio if the model is currently sleeping
     const frameLength = 1280; // openwakeword-js chunk size
     let detected = false;
     
@@ -609,4 +615,39 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
     state.isSpeaking = false;
     fs.unlink(tempPath).catch(()=>{});
   });
+}
+
+export async function handleVoiceStateUpdate(oldState, newState) {
+  const guildId = newState.guild.id;
+  const state = activeGuilds.get(guildId);
+  if (!state) return; // Wren is not in a voice channel in this guild
+
+  const channel = state.guild.channels.cache.get(state.channelId);
+  if (!channel) return;
+
+  const humansInChannel = channel.members.filter(m => !m.user.bot).size;
+
+  if (humansInChannel === 0) {
+    // Start idle timer if not already started
+    if (!state.idleTimer) {
+      console.log(`[voice] Wren is alone in ${guildId}. Starting 2-minute idle timer to sleep wake word model.`);
+      state.idleTimer = setTimeout(() => {
+        console.log(`[voice] 2-minute idle timer fired for ${guildId}. Sleeping wake word model to save memory.`);
+        state.owwModel = null;
+      }, 120 * 1000);
+    }
+  } else {
+    // Humans are present. Clear idle timer if active.
+    if (state.idleTimer) {
+      clearTimeout(state.idleTimer);
+      state.idleTimer = null;
+      console.log(`[voice] Human joined ${guildId}. Idle timer cancelled.`);
+    }
+
+    // If the model was previously slept, quietly wake it up.
+    if (state.owwModel === null) {
+      console.log(`[voice] Human joined ${guildId}. Waking up wake word model.`);
+      state.owwModel = await createWakeWordModel();
+    }
+  }
 }

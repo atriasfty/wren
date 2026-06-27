@@ -21,6 +21,7 @@ import { dispatchGarminCommand, handleComponentInteraction } from './slash/handl
 import { syncAllGuilds } from './slash/register.js';
 import { startApiServer } from './api/server.js';
 import { pruneExpiredEvents } from './tenant/store.js';
+import { handleVoiceStateUpdate } from './discord/voice/manager.js';
 
 function publicInteractionError() {
   return 'Something went wrong while processing that request.';
@@ -41,6 +42,8 @@ async function main() {
 
   attachMessageHandler(client);
   attachIngameBridge(client);
+  
+  client.on('voiceStateUpdate', handleVoiceStateUpdate);
 
   client.on('interactionCreate', async (interaction) => {
     if (interaction.isChatInputCommand()) {

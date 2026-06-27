@@ -233,6 +233,12 @@ function setupVoiceReceiver(connection, guildId, discordChannelId) {
     const state = activeGuilds.get(guildId);
     if (!state || state.isSpeaking) return; // Prevent listening while Wren is talking
     
+    // Pause the timeout while the targeted user is actively speaking
+    if (state.isWaitingForPrompt && state.listeningToUser === userId && state.promptTimeout) {
+      clearTimeout(state.promptTimeout);
+      state.promptTimeout = null;
+    }
+    
     // Subscribe to the audio stream until 1 second of silence
     const audioStream = connection.receiver.subscribe(userId, {
       end: { behavior: EndBehaviorType.AfterSilence, duration: 1000 },
@@ -252,8 +258,21 @@ function setupVoiceReceiver(connection, guildId, discordChannelId) {
     opusDecoder.on('end', async () => {
       if (pcmChunks.length === 0) return;
       const pcmBuffer = Buffer.concat(pcmChunks);
+      
       // Ignore extremely short audio bursts (less than 0.5s at 48kHz)
-      if (pcmBuffer.length < 48000 * 2 * 0.5) return;
+      if (pcmBuffer.length < 48000 * 2 * 0.5) {
+        // If we are waiting for this user and dropped a noise, restart the timeout
+        if (state.isWaitingForPrompt && state.listeningToUser === userId) {
+          state.promptTimeout = setTimeout(() => {
+            if (state.isWaitingForPrompt && state.listeningToUser === userId) {
+              state.isWaitingForPrompt = false;
+              state.listeningToUser = null;
+              console.log(`[voice] Prompt timeout for user ${userId}`);
+            }
+          }, 15000);
+        }
+        return;
+      }
       
       try {
         await processAudio(pcmBuffer, userId, guildId, discordChannelId, connection);

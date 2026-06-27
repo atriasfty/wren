@@ -8,7 +8,7 @@ To protect your server's AI token limits and maintain a clean environment, you c
 
 ## How to Ban a User
 
-To ban a user, you must have the **Staff** role permission (or higher) mapped in Wren's Role-Based Access Control.
+To ban a user, you must have the **Leadership** role permission (or higher) mapped in Wren's Role-Based Access Control.
 
 Type the following command in any channel:
 ```
@@ -26,7 +26,7 @@ To see a list of everyone who is currently blocked from using Wren in your serve
 ```
 /wren bans list
 ```
-This will output a list of Discord IDs, the reason for the ban, and the Staff member who issued the ban.
+This will output a list of Discord IDs, the reason for the ban, and the Leadership member who issued the ban.
 
 ## Unbanning a User
 

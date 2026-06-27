@@ -181,6 +181,7 @@ echo -e "${YELLOW}Installing dependencies...${NC}"
 npm ci --production
 
 echo -e "${YELLOW}Running database migrations...${NC}"
+node migration.js
 npm run migrate
 
 cd ../../
@@ -192,6 +193,9 @@ ln -sfn "${NEW_RELEASE_DIR}" "${CURRENT_SYMLINK}"
 # --- 6. Reload PM2 ---
 echo -e "${YELLOW}[6/6] Reloading application with PM2...${NC}"
 cd "${CURRENT_SYMLINK}"
+
+echo -e "${YELLOW}Clearing old PM2 logs...${NC}"
+rm -f /root/.pm2/logs/wren-out.log /root/.pm2/logs/wren-error.log
 
 if pm2 show wren &> /dev/null; then
     echo -e "${GREEN}Restarting existing PM2 process (bypassing symlink cache)...${NC}"

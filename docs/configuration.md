@@ -18,9 +18,9 @@ This is how Wren presents itself in your community.
 Tell Wren where it is allowed to operate and who is in charge.
 * **Status channel:** Where Wren posts important updates.
 * **ERLC log channel:** Where Wren sends logs from in-game events.
-* **Security role:** The role required to access secure Wren commands.
-* **Staff role:** Set this to the role you give everyone on your staff team. Members with this role can use everyday moderation tools like kicking, teleporting, and messaging players. See the [Permissions](permissions.md) page for the full list.
-* **Admin role:** Set this to the role you give everyone on your admin team. Members with this role can use sensitive tools like banning, and promoting or demoting moderators and administrators. Every role above the admin role in your server's role hierarchy is automatically treated as admin too, so you only need to set the lowest admin rank.
+* **Leadership role:** The role required to access secure Wren commands, like memory, ingest, and bans.
+* **Admin role:** Set this to the role you give everyone on your admin team. Members with this role can use sensitive tools like banning players. Every role above the admin role in your server's role hierarchy is automatically treated as admin too, so you only need to set the lowest admin rank.
+* **Mod role:** Set this to the role you give everyone on your moderation team. Members with this role can use everyday moderation tools like kicking, teleporting, and messaging players. See the [Permissions](permissions.md) page for the full list.
 
 ### 3. Behaviour
 This is the most powerful setting! 

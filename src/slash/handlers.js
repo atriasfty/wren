@@ -1,5 +1,6 @@
 import { PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
 import { query } from '../db/pool.js';
+import { resolveActorRank, RANK_ORDER } from '../ai/policy.js';
 import crypto from 'crypto';
 import {
   resolveTenantByGuildId,
@@ -89,20 +90,22 @@ export async function handleSetup(interaction) {
 
 
 
-export async function handleConfig(interaction) {
-  if (!(await checkManageGuild(interaction))) return ephemeral('You need ManageGuild permission for this.');
-  const { ctx } = await loadCtx(interaction);
+export async function handleConfig(interaction, ctx) {
+  if (RANK_ORDER[resolveActorRank({ kind: 'discord', member: interaction.member, id: interaction.user.id }, ctx)] < RANK_ORDER['leadership']) {
+    return ephemeral('You need the Leadership role for this.');
+  }
 
   const panel = await buildMainPanel(interaction.guild.id);
   if (!panel) return ephemeral('Could not load configuration.');
   return { ...panel, ephemeral: true };
 }
 
-export async function handleSources(interaction) {
-  if (!(await checkManageGuild(interaction))) return ephemeral('You need ManageGuild permission for this.');
+export async function handleSources(interaction, ctx) {
+  if (RANK_ORDER[resolveActorRank({ kind: 'discord', member: interaction.member, id: interaction.user.id }, ctx)] < RANK_ORDER['leadership']) {
+    return ephemeral('You need the Leadership role for this.');
+  }
   const sub = interaction.options.getSubcommand();
   const tenantId = interaction.guild.id;
-  const { ctx } = await loadCtx(interaction);
 
   if (sub === 'list') {
     const rows = await listSources(tenantId);
@@ -137,8 +140,10 @@ export async function handleSources(interaction) {
   return ephemeral(`Unknown subcommand: ${sub}`);
 }
 
-export async function handlePolicy(interaction) {
-  if (!(await checkManageGuild(interaction))) return ephemeral('You need ManageGuild permission for this.');
+export async function handlePolicy(interaction, ctx) {
+  if (RANK_ORDER[resolveActorRank({ kind: 'discord', member: interaction.member, id: interaction.user.id }, ctx)] < RANK_ORDER['leadership']) {
+    return ephemeral('You need the Leadership role for this.');
+  }
   const sub = interaction.options.getSubcommand();
   const tenantId = interaction.guild.id;
 
@@ -151,8 +156,11 @@ export async function handlePolicy(interaction) {
   return ephemeral(`Unknown subcommand: ${sub}`);
 }
 
-export async function handleBans(interaction) {
-  if (!(await checkManageGuild(interaction))) return ephemeral('You need ManageGuild permission for this.');
+export async function handleBans(interaction, ctx) {
+  const actorRankStr = resolveActorRank({ kind: 'discord', member: interaction.member, id: interaction.user.id }, ctx);
+  if (RANK_ORDER[actorRankStr] < RANK_ORDER['leadership']) {
+    return ephemeral('You need the Leadership role for this.');
+  }
   const sub = interaction.options.getSubcommand();
   const tenantId = interaction.guild.id;
 
@@ -164,6 +172,18 @@ export async function handleBans(interaction) {
 
   if (sub === 'add') {
     const target = interaction.options.getUser('target');
+    
+    // Check rank
+    let targetMember;
+    try {
+      targetMember = await interaction.guild.members.fetch(target.id);
+    } catch (e) {}
+    const targetRankStr = targetMember ? resolveActorRank({ kind: 'discord', member: targetMember, id: target.id }, ctx) : 'user';
+    
+    if (RANK_ORDER[actorRankStr] <= RANK_ORDER[targetRankStr]) {
+      return ephemeral('You cannot ban a user with an equal or higher role than yourself.');
+    }
+
     const reason = interaction.options.getString('reason') || null;
     const userKey = `discord:${target.id}`;
     await addBan({ tenantId, userKey, reason, bannedBy: `discord:${interaction.user.id}` });
@@ -172,6 +192,17 @@ export async function handleBans(interaction) {
 
   if (sub === 'remove') {
     const target = interaction.options.getUser('target');
+    
+    let targetMember;
+    try {
+      targetMember = await interaction.guild.members.fetch(target.id);
+    } catch (e) {}
+    const targetRankStr = targetMember ? resolveActorRank({ kind: 'discord', member: targetMember, id: target.id }, ctx) : 'user';
+    
+    if (RANK_ORDER[actorRankStr] <= RANK_ORDER[targetRankStr]) {
+      return ephemeral('You cannot unban a user with an equal or higher role than yourself.');
+    }
+
     const userKey = `discord:${target.id}`;
     await removeBan({ tenantId, userKey });
     return ephemeral(`Unbanned \`${userKey}\`.`);
@@ -180,8 +211,10 @@ export async function handleBans(interaction) {
   return ephemeral(`Unknown subcommand: ${sub}`);
 }
 
-export async function handleMemory(interaction) {
-  if (!(await checkManageGuild(interaction))) return ephemeral('You need ManageGuild permission for this.');
+export async function handleMemory(interaction, ctx) {
+  const actorRankStr = resolveActorRank({ kind: 'discord', member: interaction.member, id: interaction.user.id }, ctx);
+  const isLeadershipOrHigher = RANK_ORDER[actorRankStr] >= RANK_ORDER['leadership'];
+  
   const sub = interaction.options.getSubcommand();
   const tenantId = interaction.guild.id;
 
@@ -194,7 +227,7 @@ export async function handleMemory(interaction) {
   if (sub === 'add') {
     const scope = interaction.options.getString('scope');
     const content = interaction.options.getString('content');
-    if (scope === 'server' && !(await isOwner(interaction))) return ephemeral('Only the server owner can add server-scoped memory.');
+    if (scope === 'server' && !isLeadershipOrHigher) return ephemeral('Only the leadership role can add server-scoped memory.');
     const userKey = scope === 'user' ? `discord:${interaction.user.id}` : null;
     const { addMemory } = await import('../tenant/store.js');
     await addMemory({ tenantId, scope, userKey, content, addedBy: `discord:${interaction.user.id}` });
@@ -202,6 +235,7 @@ export async function handleMemory(interaction) {
   }
 
   if (sub === 'remove') {
+    if (!isLeadershipOrHigher) return ephemeral('Only the leadership role can remove memories.');
     const id = interaction.options.getInteger('id');
     await removeMemory(tenantId, id);
     return ephemeral(`Removed memory #${id}.`);
@@ -210,10 +244,12 @@ export async function handleMemory(interaction) {
   return ephemeral(`Unknown subcommand: ${sub}`);
 }
 
-export async function handleIngest(interaction) {
-  if (!(await isOwner(interaction))) return ephemeral('Only the server owner can run ingestion.');
+export async function handleIngest(interaction, ctx) {
+  const actorRankStr = resolveActorRank({ kind: 'discord', member: interaction.member, id: interaction.user.id }, ctx);
+  if (RANK_ORDER[actorRankStr] < RANK_ORDER['leadership']) {
+    return ephemeral('Only the leadership role can run ingestion.');
+  }
   const sub = interaction.options.getSubcommand();
-  const { ctx } = await loadCtx(interaction);
 
   if (sub === 'run') {
     const kind = interaction.options.getString('kind') || 'all';
@@ -383,12 +419,12 @@ export async function dispatchGarminCommand(interaction) {
       reply = ephemeral('⚠️ This server is not configured with Wren yet. An admin must run `/wren setup` first.');
     } else {
       switch (group) {
-        case 'config': reply = await handleConfig(interaction); break;
-        case 'sources': reply = await handleSources(interaction); break;
-        case 'policy': reply = await handlePolicy(interaction); break;
-        case 'bans': reply = await handleBans(interaction); break;
-        case 'memory': reply = await handleMemory(interaction); break;
-        case 'ingest': reply = await handleIngest(interaction); break;
+        case 'config': reply = await handleConfig(interaction, ctx); break;
+        case 'sources': reply = await handleSources(interaction, ctx); break;
+        case 'policy': reply = await handlePolicy(interaction, ctx); break;
+        case 'bans': reply = await handleBans(interaction, ctx); break;
+        case 'memory': reply = await handleMemory(interaction, ctx); break;
+        case 'ingest': reply = await handleIngest(interaction, ctx); break;
         case 'voice': reply = await handleVoice(interaction); break;
         default: reply = ephemeral(`Unknown group: ${group}`);
       }
@@ -438,8 +474,14 @@ export async function handleComponentInteraction(interaction) {
   const customId = interaction.customId || '';
   const [route, tenantId, fieldKey] = customId.split(':');
 
-  if (!(await checkManageGuild(interaction))) {
-    const err = ephemeral('You need ManageGuild permission for this.');
+  const { loadConfig } = await import('../config.js');
+  const cfg = loadConfig();
+  const ctx = await resolveTenantByGuildId(tenantId);
+  if (!ctx) return interaction.reply(ephemeral('Server not set up.'));
+
+  const actorRankStr = resolveActorRank({ kind: 'discord', member: interaction.member, id: interaction.user?.id || 'unknown' }, ctx);
+  if (RANK_ORDER[actorRankStr] < RANK_ORDER['leadership']) {
+    const err = ephemeral('You need the Leadership role for this.');
     if (interaction.replied || interaction.deferred) return interaction.followUp(err);
     return interaction.reply(err);
   }

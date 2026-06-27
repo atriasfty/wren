@@ -2,7 +2,7 @@
 
 One of Wren's most powerful features is **Proactive Memory**. Wren actively learns about your community by listening to conversations, remembering user preferences, and saving important context for later.
 
-However, sometimes Wren might remember something incorrect, or a user might intentionally try to feed Wren false information. As a server administrator or staff member, you have full control over what Wren remembers.
+However, sometimes Wren might remember something incorrect, or a user might intentionally try to feed Wren false information. As a server administrator or leadership member, you have full control over what Wren remembers.
 
 ---
 
@@ -21,7 +21,7 @@ To see everything Wren has memorized in your server, type:
 ```
 /wren memory list
 ```
-*(You must have Staff permissions or higher to run this).*
+*(You must have Leadership permissions or higher to run this).*
 
 The bot will output a list of memories. Each memory will look something like this:
 `[#45 server] The police department applications open on Friday.`
@@ -57,4 +57,4 @@ To add a memory for the whole server (Requires Server Owner):
 /wren memory add scope:server content:The server IP address changed to 192.168.1.1.
 ```
 
-*Warning: Server-scoped memories are highly influential on Wren's behavior. Only the Server Owner can manually add them to prevent staff abuse.*
+*Warning: Server-scoped memories are highly influential on Wren's behavior. Only Leadership or the Server Owner can manually add them to prevent abuse.*

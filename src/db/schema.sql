@@ -14,9 +14,9 @@ CREATE TABLE IF NOT EXISTS tenants (
   pow_server_a_id     TEXT,
   ticket_category_id  TEXT,
   ticket_parent_id    TEXT,
-  security_role_id    TEXT,
-  staff_role_id       TEXT,
+  leadership_role_id  TEXT,
   admin_role_id       TEXT,
+  mod_role_id         TEXT,
   status_channel_id   TEXT,
   erlc_log_channel_id TEXT,
   in_game_pm_log_id   TEXT,
@@ -47,7 +47,7 @@ CREATE INDEX IF NOT EXISTS idx_tenant_sources_tenant ON tenant_sources(tenant_id
 CREATE TABLE IF NOT EXISTS tenant_role_policy (
   tenant_id  TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
   tool       TEXT NOT NULL,
-  min_role   TEXT NOT NULL CHECK (min_role IN ('owner','admin','mod','staff','user')),
+  min_role   TEXT NOT NULL CHECK (min_role IN ('owner','leadership','admin','mod','user')),
   PRIMARY KEY (tenant_id, tool)
 );
 CREATE INDEX IF NOT EXISTS idx_tenant_role_policy_tenant ON tenant_role_policy(tenant_id);

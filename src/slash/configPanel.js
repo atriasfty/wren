@@ -25,9 +25,9 @@ export const CONFIG_FIELDS = {
   // Channels
   statusChannelId:    { dbField: 'status_channel_id',    kind: 'channel', label: 'Status channel',     category: 'Channels' },
   erlcLogChannelId:   { dbField: 'erlc_log_channel_id',  kind: 'channel', label: 'ERLC log channel',    category: 'Channels' },
-  securityRoleId:     { dbField: 'security_role_id',     kind: 'role',    label: 'Security role',       category: 'Channels' },
-  staffRoleId:        { dbField: 'staff_role_id',        kind: 'role',    label: 'Staff role',          category: 'Channels' },
+  leadershipRoleId:   { dbField: 'leadership_role_id',   kind: 'role',    label: 'Leadership role',     category: 'Channels' },
   adminRoleId:        { dbField: 'admin_role_id',        kind: 'role',    label: 'Admin role',          category: 'Channels' },
+  modRoleId:          { dbField: 'mod_role_id',          kind: 'role',    label: 'Mod role',            category: 'Channels' },
 
   // Behaviour
   coreInfo:      { dbField: 'core_info',      kind: 'longtext', label: 'Core info (always-on note)', category: 'Behaviour', placeholder: 'Server vibe, timezone, who to ping in an emergency…' },
@@ -70,7 +70,7 @@ export async function buildMainPanel(tenantId) {
     .setDescription('Pick a category below to view and edit your settings.')
     .addFields(
       { name: 'Identity',  value: `Display name: **${t.displayName}**\nBot name: **${t.botDisplayName}**\nIn-game handle: **${t.inGameHandle}**`, inline: false },
-      { name: 'Channels',  value: `Status: ${t.statusChannelId ? `<#${t.statusChannelId}>` : '—'}\nERLC log: ${t.erlcLogChannelId ? `<#${t.erlcLogChannelId}>` : '—'}\nSecurity role: ${t.securityRoleId ? `<@&${t.securityRoleId}>` : '—'}\nStaff role: ${t.staffRoleId ? `<@&${t.staffRoleId}>` : '—'}\nAdmin role: ${t.adminRoleId ? `<@&${t.adminRoleId}>` : '—'}`, inline: false },
+      { name: 'Channels',  value: `Status: ${t.statusChannelId ? `<#${t.statusChannelId}>` : '—'}\nERLC log: ${t.erlcLogChannelId ? `<#${t.erlcLogChannelId}>` : '—'}\nLeadership role: ${t.leadershipRoleId ? `<@&${t.leadershipRoleId}>` : '—'}\nAdmin role: ${t.adminRoleId ? `<@&${t.adminRoleId}>` : '—'}\nMod role: ${t.modRoleId ? `<@&${t.modRoleId}>` : '—'}`, inline: false },
       { name: 'Behaviour', value: `Core info: ${t.coreInfo ? `${t.coreInfo.slice(0, 100)}${t.coreInfo.length > 100 ? '…' : ''}` : '—'}`, inline: false },
       { name: 'Secrets',   value: `ERLC key: ${t.erlcServerKey ? '•••• set' : '—'}\nPOW token: ${t.powToken ? '•••• set' : '—'}`, inline: false },
     )

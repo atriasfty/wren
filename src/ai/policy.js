@@ -1,8 +1,6 @@
 import { policyToolKey } from './tools.js';
 
-export const RANK_ORDER = { owner: 4, admin: 3, mod: 2, staff: 1, user: 0 };
-
-const STAFF_SLOTS = ['staff_a', 'staff_b', 'staff_c'];
+export const RANK_ORDER = { owner: 4, leadership: 3, admin: 2, mod: 1, user: 0 };
 
 export function resolveActorRank(actor, tenantCtx) {
   if (!actor) return 'user';
@@ -12,22 +10,21 @@ export function resolveActorRank(actor, tenantCtx) {
     if (member.id === member.guild?.ownerId) return 'owner';
     if (member.permissions?.has?.('ManageGuild')) return 'owner';
     if (member.permissions?.has?.('Administrator')) return 'admin';
+    // Dedicated leadership role on tenant config
+    const leadershipRoleId = tenantCtx.tenant?.leadershipRoleId;
+    if (leadershipRoleId && member.roles?.cache?.has?.(leadershipRoleId)) return 'leadership';
+    
     // Dedicated admin role on tenant config (matches the role and every role above it)
     const adminRoleId = tenantCtx.tenant?.adminRoleId;
     if (adminRoleId) {
       const adminRole = member.guild?.roles?.cache?.get?.(adminRoleId);
       if (adminRole && member.roles?.cache?.some?.(r => r.position >= adminRole.position && r.id !== member.guild.id)) return 'admin';
     }
-    // Legacy staff_a/b/c slots → mod rank
-    for (const slot of STAFF_SLOTS) {
-      const roleId = tenantCtx.roleSlots[slot];
-      if (roleId && member.roles?.cache?.has?.(roleId)) return 'mod';
-    }
-    // Dedicated staff role on tenant config
-    const staffRoleId = tenantCtx.tenant?.staffRoleId;
-    if (staffRoleId && member.roles?.cache?.has?.(staffRoleId)) return 'staff';
-    // Legacy staff slot
-    if (tenantCtx.roleSlots.staff && member.roles?.cache?.has?.(tenantCtx.roleSlots.staff)) return 'staff';
+
+    // Dedicated mod role on tenant config
+    const modRoleId = tenantCtx.tenant?.modRoleId;
+    if (modRoleId && member.roles?.cache?.has?.(modRoleId)) return 'mod';
+    
     return 'user';
   }
   if (actor.kind === 'in_game') {

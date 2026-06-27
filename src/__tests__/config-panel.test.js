@@ -20,6 +20,20 @@ vi.mock('../slash/configPanel.js', async (importOriginal) => {
   };
 });
 
+vi.mock('../config.js', () => ({
+  loadConfig: vi.fn(() => ({})),
+}));
+
+vi.mock('../tenant/resolve.js', () => ({
+  resolveTenantByGuildId: vi.fn(() => Promise.resolve({ tenant: {} })),
+  invalidateTenant: vi.fn(),
+}));
+
+vi.mock('../ai/policy.js', () => ({
+  resolveActorRank: vi.fn(() => 'leadership'),
+  RANK_ORDER: { owner: 4, leadership: 3, admin: 2, mod: 1, user: 0 },
+}));
+
 describe('config panel components', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -31,7 +45,7 @@ describe('config panel components', () => {
 
   it('does not build invalid channel or role modals', async () => {
     await expect(buildFieldModal('123456789012345678', 'statusChannelId')).resolves.toBeNull();
-    await expect(buildFieldModal('123456789012345678', 'securityRoleId')).resolves.toBeNull();
+    await expect(buildFieldModal('123456789012345678', 'leadershipRoleId')).resolves.toBeNull();
   });
 
   it('keeps valid text fields as text-input modals', async () => {

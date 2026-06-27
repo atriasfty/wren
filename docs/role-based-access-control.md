@@ -11,32 +11,36 @@ Instead of relying solely on Discord's native permissions (like "Manage Server")
 Wren recognizes five distinct permission tiers:
 
 1. **Owner:** The user who owns the Discord server. They bypass all role checks and have absolute control.
-2. **Admin:** Can manage all Wren configurations, add/remove sources, manage billing, and modify role mappings.
-3. **Staff:** Can manage the bot's data, such as banning users, deleting memories, or checking audit logs.
-4. **Mod:** Can execute moderation-related commands (like interacting with the ERLC/Roblox integrations).
-5. **User:** Regular server members. They can talk to Wren, but cannot configure the bot.
+2. **Leadership:** Can manage the bot's data, such as banning users, adding or deleting server memories, triggering documentation ingestion, and modifying role mappings.
+3. **Admin:** Can execute sensitive moderation commands like banning players or modifying staff ranks.
+4. **Mod:** Can execute everyday moderation-related commands (like interacting with the ERLC/Roblox integrations).
+5. **User:** Regular server members. They can talk to Wren, but cannot use moderation tools or configure the bot.
 
 ## How to Map Discord Roles to Wren Slots
 
-You map your existing Discord roles to Wren's permission levels using the `/wren roles` command.
+You map your existing Discord roles to Wren's permission levels using the `/wren config` command.
 
 ### Example Setup
 
 Let's say your Discord server has the following roles: `Server Director`, `Community Manager`, and `Trial Moderator`.
 
-1. **Map the Admin Role:** 
-   `/wren roles set slot:admin role:@Server Director`
-   Now, anyone with the Server Director role can configure Wren's core settings.
+1. **Open the Config Panel:**
+   Type `/wren config` in your server to open the configuration panel.
 
-2. **Map the Staff Role:**
-   `/wren roles set slot:staff role:@Community Manager`
-   Community Managers can now manage Wren's memory and ban lists.
+2. **Map the Leadership Role:** 
+   Navigate to the **Channels & Roles** category and select the **Leadership role** option. Choose `@Server Director`.
+   Now, anyone with the Server Director role can configure Wren's core settings, manage bans, and manage memories.
 
-3. **Map the Mod Role:**
-   `/wren roles set slot:mod role:@Trial Moderator`
+3. **Map the Admin Role:**
+   Select the **Admin role** option and choose `@Community Manager`.
+   Community Managers can now ban players and manage staff ranks. 
+   *(Note: The Admin tier automatically applies to any role higher in the hierarchy than the mapped Admin role).*
+
+4. **Map the Mod Role:**
+   Select the **Mod role** option and choose `@Trial Moderator`.
    Trial Moderators can now use Wren's game integration tools to moderate players.
 
-*(Note: Permissions inherit downward. If you are an Admin, you automatically have Staff and Mod permissions).*
+*(Note: Permissions inherit downward. If you are Leadership, you automatically have Admin and Mod permissions).*
 
 ---
 
@@ -45,7 +49,7 @@ Let's say your Discord server has the following roles: `Server Director`, `Commu
 In addition to the global roles above, you can lock specific Wren tools and features to specific permission levels using **Tenant Role Policies**.
 
 For example, if you want to restrict who can use Wren's Voice Chat feature:
-1. Type `/wren policy set tool:voice_chat min_role:staff`
-2. Now, only users with a role mapped to Staff (or higher) can speak to Wren in Voice Channels. Regular users will be ignored.
+1. Ask an Atria Developer to update your policy for the `voice_chat` tool. (Customizing policies currently requires developer assistance or using the database directly via `/wren policy`).
+2. Once the policy is set to `mod`, only users with a role mapped to Mod (or higher) can speak to Wren in Voice Channels. Regular users will be ignored.
 
-You can view all current policies by typing `/wren policy list`.
+You can view all current policies by typing `/wren policy view`.

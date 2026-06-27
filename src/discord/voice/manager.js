@@ -409,7 +409,16 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
   
     // 3. Package PCM into a WAV file using FFmpeg for pristine high-quality 16kHz downsampling
     const wavBytes = await new Promise((resolve, reject) => {
-      const ffmpeg = spawn('ffmpeg', [
+      let ffmpegCommand = 'ffmpeg';
+      if (fsSync.existsSync('/usr/bin/ffmpeg')) {
+        ffmpegCommand = '/usr/bin/ffmpeg';
+      } else if (fsSync.existsSync('/opt/homebrew/bin/ffmpeg')) {
+        ffmpegCommand = '/opt/homebrew/bin/ffmpeg';
+      } else if (fsSync.existsSync('/usr/local/bin/ffmpeg')) {
+        ffmpegCommand = '/usr/local/bin/ffmpeg';
+      }
+
+      const ffmpeg = spawn(ffmpegCommand, [
         '-f', 's16le',
         '-ar', '48000',
         '-ac', '1',

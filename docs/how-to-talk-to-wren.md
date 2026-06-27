@@ -23,6 +23,10 @@ You can also speak to Wren out loud in a voice channel!
 
 Check out the [Voice Chat](voice-chat.md) guide for full details on how to use voice commands.
 
+## In Support Tickets
+
+If your server uses Wren's [Ticket Autoresponder](ticket-autoresponder.md), you don't even need to mention Wren! Simply open a support ticket in an enabled category, and Wren will automatically greet you and offer to help solve your issue.
+
 ## What kinds of things can I say?
 
 You can ask Wren to do almost anything:

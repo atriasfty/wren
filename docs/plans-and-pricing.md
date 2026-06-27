@@ -21,9 +21,9 @@ The Core plan is designed for medium-sized roleplay servers. This gives your sta
 ### 🌟 Pro Plan
 
 **Cost:** $25 / month  
-**Included:** 5,000 messages per month | 120 Voice Minutes
+**Included:** 5,000 messages per month | 120 Voice Minutes | **Ticket Autoresponder**
 
-Built for the largest and most active ERLC communities. With 5,000 messages, your staff can rely on Wren for anything they may need.
+Built for the largest and most active ERLC communities. With 5,000 messages, your staff can rely on Wren for anything they may need. This tier also unlocks the [Ticket Autoresponder](ticket-autoresponder.md) feature, allowing Wren to automatically resolve user issues in your Discord support tickets.
 
 ***
 

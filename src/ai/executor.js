@@ -473,6 +473,19 @@ export async function executeTool(tenantCtx, name, args, actor) {
         result = { success: true, message: args.type === 'server' ? `Saved server fact: "${args.content}"` : `Saved user fact: "${args.content}"` };
         break;
       }
+      case 'delete_memory': {
+        if (args.type === 'server') {
+          if (!canRunTool(tenantCtx, 'delete_memory', { type: 'server' }, actor)) {
+            return { success: false, error: 'Permission denied: only staff can delete server memories.' };
+          }
+          await removeMemory(tenantCtx.tenantId, args.id);
+        } else {
+          const key = actorKey(actor);
+          await removeMemory(tenantCtx.tenantId, args.id, key);
+        }
+        result = { success: true, message: `Deleted memory #${args.id}` };
+        break;
+      }
       case 'search_web': {
         const results = await webSearch(args.query, { count: 4 });
         result = { success: true, results };

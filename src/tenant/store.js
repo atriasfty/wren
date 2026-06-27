@@ -297,8 +297,12 @@ export async function addMemory({ tenantId, scope, userKey = null, content, adde
   return r.rows[0].id;
 }
 
-export async function removeMemory(tenantId, id) {
-  await query(`DELETE FROM tenant_memory WHERE tenant_id = $1 AND id = $2`, [tenantId, id]);
+export async function removeMemory(tenantId, id, userKey = null) {
+  if (userKey) {
+    await query(`DELETE FROM tenant_memory WHERE tenant_id = $1 AND id = $2 AND user_key = $3`, [tenantId, id, userKey]);
+  } else {
+    await query(`DELETE FROM tenant_memory WHERE tenant_id = $1 AND id = $2`, [tenantId, id]);
+  }
 }
 
 // ---------- processed events (idempotency) ----------

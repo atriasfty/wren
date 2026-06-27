@@ -1,0 +1,3 @@
+## 2024-05-19 - Concurrent DB Checks Optimization
+**Learning:** In Discord bot message handlers that block on multiple independent global checks (like pause state, bans, ToS agreements), executing them sequentially with `await query(...)` introduces unnecessary latency that compounds linearly with the number of checks.
+**Action:** Always look for independent asynchronous operations that can be parallelized using `Promise.all(...)` during initial message processing to minimize time-to-first-byte/response overhead for the user. Note that error handling requires individual `.catch()` attachments to prevent one failing check from swallowing others or bringing down the whole Promise.all prematurely.

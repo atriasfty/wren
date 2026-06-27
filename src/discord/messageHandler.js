@@ -122,34 +122,43 @@ export function attachMessageHandler(client) {
 
     if (!directlyMentioned && !isReplyToBot) return;
 
-    // Check global pause
-    try {
-      const stateRes = await query("SELECT value FROM global_state WHERE key = 'paused'");
-      if (stateRes.rows[0]?.value?.paused) {
-        await message.reply('Wren is currently undergoing maintenance and is paused globally. Please try again later.');
-        return;
-      }
-    } catch (e) {
-      console.error('[message] Global pause check error:', e);
+    // Concurrently check global pause, global ban, and ToS agreement
+    let pauseResult, banResult, tosResult;
+    let tosCheckFailed = false;
+
+    await Promise.all([
+      query("SELECT value FROM global_state WHERE key = 'paused'")
+        .then(res => pauseResult = res)
+        .catch(e => console.error('[message] Global pause check error:', e)),
+      query("SELECT expires_at FROM global_bans WHERE discord_id = $1", [message.author.id])
+        .then(res => banResult = res)
+        .catch(e => console.error('[message] Global ban check error:', e)),
+      query('SELECT 1 FROM user_agreements WHERE discord_id = $1', [message.author.id])
+        .then(res => tosResult = res)
+        .catch(e => {
+          console.error('[message] ToS check error:', e);
+          tosCheckFailed = true;
+        })
+    ]);
+
+    // Process global pause result
+    if (pauseResult && pauseResult.rows[0]?.value?.paused) {
+      await message.reply('Wren is currently undergoing maintenance and is paused globally. Please try again later.');
+      return;
     }
 
-    // Check global ban
-    try {
-      const banRes = await query("SELECT expires_at FROM global_bans WHERE discord_id = $1", [message.author.id]);
-      if (banRes.rows.length > 0) {
-        const expires = banRes.rows[0].expires_at;
-        if (!expires || new Date(expires) > new Date()) {
-          return; // Ignore globally banned users entirely without a reply
-        }
+    // Process global ban result
+    if (banResult && banResult.rows.length > 0) {
+      const expires = banResult.rows[0].expires_at;
+      if (!expires || new Date(expires) > new Date()) {
+        return; // Ignore globally banned users entirely without a reply
       }
-    } catch (e) {
-      console.error('[message] Global ban check error:', e);
     }
 
-    // Check ToS Agreement
-    try {
-      const res = await query('SELECT 1 FROM user_agreements WHERE discord_id = $1', [message.author.id]);
-      if (res.rows.length === 0) {
+    if (tosCheckFailed) return;
+
+    // Process ToS Agreement result
+    if (tosResult && tosResult.rows.length === 0) {
         const embed = new EmbedBuilder()
           .setTitle('Welcome to Wren!')
           .setDescription('Before you get started, please accept our Terms of Service and Privacy Policy. By clicking "Agree", you agree to both documents.')
@@ -170,10 +179,6 @@ export function attachMessageHandler(client) {
         await message.reply({ embeds: [embed], components: [row] });
         return;
       }
-    } catch (err) {
-      console.error('[message] ToS check error:', err);
-      return;
-    }
 
     let replyContext = '';
     if (refMsg) {

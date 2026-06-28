@@ -23,7 +23,8 @@ export async function writeVectorStore(vectorStorePath, store) {
 }
 
 export async function appendManualDoc(dataDir, filename, content) {
-  const safe = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+  // [SECURITY-FIX] Path Traversal: use path.basename to prevent directory escape
+  const safe = path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, '_');
   const full = path.join(dataDir, 'manual', safe);
   await fs.writeFile(full, content, 'utf-8');
   return safe;

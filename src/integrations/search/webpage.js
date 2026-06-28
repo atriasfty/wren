@@ -1,7 +1,14 @@
 import * as cheerio from 'cheerio';
 
+
 export async function fetchWebpage(url, { timeoutMs = 10_000, maxChars = 5000 } = {}) {
+  // [SECURITY-FIX] SSRF: Validate against an allowlist of schemes and block local hosts
+  const parsedUrl = new URL(url);
+  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') return null;
+  if (parsedUrl.hostname === 'localhost' || parsedUrl.hostname.startsWith('127.') || parsedUrl.hostname.startsWith('10.') || parsedUrl.hostname.startsWith('192.168.') || parsedUrl.hostname.startsWith('169.254.')) return null;
+
   const controller = new AbortController();
+
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, {

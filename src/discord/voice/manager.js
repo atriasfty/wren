@@ -22,6 +22,7 @@ import { runAssistantPipeline } from '../../ai/pipeline.js';
 import { query } from '../../db/pool.js';
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { spawn } from 'child_process';
+import crypto from 'crypto';
 
 let ffmpegPath = 'ffmpeg';
 if (fsSync.existsSync('/usr/bin/ffmpeg')) {
@@ -603,7 +604,8 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
   const audioArrayBuffer = await ttsRes.arrayBuffer();
   
   // Save to a temporary file since createAudioResource works best with files or standard streams
-  const tempId = Math.random().toString(36).substring(7);
+  // [SECURITY-FIX] Authentication & Authorization: replace non-cryptographic PRNG with CSPRNG
+  const tempId = crypto.randomBytes(8).toString('hex');
   const tempPath = path.join(__dirname, '..', '..', '..', 'data', `temp_${tempId}.mp3`);
   await fs.writeFile(tempPath, Buffer.from(audioArrayBuffer));
   

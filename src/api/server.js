@@ -47,6 +47,13 @@ export async function createApiServer(client) {
   }));
 
   app.use((req, res, next) => {
+    // [SECURITY-FIX] Configuration & Headers: add missing security headers
+    res.setHeader('Content-Security-Policy', "default-src 'self'");
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'geolocation=(), camera=(), microphone=()');
     res.setHeader('X-Powered-By', 'wren');
     next();
   });

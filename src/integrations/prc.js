@@ -24,7 +24,10 @@ async function executeCommand(tenantCtx, command) {
     try {
       const data = await res.json();
       if (data.message) errmsg = `PRC API error ${res.status}: ${data.message}`;
-    } catch (e) { /* ignore */ }
+    } catch (e) {
+      // [BUG-FIX] Swallowed errors: log error parsing error response
+      console.error('[prc] Failed to parse error response:', e.message);
+    }
     throw new Error(errmsg);
   }
   return { success: true };
@@ -117,7 +120,10 @@ export async function getServerInfo(tenantCtx, fields = null) {
     try {
       const data = await res.json();
       if (data.message) errmsg = `PRC API error ${res.status}: ${data.message}`;
-    } catch (e) { /* ignore */ }
+    } catch (e) {
+      // [BUG-FIX] Swallowed errors: log error parsing error response
+      console.error('[prc] Failed to parse error response:', e.message);
+    }
     throw new Error(errmsg);
   }
   return res.json();

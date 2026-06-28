@@ -14,6 +14,7 @@ const { WaveFile } = wavefilePkg;
 import fs from 'fs/promises';
 import fsSync from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { loadConfig } from '../../config.js';
 import { resolveTenantByGuildId } from '../../tenant/resolve.js';
@@ -603,7 +604,10 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
   const audioArrayBuffer = await ttsRes.arrayBuffer();
   
   // Save to a temporary file since createAudioResource works best with files or standard streams
-  const tempId = Math.random().toString(36).substring(7);
+
+  // [SECURITY-FIX] Session entropy: replace Math.random with crypto.randomBytes
+  const tempId = crypto.randomBytes(8).toString('hex');
+
   const tempPath = path.join(__dirname, '..', '..', '..', 'data', `temp_${tempId}.mp3`);
   await fs.writeFile(tempPath, Buffer.from(audioArrayBuffer));
   

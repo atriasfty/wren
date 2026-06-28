@@ -99,32 +99,70 @@ export function attachMessageHandler(client) {
       return;
     }
 
-    const actor = { kind: 'discord', member: message.member, id: message.author.id };
-    const isUserBanned = await enforceBan(tenantCtx, actor);
-
     const isSourceChannel = tenantCtx.sources.some(
       (s) => s.enabled && s.kind === 'discord_channel' && s.ref === message.channel.id
     );
+
+    // Only respond if the bot is directly addressed at the start of the message,
+    // or if the message is a direct reply to one of the bot's messages.
+    const directlyMentioned = isDirectlyMentioned(message, client.user.id);
+
+    // Optimization: Discord's 'message' object includes 'mentions.repliedUser' if it's a reply.
+    // If repliedUser exists, we know who was replied to without fetching the parent message.
+    let isReplyToBot = false;
+    let refMsg = null;
+
+    if (message.reference?.messageId) {
+      if (message.mentions?.repliedUser) {
+        isReplyToBot = message.mentions.repliedUser.id === client.user.id;
+      } else {
+        // Fallback: try cache first
+        try {
+          refMsg = message.channel.messages.cache.get(message.reference.messageId);
+          if (refMsg) isReplyToBot = refMsg.author?.id === client.user.id;
+        } catch {}
+      }
+    }
+
+    // If we can easily determine we don't need to process this message, exit early
+    // Note: if repliedUser isn't available and cache missed, we don't know if it's a reply to bot yet.
+    // But if it's not a source channel and not mentioned, we'll only continue if there's a chance it's a reply to bot.
+    const mightBeReplyToBot = message.reference?.messageId && !message.mentions?.repliedUser && !refMsg;
+    if (!isSourceChannel && !directlyMentioned && !isReplyToBot && !mightBeReplyToBot) return;
+
+    // Fetch message if we couldn't resolve from repliedUser or cache
+    if (mightBeReplyToBot && !refMsg) {
+       try {
+         refMsg = await message.channel.messages.fetch(message.reference.messageId);
+         if (refMsg) isReplyToBot = refMsg.author?.id === client.user.id;
+       } catch {}
+
+       if (!isSourceChannel && !directlyMentioned && !isReplyToBot) return;
+    }
+
+    // Now do the expensive DB checks
+    const actor = { kind: 'discord', member: message.member, id: message.author.id };
+    const isUserBanned = await enforceBan(tenantCtx, actor);
+
     if (isSourceChannel && !isUserBanned) {
       ingestDiscordMessage(tenantCtx, message).catch((err) => {
         console.error('[messageCreate] Auto-ingestion failed:', err.message);
       });
     }
 
-    // Only respond if the bot is directly addressed at the start of the message,
-    // or if the message is a direct reply to one of the bot's messages.
-    const directlyMentioned = isDirectlyMentioned(message, client.user.id);
-    let refMsg = null;
-    if (message.reference?.messageId) {
-      try { refMsg = await message.channel.messages.fetch(message.reference.messageId); } catch {}
-    }
-    const isReplyToBot = refMsg?.author?.id === client.user.id;
-
     if (!directlyMentioned && !isReplyToBot) return;
 
     if (isUserBanned) {
       try { await message.reply('You are blocked from using this bot.'); } catch {}
       return;
+    }
+
+    // We still need refMsg for context if it's a reply but wasn't fetched yet
+    if (!refMsg && message.reference?.messageId) {
+      try {
+        refMsg = message.channel.messages.cache.get(message.reference.messageId) ||
+                 await message.channel.messages.fetch(message.reference.messageId);
+      } catch {}
     }
 
     // Check global pause

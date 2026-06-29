@@ -1,7 +1,7 @@
 import * as prc from '../integrations/prc.js';
 import * as pow from '../integrations/pow.js';
 import { webSearch } from '../integrations/brave.js';
-import { audit, addMemory } from '../tenant/store.js';
+import { audit, addMemory, removeMemory } from '../tenant/store.js';
 import { canRunTool, denialReason } from './policy.js';
 import { actorKey } from './utils.js';
 import { getClient } from '../discord/client.js';

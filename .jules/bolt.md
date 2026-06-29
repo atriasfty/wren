@@ -1,3 +1,3 @@
-## 2025-02-18 - Avoid O(N) database queries and O(N) API calls before determining relevance
-**Learning:** Found a major architectural bottleneck where the Discord message event handler executed an O(N) database query (`enforceBan`) for every single message received by a server, and an O(replies) Discord API message fetch to determine the author of replied messages before it even determined if the message was relevant (mentions the bot, or in a source channel).
-**Action:** Always check the fastest and cheapest preconditions (like `directlyMentioned`, `isSourceChannel`, or using cached objects / checking `mentions.repliedUser`) first. Delay expensive database queries and API calls until you are confident the data needs to be acted upon.
+## 2024-05-18 - Transformers Batching
+**Learning:** `Promise.all` over single-text embeddings is significantly slower than native batch processing when using `@xenova/transformers`. Sending an array of texts directly to the feature-extraction pipeline allows the underlying ONNX runtime to parallelize the matrix multiplications efficiently.
+**Action:** Next time you need to extract embeddings or process ML inference on multiple items, avoid mapping with `Promise.all`. Instead, pass arrays directly to the model pipeline if supported and use `.tolist()` to easily convert the batched 2D tensor into standard JavaScript arrays.

@@ -133,8 +133,10 @@ export function createMcpRouter(client) {
         
         return { content: [{ type: "text", text: textResult }] };
       } catch (err) {
+        // [SECURITY-FIX] Logic & Error Handling: return a sanitised message to the client
+        console.error(`[mcp] Error executing ${toolName}:`, err);
         return {
-          content: [{ type: "text", text: `Error executing ${toolName}: ${err.message}` }],
+          content: [{ type: "text", text: `Error executing ${toolName}: Internal server error occurred.` }],
           isError: true
         };
       }

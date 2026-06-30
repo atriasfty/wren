@@ -58,7 +58,8 @@ async function main() {
         const reply = await dispatchGarminCommand(interaction);
         if (reply) {
           await interaction.reply(reply).catch(async () => {
-            await interaction.followUp(reply).catch(() => {});
+            // [BUG-FIX] Swallowed errors: ensure background job and cleanup failures are logged
+            await interaction.followUp(reply).catch((err) => console.error('[slash] followUp failed:', err.message));
           });
         }
       } catch (err) {
@@ -113,8 +114,10 @@ async function main() {
   await syncAllGuilds(client);
   console.log('[boot] slash commands synced');
 
-  setInterval(() => syncAllGuilds(client).catch(() => {}), 3 * 60 * 1000);
-  setInterval(() => pruneExpiredEvents().catch(() => {}), 60 * 60 * 1000);
+  // [BUG-FIX] Swallowed errors: ensure background job and cleanup failures are logged
+  setInterval(() => syncAllGuilds(client).catch((err) => console.error('[sync] sync failed:', err.message)), 3 * 60 * 1000);
+  // [BUG-FIX] Swallowed errors: ensure background job and cleanup failures are logged
+  setInterval(() => pruneExpiredEvents().catch((err) => console.error('[prune] prune failed:', err.message)), 60 * 60 * 1000);
 
   await startApiServer(client);
 
@@ -122,7 +125,8 @@ async function main() {
   process.on('SIGTERM', shutdown);
   function shutdown() {
     console.log('[shutdown] stopping...');
-    client.destroy().catch(() => {});
+    // [BUG-FIX] Swallowed errors: ensure background job and cleanup failures are logged
+    client.destroy().catch(err => console.error('[shutdown] client destroy failed:', err.message));
     closePool().finally(() => process.exit(0));
   }
 }

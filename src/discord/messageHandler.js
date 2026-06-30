@@ -230,7 +230,8 @@ export function attachMessageHandler(client) {
     // Drop duplicate requests from the same user while one is in progress.
     const userId = message.author.id;
     if (inFlight.has(userId)) {
-      try { await message.react('\u23f3'); } catch {}
+      // [BUG-FIX] Swallowed errors: ensure discord API failures are logged instead of silently ignored
+      try { await message.react('\u23f3'); } catch (err) { console.error('[message] Failed to react:', err.message); }
       return;
     }
     inFlight.add(userId);
@@ -270,9 +271,11 @@ export function attachMessageHandler(client) {
       documentsText = documentsText.substring(0, 20000) + '\n...[TRUNCATED due to length]';
     }
 
-    await message.channel.sendTyping().catch(() => {});
+    // [BUG-FIX] Swallowed errors: ensure discord API failures are logged instead of silently ignored
+    await message.channel.sendTyping().catch((err) => console.error('[message] Failed to send typing:', err.message));
     const typingInterval = setInterval(() => {
-      message.channel.sendTyping().catch(() => {});
+      // [BUG-FIX] Swallowed errors: ensure discord API failures are logged instead of silently ignored
+      message.channel.sendTyping().catch((err) => console.error('[message] Failed to send typing:', err.message));
     }, 9000);
 
     let result;
@@ -288,7 +291,8 @@ export function attachMessageHandler(client) {
       query('UPDATE tenants SET last_active_channel_id = $1 WHERE tenant_id = $2', [message.channel.id, message.guild.id]).catch(e => console.error('[message] Failed to update last active channel:', e));
     } catch (err) {
       console.error('[message] pipeline error:', err);
-      try { await message.reply(publicErrorMessage()); } catch {}
+      // [BUG-FIX] Swallowed errors: ensure discord API failures are logged instead of silently ignored
+      try { await message.reply(publicErrorMessage()); } catch (err) { console.error('[message] Failed to reply error:', err.message); }
       return;
     } finally {
       clearInterval(typingInterval);

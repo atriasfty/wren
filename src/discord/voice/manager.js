@@ -615,19 +615,22 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
   } catch (err) {
     console.error('[voice] Failed to play TTS:', err.message);
     state.isSpeaking = false;
-    fs.unlink(tempPath).catch(()=>{});
+    // [BUG-FIX] Swallowed errors: log failure to remove temporary files
+    fs.unlink(tempPath).catch((err)=>console.error('[voice] Failed to remove temp file:', err.message));
     return;
   }
   
   const onEnd = () => {
     state.isSpeaking = false;
-    fs.unlink(tempPath).catch(()=>{});
+    // [BUG-FIX] Swallowed errors: log failure to remove temporary files
+    fs.unlink(tempPath).catch((err)=>console.error('[voice] Failed to remove temp file:', err.message));
     state.player.off('error', onError);
   };
   const onError = (err) => {
     console.error('[voice] Player error:', err.message);
     state.isSpeaking = false;
-    fs.unlink(tempPath).catch(()=>{});
+    // [BUG-FIX] Swallowed errors: log failure to remove temporary files
+    fs.unlink(tempPath).catch((err)=>console.error('[voice] Failed to remove temp file:', err.message));
     state.player.off(AudioPlayerStatus.Idle, onEnd);
   };
   

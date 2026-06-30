@@ -267,14 +267,10 @@ export async function addBan({ tenantId, userKey, reason = null, bannedBy = null
      ON CONFLICT (tenant_id, user_key) DO UPDATE SET reason = EXCLUDED.reason, banned_by = EXCLUDED.banned_by`,
     [tenantId, userKey, reason, bannedBy],
   );
-  const { invalidateTenant } = await import('./resolve.js');
-  invalidateTenant(tenantId);
 }
 
 export async function removeBan({ tenantId, userKey }) {
   await query(`DELETE FROM tenant_bans WHERE tenant_id = $1 AND user_key = $2`, [tenantId, userKey]);
-  const { invalidateTenant } = await import('./resolve.js');
-  invalidateTenant(tenantId);
 }
 
 // ---------- memory ----------
@@ -434,7 +430,7 @@ export async function revokeApiToken({ tenantId, tokenHash }) {
 
 export async function incrementMessageUsage(tenantId) {
   const r = await query(
-    `UPDATE tenants SET 
+    `UPDATE tenants SET
        monthly_message_count = CASE WHEN NOW() > billing_cycle_reset THEN 1 ELSE monthly_message_count + 1 END,
        monthly_voice_time_seconds = CASE WHEN NOW() > billing_cycle_reset THEN 0 ELSE monthly_voice_time_seconds END,
        billing_cycle_reset = CASE WHEN NOW() > billing_cycle_reset THEN NOW() + interval '1 month' ELSE billing_cycle_reset END
@@ -446,7 +442,7 @@ export async function incrementMessageUsage(tenantId) {
 
 export async function incrementVoiceTime(tenantId, seconds) {
   const r = await query(
-    `UPDATE tenants SET 
+    `UPDATE tenants SET
        monthly_voice_time_seconds = CASE WHEN NOW() > billing_cycle_reset THEN $2 ELSE monthly_voice_time_seconds + $2 END,
        monthly_message_count = CASE WHEN NOW() > billing_cycle_reset THEN 0 ELSE monthly_message_count END,
        billing_cycle_reset = CASE WHEN NOW() > billing_cycle_reset THEN NOW() + interval '1 month' ELSE billing_cycle_reset END
@@ -458,12 +454,12 @@ export async function incrementVoiceTime(tenantId, seconds) {
 
 export async function updateSubscription(tenantId, tier, polarSubId = null, ownerId = null, customerId = null) {
   await query(
-    `UPDATE tenants SET 
-       subscription_tier = $1, 
+    `UPDATE tenants SET
+       subscription_tier = $1,
        polar_subscription_id = COALESCE($2, polar_subscription_id),
        subscription_owner_id = COALESCE($4, subscription_owner_id),
        polar_customer_id = COALESCE($5, polar_customer_id),
-       updated_at = NOW() 
+       updated_at = NOW()
      WHERE tenant_id = $3`,
     [tier, polarSubId, tenantId, ownerId, customerId]
   );

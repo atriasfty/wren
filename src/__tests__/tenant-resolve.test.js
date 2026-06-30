@@ -6,6 +6,7 @@ const mocks = {
   getRoleSlots: vi.fn(),
   listSources: vi.fn(),
   listMemory: vi.fn(),
+  listBans: vi.fn(),
 };
 
 vi.mock('../tenant/store.js', () => ({
@@ -14,6 +15,7 @@ vi.mock('../tenant/store.js', () => ({
   getRoleSlots: (...args) => mocks.getRoleSlots(...args),
   listSources: (...args) => mocks.listSources(...args),
   listMemory: (...args) => mocks.listMemory(...args),
+  listBans: (...args) => mocks.listBans(...args),
 }));
 
 describe('tenant-resolve and ctx', () => {
@@ -26,6 +28,7 @@ describe('tenant-resolve and ctx', () => {
     mocks.getRoleSlots.mockResolvedValue({ staff: 'role-123' });
     mocks.listSources.mockResolvedValue([{ kind: 'website', ref: 'https://example.com' }]);
     mocks.listMemory.mockResolvedValue([{ scope: 'server', content: 'hello' }]);
+    mocks.listBans.mockResolvedValue([{ user_key: 'discord:user-123' }]);
   });
 
   describe('buildTenantContext', () => {
@@ -49,6 +52,7 @@ describe('tenant-resolve and ctx', () => {
         roleSlots: { staff: 'role-123' },
         sources: [{ kind: 'website', ref: 'https://example.com' }],
         memory: [{ scope: 'server', content: 'hello' }],
+        bans: new Set(['discord:user-123']),
         dataDir: 'data/tenants/guild-123',
         vectorStorePath: 'data/tenants/guild-123/vector-store.json',
       });
@@ -56,6 +60,7 @@ describe('tenant-resolve and ctx', () => {
       expect(mocks.getRoleSlots).toHaveBeenCalledWith('guild-123');
       expect(mocks.listSources).toHaveBeenCalledWith('guild-123', { enabledOnly: true });
       expect(mocks.listMemory).toHaveBeenCalledWith('guild-123', { limit: 200 });
+      expect(mocks.listBans).toHaveBeenCalledWith('guild-123');
     });
   });
 

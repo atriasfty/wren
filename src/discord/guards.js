@@ -1,4 +1,4 @@
-import { isBanned, addBan } from '../tenant/store.js';
+import { addBan, isBanned } from '../tenant/store.js';
 
 export async function enforceBan(tenantCtx, actor) {
   if (!actor) return false;
@@ -8,7 +8,13 @@ export async function enforceBan(tenantCtx, actor) {
     actor.kind === 'api' ? `api:${actor.tokenId}` :
     null;
   if (!userKey) return false;
-  return await isBanned(tenantCtx.tenantId, userKey);
+
+  // ⚡ Bolt: Fast-path O(1) memory check using the cached bans Set on the tenant context
+  // Falls back to a database lookup only if the cache isn't present
+  if (tenantCtx?.bans instanceof Set) {
+    return tenantCtx.bans.has(userKey);
+  }
+  return isBanned(tenantCtx.tenantId, userKey);
 }
 
 export async function recordBan({ tenantId, userKey, reason, bannedBy }) {

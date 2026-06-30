@@ -122,12 +122,12 @@ export async function executeTool(tenantCtx, name, args, actor) {
         if (actor?.kind !== 'discord') {
           return { success: false, error: 'log_punishment requires a Discord moderator.' };
         }
-        const r = await pow.logPunishment(tenantCtx, args.username, actor.member.id, args.type, args.reason, args.server);
-        result = { success: true, player: r.player, punishmentType: r.type, reason: r.reason, server: r.server };
+        const r = await pow.logPunishment(tenantCtx, args.username, actor.member.id, args.type, args.reason);
+        result = { success: true, player: r.player, punishmentType: r.type, reason: r.reason };
         break;
       }
       case 'check_punishments': {
-        const r = await pow.getPunishments(tenantCtx, args.username, args.server || null);
+        const r = await pow.getPunishments(tenantCtx, args.username);
         result = {
           success: true,
           username: r.username,
@@ -361,7 +361,7 @@ export async function executeTool(tenantCtx, name, args, actor) {
 
         // --- POW punishment history ---
         try {
-          const r = await pow.getPunishments(tenantCtx, args.username, null);
+          const r = await pow.getPunishments(tenantCtx, args.username);
           profile.punishments = {
             total: r.punishments.length,
             recent: r.punishments.slice(0, 5).map((p) => ({ type: p.type, reason: p.reason, date: p.createdAt, server: p.server })),

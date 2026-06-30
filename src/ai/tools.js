@@ -11,8 +11,8 @@ export const TOOL_DEFS = [
   { name: 'unadmin_player', description: 'Demote an Administrator.', params: { type: 'object', properties: { username: { type: 'string' }, reason: { type: 'string' } }, required: ['username'] } },
   { name: 'bring_all_staff', description: 'Teleport all online staff to a destination player.', params: { type: 'object', properties: { destination_player: { type: 'string' } }, required: ['destination_player'] } },
   { name: 'pm_all_staff', description: 'Send a private message to every online staff member.', params: { type: 'object', properties: { message: { type: 'string' } }, required: ['message'] } },
-  { name: 'log_punishment', description: 'Log a punishment to the POW backend. server must be "A".', params: { type: 'object', properties: { username: { type: 'string' }, type: { type: 'string', enum: ['Warn', 'Kick', 'Ban', 'Ban Bolo'] }, reason: { type: 'string' }, server: { type: 'string', enum: ['A'] } }, required: ['username', 'type', 'reason', 'server'] } },
-  { name: 'check_punishments', description: 'Look up a player\'s punishment history from POW.', params: { type: 'object', properties: { username: { type: 'string' }, server: { type: 'string', enum: ['A'] } }, required: ['username'] } },
+  { name: 'log_punishment', description: 'Log a punishment to the POW backend.', params: { type: 'object', properties: { username: { type: 'string' }, type: { type: 'string', enum: ['Warn', 'Kick', 'Ban', 'Ban Bolo'] }, reason: { type: 'string' } }, required: ['username', 'type', 'reason'] } },
+  { name: 'check_punishments', description: 'Look up a player\'s punishment history from POW.', params: { type: 'object', properties: { username: { type: 'string' } }, required: ['username'] } },
   // Discord
   { name: 'get_all_channels', description: 'List channels accessible to the configured security role.', params: { type: 'object', properties: {} } },
   { name: 'get_channel_messages', description: 'Fetch recent messages from a Discord channel.', params: { type: 'object', properties: { channel_id: { type: 'string' }, limit: { type: 'integer' } }, required: ['channel_id'] } },

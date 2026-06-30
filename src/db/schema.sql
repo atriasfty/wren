@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS tenants (
   prc_base_url        TEXT NOT NULL DEFAULT 'https://api.erlc.gg/v1',
   pow_base_url        TEXT,
   pow_token_enc       BYTEA,
-  pow_server_a_id     TEXT,
+  pow_server_id       TEXT,
   ticket_autoresponder_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   ticket_category_id  TEXT,
   ticket_parent_id    TEXT,
@@ -202,3 +202,8 @@ CREATE TABLE IF NOT EXISTS user_mcp_tokens (
   revoked_at  TIMESTAMPTZ,
   UNIQUE(tenant_id, discord_id)
 );
+
+DO $$ BEGIN
+  ALTER TABLE tenants RENAME COLUMN pow_server_a_id TO pow_server_id;
+EXCEPTION WHEN undefined_column THEN NULL;
+END $$;

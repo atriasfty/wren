@@ -11,40 +11,30 @@ function token(tenantCtx) {
   return tenantCtx.tenant.powToken;
 }
 
-function serverLabel(tenantCtx, key) {
-  const t = tenantCtx.tenant;
-  const upperKey = String(key || '').toUpperCase();
-  return upperKey === 'A' ? t.powServerAId : null;
-}
-
-export async function getPunishments(tenantCtx, username, server = null) {
+export async function getPunishments(tenantCtx, username) {
   const userInfo = await getRobloxUserId(tenantCtx, username);
   if (!userInfo) throw new Error(`Could not find Roblox user: ${username}`);
-  const serverKey = server ? server.toUpperCase() : 'A';
-  if (serverKey !== 'A') throw new Error(`Unknown server: ${server}`);
-  const serversToQuery = [
-    { key: 'A', id: tenantCtx.tenant.powServerAId },
-  ];
+  const serverId = tenantCtx.tenant.powServerId;
   const results = { username: userInfo.username, userId: userInfo.userId, punishments: [] };
-  for (const srv of serversToQuery) {
-    if (!srv.id) continue;
-    const res = await fetch(`${baseUrl(tenantCtx)}/api/punishments?server=${encodeURIComponent(srv.id)}&userId=${userInfo.userId}`, {
+  if (serverId) {
+    const res = await fetch(`${baseUrl(tenantCtx)}/api/punishments?server=${encodeURIComponent(serverId)}&userId=${userInfo.userId}`, {
       headers: { 'Authorization': `Bearer ${token(tenantCtx)}` },
     });
-    if (!res.ok) continue;
-    const json = await res.json();
-    for (const p of json.punishments || []) {
-      results.punishments.push({ ...p, server: srv.key });
+    if (res.ok) {
+      const json = await res.json();
+      for (const p of json.punishments || []) {
+        results.punishments.push(p);
+      }
     }
   }
   return results;
 }
 
-export async function logPunishment(tenantCtx, username, moderatorDiscordId, type, reason, server) {
+export async function logPunishment(tenantCtx, username, moderatorDiscordId, type, reason) {
   const userInfo = await getRobloxUserId(tenantCtx, username);
   if (!userInfo) throw new Error(`Could not find Roblox user: ${username}`);
-  const serverId = serverLabel(tenantCtx, server);
-  if (!serverId) throw new Error(`Unknown server label: ${server}`);
+  const serverId = tenantCtx.tenant.powServerId;
+  if (!serverId) throw new Error(`No POW server ID configured`);
   const res = await fetch(`${baseUrl(tenantCtx)}/api/punishments`, {
     method: 'POST',
     headers: {
@@ -64,5 +54,5 @@ export async function logPunishment(tenantCtx, username, moderatorDiscordId, typ
     const text = await res.text().catch(() => '');
     throw new Error(`POW error ${res.status}: ${text.slice(0, 200)}`);
   }
-  return { player: userInfo.username, type, reason, server };
+  return { player: userInfo.username, type, reason };
 }

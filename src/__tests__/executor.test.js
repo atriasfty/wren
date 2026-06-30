@@ -192,14 +192,14 @@ describe('executeTool', () => {
   describe('POW log punishments', () => {
     it('rejects log_punishment if actor is not Discord', async () => {
       const ingameActor = { kind: 'in_game', playerName: 'Mod123' };
-      const result = await executeTool(tenantCtx, 'log_punishment', { username: 'User1', type: 'Warn', reason: 'Trolling', server: 'A' }, ingameActor);
+      const result = await executeTool(tenantCtx, 'log_punishment', { username: 'User1', type: 'Warn', reason: 'Trolling' }, ingameActor);
       expect(result).toEqual({ success: false, error: 'log_punishment requires a Discord moderator.' });
     });
 
     it('successfully calls logPunishment if Discord actor is present', async () => {
-      mocks.logPunishment.mockResolvedValue({ player: 'User1', type: 'Warn', reason: 'Trolling', server: 'A' });
-      const result = await executeTool(tenantCtx, 'log_punishment', { username: 'User1', type: 'Warn', reason: 'Trolling', server: 'A' }, actor);
-      expect(mocks.logPunishment).toHaveBeenCalledWith(tenantCtx, 'User1', 'moderator-123', 'Warn', 'Trolling', 'A');
+      mocks.logPunishment.mockResolvedValue({ player: 'User1', type: 'Warn', reason: 'Trolling' });
+      const result = await executeTool(tenantCtx, 'log_punishment', { username: 'User1', type: 'Warn', reason: 'Trolling' }, actor);
+      expect(mocks.logPunishment).toHaveBeenCalledWith(tenantCtx, 'User1', 'moderator-123', 'Warn', 'Trolling');
       expect(result.success).toBe(true);
     });
   });

@@ -80,7 +80,7 @@ export async function updateTenant(tenantId, patch, encKey) {
   let i = 1;
   const allowed = [
     'display_name','bot_display_name','in_game_handle','owner_discord_id',
-    'prc_base_url','pow_base_url','pow_server_a_id',
+    'prc_base_url','pow_base_url','pow_server_id',
     'ticket_autoresponder_enabled','ticket_category_id','ticket_parent_id',
     'leadership_role_id','mod_role_id','admin_role_id',
     'status_channel_id','erlc_log_channel_id','in_game_pm_log_id',
@@ -122,7 +122,7 @@ function rowToTenant(row, encKey) {
     ownerDiscordId: row.owner_discord_id,
     prcBaseUrl: row.prc_base_url,
     powBaseUrl: row.pow_base_url,
-    powServerAId: row.pow_server_a_id,
+    powServerId: row.pow_server_id,
     ticketAutoresponderEnabled: row.ticket_autoresponder_enabled,
     ticketCategoryId: row.ticket_category_id,
     ticketParentId: row.ticket_parent_id,

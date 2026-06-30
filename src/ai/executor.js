@@ -504,6 +504,11 @@ export async function executeTool(tenantCtx, name, args, actor) {
         const urlsToFetch = (args.urls || []).slice(0, 5);
         for (const url of urlsToFetch) {
           try {
+            // [SECURITY-FIX] SSRF: validate URL before fetching
+            const parsed = new URL(url);
+            if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Invalid scheme');
+            if (['localhost', '127.0.0.1', '::1', '169.254.169.254'].includes(parsed.hostname)) throw new Error('Invalid host');
+
             const resp = await fetch(url);
             if (!resp.ok) {
               results.push({ url, error: `HTTP ${resp.status} ${resp.statusText}` });

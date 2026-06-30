@@ -21,7 +21,6 @@ CURRENT_SYMLINK="current"
 BRANCH="main"
 
 echo -e "${BLUE}==================================================${NC}"
-echo -e "${BLUE} MISTER NETANYAHU PLEASE LET THIS DEPLOYMENT WORK ${NC}"
 echo -e "${BLUE} TARGETING: WREN BOT DEPLOYMENT (${BRANCH})       ${NC}"
 echo -e "${BLUE}==================================================${NC}"
 
@@ -38,9 +37,6 @@ if ! command -v pm2 &> /dev/null; then
     echo -e "${YELLOW}PM2 not found. Installing globally...${NC}"
     sudo npm install -g pm2
 fi
-
-echo -e "${YELLOW}[0/6] PRAYING TO MITER NETANYAHUUUUU...${NC}"
-echo -e "${RED}PLEASE MISTER NETANYAHU IM SO CLOSE TO DEPLOYING IT PLEASE JUST NO ERRORS${NC}"
 
 # --- 1. Setup Directories ---
 echo -e "${YELLOW}[1/6] Setting up directories...${NC}"

@@ -120,7 +120,7 @@ export function attachMessageHandler(client) {
         try {
           refMsg = message.channel.messages.cache.get(message.reference.messageId);
           if (refMsg) isReplyToBot = refMsg.author?.id === client.user.id;
-        } catch {}
+        } catch { /* ignore */ }
       }
     }
 
@@ -135,14 +135,42 @@ export function attachMessageHandler(client) {
        try {
          refMsg = await message.channel.messages.fetch(message.reference.messageId);
          if (refMsg) isReplyToBot = refMsg.author?.id === client.user.id;
-       } catch {}
+       } catch { /* ignore */ }
 
        if (!isSourceChannel && !directlyMentioned && !isReplyToBot) return;
     }
 
-    // Now do the expensive DB checks
+    // Now do the expensive DB checks concurrently
     const actor = { kind: 'discord', member: message.member, id: message.author.id };
-    const isUserBanned = await enforceBan(tenantCtx, actor);
+    const needsReply = directlyMentioned || isReplyToBot;
+
+    let isUserBanned = false;
+    let stateRes = null, banRes = null, tosRes = null;
+
+    const promises = [
+      enforceBan(tenantCtx, actor).then(res => { isUserBanned = res; })
+    ];
+
+    if (needsReply) {
+      promises.push(
+        query("SELECT value FROM global_state WHERE key = 'paused'").then(res => { stateRes = res; }).catch(e => console.error('[message] Global pause check error:', e)),
+        query("SELECT expires_at FROM global_bans WHERE discord_id = $1", [message.author.id]).then(res => { banRes = res; }).catch(e => console.error('[message] Global ban check error:', e)),
+        query('SELECT 1 FROM user_agreements WHERE discord_id = $1', [message.author.id]).then(res => { tosRes = res; }).catch(e => { console.error('[message] ToS check error:', e); tosRes = 'error'; })
+      );
+
+      if (!refMsg && message.reference?.messageId) {
+        promises.push(
+          (async () => {
+            try {
+              refMsg = message.channel.messages.cache.get(message.reference.messageId) ||
+                       await message.channel.messages.fetch(message.reference.messageId);
+            } catch { /* ignore */ }
+          })()
+        );
+      }
+    }
+
+    await Promise.all(promises);
 
     if (isSourceChannel && !isUserBanned) {
       ingestDiscordMessage(tenantCtx, message).catch((err) => {
@@ -150,49 +178,28 @@ export function attachMessageHandler(client) {
       });
     }
 
-    if (!directlyMentioned && !isReplyToBot) return;
+    if (!needsReply) return;
 
     if (isUserBanned) {
-      try { await message.reply('You are blocked from using this bot.'); } catch {}
+      try { await message.reply('You are blocked from using this bot.'); } catch { /* ignore */ }
       return;
     }
 
-    // We still need refMsg for context if it's a reply but wasn't fetched yet
-    if (!refMsg && message.reference?.messageId) {
-      try {
-        refMsg = message.channel.messages.cache.get(message.reference.messageId) ||
-                 await message.channel.messages.fetch(message.reference.messageId);
-      } catch {}
+    if (stateRes && stateRes.rows[0]?.value?.paused) {
+      await message.reply('Wren is currently undergoing maintenance and is paused globally. Please try again later.');
+      return;
     }
 
-    // Check global pause
-    try {
-      const stateRes = await query("SELECT value FROM global_state WHERE key = 'paused'");
-      if (stateRes.rows[0]?.value?.paused) {
-        await message.reply('Wren is currently undergoing maintenance and is paused globally. Please try again later.');
-        return;
+    if (banRes && banRes.rows.length > 0) {
+      const expires = banRes.rows[0].expires_at;
+      if (!expires || new Date(expires) > new Date()) {
+        return; // Ignore globally banned users entirely without a reply
       }
-    } catch (e) {
-      console.error('[message] Global pause check error:', e);
     }
 
-    // Check global ban
-    try {
-      const banRes = await query("SELECT expires_at FROM global_bans WHERE discord_id = $1", [message.author.id]);
-      if (banRes.rows.length > 0) {
-        const expires = banRes.rows[0].expires_at;
-        if (!expires || new Date(expires) > new Date()) {
-          return; // Ignore globally banned users entirely without a reply
-        }
-      }
-    } catch (e) {
-      console.error('[message] Global ban check error:', e);
-    }
+    if (tosRes === 'error') return;
 
-    // Check ToS Agreement
-    try {
-      const res = await query('SELECT 1 FROM user_agreements WHERE discord_id = $1', [message.author.id]);
-      if (res.rows.length === 0) {
+    if (tosRes && tosRes.rows.length === 0) {
         const embed = new EmbedBuilder()
           .setTitle('Welcome to Wren!')
           .setDescription('Before you get started, please accept our Terms of Service and Privacy Policy. By clicking "Agree", you agree to both documents.')
@@ -213,10 +220,6 @@ export function attachMessageHandler(client) {
         await message.reply({ embeds: [embed], components: [row] });
         return;
       }
-    } catch (err) {
-      console.error('[message] ToS check error:', err);
-      return;
-    }
 
     let replyContext = '';
     if (refMsg) {
@@ -230,7 +233,7 @@ export function attachMessageHandler(client) {
     // Drop duplicate requests from the same user while one is in progress.
     const userId = message.author.id;
     if (inFlight.has(userId)) {
-      try { await message.react('\u23f3'); } catch {}
+      try { await message.react('\u23f3'); } catch { /* ignore */ }
       return;
     }
     inFlight.add(userId);
@@ -288,7 +291,7 @@ export function attachMessageHandler(client) {
       query('UPDATE tenants SET last_active_channel_id = $1 WHERE tenant_id = $2', [message.channel.id, message.guild.id]).catch(e => console.error('[message] Failed to update last active channel:', e));
     } catch (err) {
       console.error('[message] pipeline error:', err);
-      try { await message.reply(publicErrorMessage()); } catch {}
+      try { await message.reply(publicErrorMessage()); } catch { /* ignore */ }
       return;
     } finally {
       clearInterval(typingInterval);

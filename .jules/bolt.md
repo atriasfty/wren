@@ -1,3 +1,7 @@
 ## 2025-02-18 - Avoid O(N) database queries and O(N) API calls before determining relevance
 **Learning:** Found a major architectural bottleneck where the Discord message event handler executed an O(N) database query (`enforceBan`) for every single message received by a server, and an O(replies) Discord API message fetch to determine the author of replied messages before it even determined if the message was relevant (mentions the bot, or in a source channel).
 **Action:** Always check the fastest and cheapest preconditions (like `directlyMentioned`, `isSourceChannel`, or using cached objects / checking `mentions.repliedUser`) first. Delay expensive database queries and API calls until you are confident the data needs to be acted upon.
+
+## 2025-02-18 - Concurrent Database Queries and API Fetches
+**Learning:** Found a performance opportunity in the Discord message handler where multiple independent database checks (global state, bans, terms of service) and an external API call (fetching a replied-to message) were being executed sequentially. Since Node.js handles I/O asynchronously, waiting for one query to finish before starting the next adds unnecessary latency, especially on high-traffic bot events like `messageCreate`.
+**Action:** Always identify independent asynchronous operations (like DB queries or API requests) and run them concurrently using `Promise.all()` to reduce the overall response latency to the maximum duration of a single request, rather than the sum of all their durations.

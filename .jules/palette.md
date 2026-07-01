@@ -1,0 +1,3 @@
+## 2025-03-10 - Explicit Accessibility in Dynamic Tailwind UIs
+**Learning:** When building highly custom, dynamic UIs with Tailwind CSS (like activity feeds or custom sliders), default browser accessibility features (like focus outlines) are often stripped by base styles, and dynamic content changes are invisible to screen readers without explicit ARIA attributes.
+**Action:** Always manually restore focus indicators using `focus-visible:` utilities on interactive elements (buttons, custom range inputs, summaries) and use `aria-live="polite"` on containers where DOM elements are dynamically prepended to ensure screen readers announce the changes naturally.

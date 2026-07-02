@@ -177,7 +177,6 @@ echo -e "${YELLOW}Installing dependencies...${NC}"
 npm ci --production
 
 echo -e "${YELLOW}Running database migrations...${NC}"
-node migration.js
 npm run migrate
 
 cd ../../

@@ -2,6 +2,22 @@ import { policyToolKey } from './tools.js';
 
 export const RANK_ORDER = { owner: 4, leadership: 3, admin: 2, mod: 1, user: 0 };
 
+// Tool (policy-key) names that carry a role-policy entry and must have that
+// policy enforced by the executor, not just the moderation subset. Mirrors
+// the keys of DEFAULT_POLICY in tenant/store.js.
+export const POLICY_GATED_TOOLS = new Set([
+  'ban_player', 'kick_player', 'kill_player', 'tp_player', 'send_pm',
+  'mod_player', 'unmod_player', 'admin_player', 'unadmin_player',
+  'purge_messages', 'bring_all_staff', 'pm_all_staff', 'log_punishment',
+  'save_memory_server', 'save_memory_user',
+  'get_vehicles', 'get_wanted_players', 'get_player_location',
+  'get_server_briefing', 'get_player_profile', 'get_server_stats',
+  'list_online_players', 'check_if_online', 'check_if_staff', 'get_player_info',
+  'get_all_channels', 'get_channel_messages', 'get_user_info',
+  'search_command_logs', 'lookup_roblox_profile', 'analyze_player_activity',
+  'summarize_chat', 'check_punishments', 'search_web',
+]);
+
 export function resolveActorRank(actor, tenantCtx) {
   if (!actor) return 'user';
   if (actor.kind === 'discord') {

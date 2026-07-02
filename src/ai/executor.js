@@ -2,9 +2,11 @@ import * as prc from '../integrations/prc.js';
 import * as pow from '../integrations/pow.js';
 import { webSearch } from '../integrations/brave.js';
 import { audit, addMemory } from '../tenant/store.js';
-import { canRunTool, denialReason } from './policy.js';
+import { canRunTool, denialReason, POLICY_GATED_TOOLS } from './policy.js';
+import { policyToolKey, DISCORD_ONLY_TOOLS } from './tools.js';
 import { actorKey } from './utils.js';
 import { getClient } from '../discord/client.js';
+import { safeFetch } from './ssrf.js';
 
 const BANNED_TARGETS = new Set(['all', 'everyone', 'everybody', '*', 'others', 'server', 'people']);
 const MOD_TOOLS = new Set([
@@ -34,8 +36,30 @@ function getGuild(tenantCtx, actor) {
   return null;
 }
 
+// Ensure the bot doesn't leak channel contents the requesting member couldn't see
+// themselves — the bot's own read access to a channel is not the same as the
+// caller's. Only enforced for actors we can resolve a real Discord member for.
+function actorCanViewChannel(actor, channel) {
+  if (actor?.kind !== 'discord' || !actor.member) return true;
+  const perms = channel.permissionsFor?.(actor.member);
+  return !!perms?.has?.('ViewChannel');
+}
+
 export async function executeTool(tenantCtx, name, args, actor) {
-  if (MOD_TOOLS.has(name)) {
+  // Discord-management tools (channel reads/purges, member info) must never be
+  // reachable from non-Discord callers (in-game PMs, voice, API) — those actors
+  // have no real Discord identity to check permissions against. Enforced here,
+  // not just by excluding them from the LLM's tool list, so this holds even if
+  // a caller invokes executeTool directly.
+  if (DISCORD_ONLY_TOOLS.has(name) && actor?.kind !== 'discord') {
+    return { success: false, error: 'This action is only available via Discord.' };
+  }
+
+  // Enforce role policy for every tool that has an explicit policy row, not just
+  // the moderation subset — otherwise tightening /wren policy for a read tool
+  // (e.g. get_channel_messages) had no effect.
+  const policyKey = policyToolKey(name, args);
+  if (POLICY_GATED_TOOLS.has(policyKey)) {
     const denied = denialReason(tenantCtx, name, args, actor);
     if (denied) return { success: false, error: denied };
   }
@@ -416,6 +440,7 @@ export async function executeTool(tenantCtx, name, args, actor) {
         const channel = await guild.channels.fetch(args.channel_id).catch(() => null);
         if (!channel) return { success: false, error: 'Channel not found' };
         if (!channel.isTextBased()) return { success: false, error: 'Channel not text-based' };
+        if (!actorCanViewChannel(actor, channel)) return { success: false, error: 'You do not have access to that channel.' };
         const limit = Math.min(args.limit || 50, 100);
         const msgs = await channel.messages.fetch({ limit });
         result = {
@@ -447,6 +472,7 @@ export async function executeTool(tenantCtx, name, args, actor) {
         if (!guild) return { success: false, error: 'Discord guild context required' };
         const channel = await guild.channels.fetch(args.channel_id).catch(() => null);
         if (!channel || !channel.isTextBased()) return { success: false, error: 'Channel not found or not text-based' };
+        if (!actorCanViewChannel(actor, channel)) return { success: false, error: 'You do not have access to that channel.' };
         const limit = Math.min(args.message_count || 50, 100);
         const msgs = await channel.messages.fetch({ limit });
         const chatLog = msgs.map((m) => {
@@ -461,6 +487,7 @@ export async function executeTool(tenantCtx, name, args, actor) {
         if (!guild) return { success: false, error: 'Discord guild context required' };
         const channel = await guild.channels.fetch(args.channel_id).catch(() => null);
         if (!channel || !channel.isTextBased()) return { success: false, error: 'Channel not found' };
+        if (!actorCanViewChannel(actor, channel)) return { success: false, error: 'You do not have access to that channel.' };
         const count = Math.min(args.count || 10, 100);
         const deleted = await channel.bulkDelete(count, true);
         result = { success: true, message: `Deleted ${deleted.size} messages`, count: deleted.size };
@@ -504,7 +531,7 @@ export async function executeTool(tenantCtx, name, args, actor) {
         const urlsToFetch = (args.urls || []).slice(0, 5);
         for (const url of urlsToFetch) {
           try {
-            const resp = await fetch(url);
+            const resp = await safeFetch(url);
             if (!resp.ok) {
               results.push({ url, error: `HTTP ${resp.status} ${resp.statusText}` });
               continue;

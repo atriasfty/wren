@@ -41,15 +41,24 @@ export const TOOL_DEFS = [
   { name: 'read_webpage', description: 'Fetch and read the content of up to 5 web pages, converted to markdown for easy reading.', params: { type: 'object', properties: { urls: { type: 'array', items: { type: 'string' }, description: 'List of URLs to fetch (up to 5).' } }, required: ['urls'] } },
 ];
 
-export function getToolsForMistral() {
-  return TOOL_DEFS.map((t) => ({
-    type: 'function',
-    function: {
-      name: t.name,
-      description: t.description,
-      parameters: t.params,
-    },
-  }));
+// These tools act on Discord itself (reading/deleting channel content, member
+// info) and only make sense — and are only permission-checked — for a real
+// Discord actor. They must never be offered to in-game/voice/API callers.
+export const DISCORD_ONLY_TOOLS = new Set([
+  'get_all_channels', 'get_channel_messages', 'get_user_info', 'summarize_chat', 'purge_messages',
+]);
+
+export function getToolsForMistral({ isDiscordActor = true } = {}) {
+  return TOOL_DEFS
+    .filter((t) => isDiscordActor || !DISCORD_ONLY_TOOLS.has(t.name))
+    .map((t) => ({
+      type: 'function',
+      function: {
+        name: t.name,
+        description: t.description,
+        parameters: t.params,
+      },
+    }));
 }
 
 // resolve tool name to the internal policy name. Most map 1:1 except save_memory which

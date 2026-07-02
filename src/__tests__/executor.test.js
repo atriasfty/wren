@@ -224,10 +224,10 @@ describe('executeTool', () => {
       actor.guild = mockGuild;
     });
 
-    it('fails get_all_channels if Discord guild context is missing', async () => {
+    it('fails get_all_channels for non-Discord actors', async () => {
       const apiActor = { kind: 'api' };
       const result = await executeTool(tenantCtx, 'get_all_channels', {}, apiActor);
-      expect(result).toEqual({ success: false, error: 'Discord guild context required' });
+      expect(result).toEqual({ success: false, error: 'This action is only available via Discord.' });
     });
 
     it('returns channels for the configured security role', async () => {

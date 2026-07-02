@@ -1,8 +1,10 @@
 import { query } from '../db/pool.js';
 import { resolveTenantByGuildId } from '../tenant/resolve.js';
 import { EmbedBuilder } from 'discord.js';
+import { loadConfig } from '../config.js';
 
-const ATRIA_STAFF_IDS = new Set(['753552148167524422', '553071305482829835']);
+const { atriaStaffIds } = loadConfig();
+const ATRIA_STAFF_IDS = new Set(atriaStaffIds);
 
 // In-memory store for pending confirmations
 const pendingCommands = new Map();

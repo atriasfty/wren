@@ -77,7 +77,7 @@ export async function runAssistantPipeline(tenantCtx, {
   ];
 
   const { getToolsForMistral } = await import('./tools.js');
-  const tools = getToolsForMistral();
+  const tools = getToolsForMistral({ isDiscordActor: actor?.kind === 'discord' });
 
   let finalText = '';
   const tracer = trace.getTracer('wren');

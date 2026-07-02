@@ -21,6 +21,7 @@ export function loadConfig() {
   if (!/^[A-Za-z0-9+/=]+$/.test(encKey) || Buffer.from(encKey, 'base64').length !== 32) {
     throw new Error('TENANT_SECRET_ENC_KEY must be base64 of 32 raw bytes (AES-256 key)');
   }
+  const atriaStaffIds = process.env.ATRIA_STAFF_IDS ? process.env.ATRIA_STAFF_IDS.split(',').map(id => id.trim()) : [];
   _config = {
     discordToken: process.env.DISCORD_TOKEN,
     openRouterApiKey: process.env.OPENROUTER_API_KEY,
@@ -30,6 +31,7 @@ export function loadConfig() {
     tenantSecretEncKey: Buffer.from(encKey, 'base64'),
     apiPort: Number(process.env.API_PORT || 4167),
     nodeEnv: process.env.NODE_ENV || 'development',
+    atriaStaffIds,
   };
   return _config;
 }

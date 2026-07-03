@@ -240,8 +240,15 @@ export function attachMessageHandler(client) {
       .filter((a) => a.contentType?.startsWith?.('image/'))
       .map((a) => a.url);
 
+    // Cap attachment downloads: only 20k chars survive anyway, so refuse to
+    // buffer arbitrarily large uploads into memory.
+    const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
     let documentsText = '';
     for (const a of message.attachments.values()) {
+      if (a.size > MAX_ATTACHMENT_BYTES) {
+        documentsText += `\n\n--- Attachment: ${a.name} --- (skipped: larger than 10MB)`;
+        continue;
+      }
       const isRawText = a.contentType?.startsWith('text/') ||
                         a.contentType === 'application/json' ||
                         a.contentType === 'application/xml' ||
@@ -249,7 +256,7 @@ export function attachMessageHandler(client) {
 
       if (isRawText) {
         try {
-          const res = await fetch(a.url);
+          const res = await fetch(a.url, { signal: AbortSignal.timeout(15_000) });
           const txt = await res.text();
           documentsText += `\n\n--- Attachment: ${a.name} ---\n${txt}`;
         } catch (e) {
@@ -257,7 +264,7 @@ export function attachMessageHandler(client) {
         }
       } else if (a.contentType === 'application/pdf' || a.name?.endsWith('.pdf')) {
         try {
-          const res = await fetch(a.url);
+          const res = await fetch(a.url, { signal: AbortSignal.timeout(15_000) });
           const buffer = await res.arrayBuffer();
           const pdfData = await pdfParse(Buffer.from(buffer));
           documentsText += `\n\n--- Attachment: ${a.name} ---\n${pdfData.text}`;
@@ -320,6 +327,8 @@ export function attachMessageHandler(client) {
       (s) => s.enabled && s.kind === 'discord_channel' && s.ref === newMessage.channel.id
     );
     if (isSourceChannel) {
+      const actor = { kind: 'discord', member: newMessage.member, id: newMessage.author?.id };
+      if (await enforceBan(tenantCtx, actor)) return;
       ingestDiscordMessage(tenantCtx, newMessage).catch((err) => {
         console.error('[messageUpdate] Auto-ingestion failed:', err.message);
       });
@@ -327,17 +336,17 @@ export function attachMessageHandler(client) {
   });
 
   client.on('messageDelete', async (message) => {
-    // Fetch the full message if it's partial (uncached) to avoid null guild/channel
-    try { if (message.partial) message = await message.fetch(); } catch { return; }
-    if (!message) return;
+    // A deleted message can no longer be fetched — but its IDs are always
+    // available, even on partials, and that's all the cleanup needs.
+    const guildId = message.guildId;
+    const channelId = message.channelId;
+    if (!guildId || !channelId) return;
 
-    if (!message.guild) return;
-
-    const tenantCtx = await resolveTenantByGuildId(message.guild.id);
+    const tenantCtx = await resolveTenantByGuildId(guildId);
     if (!tenantCtx) return;
 
     const isSourceChannel = tenantCtx.sources.some(
-      (s) => s.enabled && s.kind === 'discord_channel' && s.ref === message.channel.id
+      (s) => s.enabled && s.kind === 'discord_channel' && s.ref === channelId
     );
     if (isSourceChannel) {
       removeDiscordMessageChunks(tenantCtx, message.id).catch((err) => {

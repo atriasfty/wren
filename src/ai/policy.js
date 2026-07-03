@@ -10,6 +10,7 @@ export const POLICY_GATED_TOOLS = new Set([
   'mod_player', 'unmod_player', 'admin_player', 'unadmin_player',
   'purge_messages', 'bring_all_staff', 'pm_all_staff', 'log_punishment',
   'save_memory_server', 'save_memory_user',
+  'delete_memory_server', 'delete_memory_user',
   'get_vehicles', 'get_wanted_players', 'get_player_location',
   'get_server_briefing', 'get_player_profile', 'get_server_stats',
   'list_online_players', 'check_if_online', 'check_if_staff', 'get_player_info',

@@ -6,7 +6,7 @@ import { resolveTenantByGuildId, setEncryptionKey } from '../tenant/resolve.js';
 import { markSourceIngested } from '../tenant/store.js';
 import { loadConfig } from '../config.js';
 import { embedBatch } from './embed.js';
-import { ensureTenantDataDir, readVectorStore, writeVectorStore, listManualDocs, readManualDoc } from './store.js';
+import { ensureTenantDataDir, readVectorStore, writeVectorStore, readManualDoc } from './store.js';
 import { fetchWebpage } from '../integrations/search/webpage.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -16,6 +16,23 @@ dotenv.config({ path: path.join(__dirname, '..', '..', '.env') });
 
 const CHUNK_SIZE = 1000;
 const CHUNK_OVERLAP = 150;
+
+// The vector store is a single JSON file per tenant, updated with
+// read-modify-write cycles. Serialise those per tenant so concurrent message
+// events can't clobber each other's writes.
+const storeLocks = new Map();
+function withStoreLock(tenantId, fn) {
+  const prev = storeLocks.get(tenantId) || Promise.resolve();
+  const next = prev.catch(() => {}).then(fn);
+  storeLocks.set(tenantId, next);
+  // Swallow rejections on this side chain — the caller of withStoreLock still
+  // receives them via `next`; without the catch this floating promise would
+  // trigger the process-level unhandledRejection handler.
+  next.catch(() => {}).then(() => {
+    if (storeLocks.get(tenantId) === next) storeLocks.delete(tenantId);
+  });
+  return next;
+}
 
 export function chunkText(text, size = CHUNK_SIZE, overlap = CHUNK_OVERLAP) {
   if (!text) return [];
@@ -149,46 +166,55 @@ export async function ingestTenant(tenantCtx, client, { kinds = ['all'] } = {}) 
     }
   }
 
-  // Incremental: keep chunks from sources NOT being re-ingested.
-  const ingestingRefs = new Set(corpus.map((c) => `${c.kind}:${c.ref}`));
-  const store = await readVectorStore(tenantCtx.vectorStorePath);
-  store.chunks = (store.chunks || []).filter(
-    (c) => !ingestingRefs.has(`${c.sourceKind}:${c.sourceRef}`)
-  );
-
-  store.metadata = {
-    createdAt: new Date().toISOString(),
-    totalChunks: 0,
-    chunkSize: CHUNK_SIZE,
-    chunkOverlap: CHUNK_OVERLAP,
-  };
-
+  // Embed outside the store lock — only the read-modify-write needs serialising.
   const BATCH = 16;
+  const embedded = [];
   for (let i = 0; i < chunkedCorpus.length; i += BATCH) {
     const batch = chunkedCorpus.slice(i, i + BATCH);
     const vectors = await embedBatch(batch.map((b) => b.text));
     for (let j = 0; j < batch.length; j++) {
-      store.chunks.push({
-        id: store.chunks.length,
-        text: batch[j].text,
-        embedding: vectors[j],
-        sourceKind: batch[j].kind,
-        sourceRef: batch[j].ref,
-        label: batch[j].label,
-      });
+      embedded.push({ ...batch[j], embedding: vectors[j] });
     }
     console.log(`[ingest] embedded ${Math.min(i + BATCH, chunkedCorpus.length)}/${chunkedCorpus.length}`);
   }
-  store.chunks.forEach((c, idx) => { c.id = idx; });
-  store.metadata.totalChunks = store.chunks.length;
-  await writeVectorStore(tenantCtx.vectorStorePath, store);
+
+  const totalChunks = await withStoreLock(tenantCtx.tenantId, async () => {
+    // Incremental: keep chunks from sources NOT being re-ingested.
+    const ingestingRefs = new Set(corpus.map((c) => `${c.kind}:${c.ref}`));
+    const store = await readVectorStore(tenantCtx.vectorStorePath);
+    store.chunks = (store.chunks || []).filter(
+      (c) => !ingestingRefs.has(`${c.sourceKind}:${c.sourceRef}`)
+    );
+
+    store.metadata = {
+      createdAt: new Date().toISOString(),
+      totalChunks: 0,
+      chunkSize: CHUNK_SIZE,
+      chunkOverlap: CHUNK_OVERLAP,
+    };
+
+    for (const e of embedded) {
+      store.chunks.push({
+        id: store.chunks.length,
+        text: e.text,
+        embedding: e.embedding,
+        sourceKind: e.kind,
+        sourceRef: e.ref,
+        label: e.label,
+      });
+    }
+    store.chunks.forEach((c, idx) => { c.id = idx; });
+    store.metadata.totalChunks = store.chunks.length;
+    await writeVectorStore(tenantCtx.vectorStorePath, store);
+    return store.chunks.length;
+  });
 
   for (const s of sources) {
     if (corpus.some((c) => c.kind === s.kind && c.ref === s.ref)) {
       await markSourceIngested({ tenantId: tenantCtx.tenantId, kind: s.kind, ref: s.ref });
     }
   }
-  return { chunks: store.chunks.length, sources: corpus.length };
+  return { chunks: totalChunks, sources: corpus.length };
 }
 
 export async function ingestDiscordMessage(tenantCtx, message) {
@@ -201,49 +227,54 @@ export async function ingestDiscordMessage(tenantCtx, message) {
   if (!chunks.length) return;
 
   const vectors = await embedBatch(chunks);
-  const store = await readVectorStore(tenantCtx.vectorStorePath);
 
-  // Remove existing chunks for this specific message first (in case of updates)
-  store.chunks = (store.chunks || []).filter((c) => c.messageId !== message.id);
+  await withStoreLock(tenantCtx.tenantId, async () => {
+    const store = await readVectorStore(tenantCtx.vectorStorePath);
 
-  const source = tenantCtx.sources.find(
-    (s) => s.kind === 'discord_channel' && s.ref === message.channel.id
-  );
-  const label = source ? source.label : 'Discord Channel';
+    // Remove existing chunks for this specific message first (in case of updates)
+    store.chunks = (store.chunks || []).filter((c) => c.messageId !== message.id);
 
-  for (let i = 0; i < chunks.length; i++) {
-    store.chunks.push({
-      id: store.chunks.length,
-      text: chunks[i],
-      embedding: vectors[i],
-      sourceKind: 'discord_channel',
-      sourceRef: message.channel.id,
-      label,
-      messageId: message.id,
-    });
-  }
+    const source = tenantCtx.sources.find(
+      (s) => s.kind === 'discord_channel' && s.ref === message.channel.id
+    );
+    const label = source ? source.label : 'Discord Channel';
 
-  // Ensure sequential IDs
-  store.chunks.forEach((c, idx) => { c.id = idx; });
-  if (!store.metadata) store.metadata = {};
-  store.metadata.totalChunks = store.chunks.length;
-  store.metadata.updatedAt = new Date().toISOString();
+    for (let i = 0; i < chunks.length; i++) {
+      store.chunks.push({
+        id: store.chunks.length,
+        text: chunks[i],
+        embedding: vectors[i],
+        sourceKind: 'discord_channel',
+        sourceRef: message.channel.id,
+        label,
+        messageId: message.id,
+      });
+    }
 
-  await writeVectorStore(tenantCtx.vectorStorePath, store);
-}
-
-export async function removeDiscordMessageChunks(tenantCtx, messageId) {
-  const store = await readVectorStore(tenantCtx.vectorStorePath);
-  const beforeCount = store.chunks?.length || 0;
-  store.chunks = (store.chunks || []).filter((c) => c.messageId !== messageId);
-
-  if (store.chunks.length !== beforeCount) {
+    // Ensure sequential IDs
     store.chunks.forEach((c, idx) => { c.id = idx; });
     if (!store.metadata) store.metadata = {};
     store.metadata.totalChunks = store.chunks.length;
     store.metadata.updatedAt = new Date().toISOString();
+
     await writeVectorStore(tenantCtx.vectorStorePath, store);
-  }
+  });
+}
+
+export async function removeDiscordMessageChunks(tenantCtx, messageId) {
+  await withStoreLock(tenantCtx.tenantId, async () => {
+    const store = await readVectorStore(tenantCtx.vectorStorePath);
+    const beforeCount = store.chunks?.length || 0;
+    store.chunks = (store.chunks || []).filter((c) => c.messageId !== messageId);
+
+    if (store.chunks.length !== beforeCount) {
+      store.chunks.forEach((c, idx) => { c.id = idx; });
+      if (!store.metadata) store.metadata = {};
+      store.metadata.totalChunks = store.chunks.length;
+      store.metadata.updatedAt = new Date().toISOString();
+      await writeVectorStore(tenantCtx.vectorStorePath, store);
+    }
+  });
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

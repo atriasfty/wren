@@ -1,13 +1,18 @@
 import { query } from '../db/pool.js';
 import { resolveTenantByGuildId } from '../tenant/resolve.js';
+import { issueApiToken } from '../tenant/store.js';
+import { hashToken, generateApiToken } from '../tenant/crypto.js';
 import { EmbedBuilder } from 'discord.js';
-import { loadConfig } from '../config.js';
 
-const { atriaStaffIds } = loadConfig();
-const ATRIA_STAFF_IDS = new Set(atriaStaffIds);
+// Read lazily from env (not loadConfig) so importing this module has no side
+// effects and doesn't require the full config to be present (e.g. in tests).
+function atriaStaffIds() {
+  return new Set((process.env.ATRIA_STAFF_IDS || '').split(',').map((s) => s.trim()).filter(Boolean));
+}
 
 // In-memory store for pending confirmations
 const pendingCommands = new Map();
+const CONFIRM_TTL_MS = 60_000;
 
 function parseDurationMs(durationStr) {
   if (!durationStr) return null;
@@ -19,7 +24,7 @@ function parseDurationMs(durationStr) {
 }
 
 export async function handleAtriaCommands(message) {
-  if (!ATRIA_STAFF_IDS.has(message.author.id)) return false;
+  if (!atriaStaffIds().has(message.author.id)) return false;
   
   const content = message.content.trim();
   if (!content.startsWith('$atria')) return false;
@@ -33,11 +38,12 @@ export async function handleAtriaCommands(message) {
   try {
     if (command === 'confirm') {
       const pending = pendingCommands.get(message.author.id);
-      if (pending) {
+      if (pending && Date.now() <= pending.expiresAt) {
         pendingCommands.delete(message.author.id);
-        await pending();
+        await pending.execute();
       } else {
-        await message.reply('No pending command to confirm.');
+        pendingCommands.delete(message.author.id);
+        await message.reply(pending ? 'That pending command expired. Re-run it and confirm within 60 seconds.' : 'No pending command to confirm.');
       }
       return true;
     }
@@ -223,15 +229,14 @@ export async function handleAtriaCommands(message) {
         return true;
       }
       execute = async () => {
-        const res = await query("SELECT tenant_id, status_channel_id, last_active_channel_id, security_role_id FROM tenants WHERE (status_channel_id IS NOT NULL AND status_channel_id != '') OR (last_active_channel_id IS NOT NULL AND last_active_channel_id != '')");
+        const res = await query("SELECT tenant_id, status_channel_id, last_active_channel_id FROM tenants WHERE (status_channel_id IS NOT NULL AND status_channel_id != '') OR (last_active_channel_id IS NOT NULL AND last_active_channel_id != '')");
         let sent = 0;
         let failed = 0;
         for (const row of res.rows) {
           try {
             const targetChannelId = (row.status_channel_id && row.status_channel_id !== '') ? row.status_channel_id : row.last_active_channel_id;
             const channel = await message.client.channels.fetch(targetChannelId);
-            const ping = row.security_role_id ? `<@&${row.security_role_id}> ` : '';
-            await channel.send(`${ping}**ATRIA PLATFORM BROADCAST:**\n${msg}`);
+            await channel.send(`**ATRIA PLATFORM BROADCAST:**\n${msg}`);
             sent++;
           } catch (e) {
             console.error(`[broadcast error] tenant ${row.tenant_id} channel ${row.status_channel_id}:`, e.message);
@@ -283,6 +288,28 @@ export async function handleAtriaCommands(message) {
         await query("INSERT INTO global_state (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2", [`bypass:${message.author.id}`, JSON.stringify(value)]);
         await message.reply(`Bypass granted for server **${targetServerId}** for 15 minutes. You can now use \`/wren config\` in that server.`);
       };
+    } else if (command === 'apitoken') {
+      const serverId = args[1] || message.guild?.id;
+      const label = args.slice(2).join(' ') || null;
+      if (!serverId) {
+        await message.reply('Usage: `$atria apitoken <server_id> [label]`');
+        return true;
+      }
+      execute = async () => {
+        const tenantCtx = await resolveTenantByGuildId(serverId);
+        if (!tenantCtx) {
+          await message.reply(`Server ${serverId} is not configured with Wren.`);
+          return;
+        }
+        const rawToken = generateApiToken();
+        await issueApiToken({ tenantId: tenantCtx.tenantId, tokenHash: hashToken(rawToken), label, scopes: ['chat'] });
+        try {
+          await message.author.send(`API token for server **${serverId}**${label ? ` (${label})` : ''} — scope \`chat\`:\n\`\`\`${rawToken}\`\`\`\nThis is shown once; store it securely.`);
+          await message.reply('API token created — sent to your DMs.');
+        } catch {
+          await message.reply('API token created, but I could not DM you. Enable DMs and re-run.');
+        }
+      };
     } else if (command === 'pause') {
       execute = async () => {
         await query("INSERT INTO global_state (key, value) VALUES ('paused', $1) ON CONFLICT (key) DO UPDATE SET value = $1", [JSON.stringify({ paused: true })]);
@@ -299,8 +326,8 @@ export async function handleAtriaCommands(message) {
     }
 
     if (execute) {
-      pendingCommands.set(message.author.id, execute);
-      await message.reply('Got it, confirm? (Type `$atria confirm` to execute)');
+      pendingCommands.set(message.author.id, { execute, expiresAt: Date.now() + CONFIRM_TTL_MS, description: content });
+      await message.reply(`Got it, confirm? (Type \`$atria confirm\` within 60s to execute: \`${content.slice(0, 180)}\`)`);
     }
     return true;
 

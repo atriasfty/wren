@@ -1,7 +1,7 @@
 import * as prc from '../integrations/prc.js';
 import * as pow from '../integrations/pow.js';
 import { webSearch } from '../integrations/brave.js';
-import { audit, addMemory } from '../tenant/store.js';
+import { audit, addMemory, removeMemory } from '../tenant/store.js';
 import { canRunTool, denialReason, POLICY_GATED_TOOLS } from './policy.js';
 import { policyToolKey, DISCORD_ONLY_TOOLS } from './tools.js';
 import { actorKey } from './utils.js';
@@ -424,12 +424,13 @@ export async function executeTool(tenantCtx, name, args, actor) {
       case 'get_all_channels': {
         const guild = getGuild(tenantCtx, actor);
         if (!guild) return { success: false, error: 'Discord guild context required' };
-        const secRoleId = tenantCtx.tenant.securityRoleId;
-        if (!secRoleId) return { success: false, error: 'No security_role_id configured for this tenant.' };
-        const secRole = guild.roles.cache.get(secRoleId);
-        if (!secRole) return { success: false, error: 'Security role not found.' };
+        // Only list channels the requesting member can see themselves — the
+        // bot's own visibility must not leak hidden channels to the caller.
+        if (actor?.kind !== 'discord' || !actor.member) {
+          return { success: false, error: 'This action is only available via Discord.' };
+        }
         const channels = guild.channels.cache
-          .filter((c) => c.permissionsFor(secRole)?.has?.('ViewChannel'))
+          .filter((c) => c.permissionsFor(actor.member)?.has?.('ViewChannel'))
           .map((c) => ({ name: c.name, id: c.id, type: c.type === 0 ? 'Text' : c.type === 2 ? 'Voice' : c.type === 4 ? 'Category' : 'Other', parentId: c.parentId }));
         result = { success: true, total: channels.length, channels };
         break;

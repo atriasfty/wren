@@ -57,9 +57,13 @@ async function main() {
       try {
         const reply = await dispatchGarminCommand(interaction);
         if (reply) {
-          await interaction.reply(reply).catch(async () => {
-            await interaction.followUp(reply).catch(() => {});
-          });
+          if (interaction.deferred || interaction.replied) {
+            await interaction.editReply(reply).catch(() => {});
+          } else {
+            await interaction.reply(reply).catch(async () => {
+              await interaction.followUp(reply).catch(() => {});
+            });
+          }
         }
       } catch (err) {
         console.error('[slash] dispatch failed:', err);
@@ -73,10 +77,14 @@ async function main() {
         try {
           await query('INSERT INTO user_agreements (discord_id) VALUES ($1) ON CONFLICT DO NOTHING', [interaction.user.id]);
           if (interaction.message.reference?.messageId) {
-            await interaction.reply({ content: 'Thank you for agreeing to the Terms of Service and Privacy Policy! Processing your original request...', ephemeral: true });
             const originalMsg = await interaction.channel.messages.fetch(interaction.message.reference.messageId).catch(()=>null);
-            if (originalMsg) {
-               interaction.client.emit('messageCreate', originalMsg);
+            // Only replay the original request if the person agreeing is its
+            // author — someone else's click must not consent on their behalf.
+            if (originalMsg && originalMsg.author.id === interaction.user.id) {
+              await interaction.reply({ content: 'Thank you for agreeing to the Terms of Service and Privacy Policy! Processing your original request...', ephemeral: true });
+              interaction.client.emit('messageCreate', originalMsg);
+            } else {
+              await interaction.reply({ content: 'Thank you for agreeing to the Terms of Service and Privacy Policy! You can now use Wren.', ephemeral: true });
             }
           } else {
             await interaction.reply({ content: 'Thank you for agreeing to the Terms of Service and Privacy Policy! You can now use Wren.', ephemeral: true });
@@ -113,7 +121,7 @@ async function main() {
   await syncAllGuilds(client);
   console.log('[boot] slash commands synced');
 
-  setInterval(() => syncAllGuilds(client).catch(() => {}), 3 * 60 * 1000);
+  // Global commands persist — no need to re-register on an interval.
   setInterval(() => pruneExpiredEvents().catch(() => {}), 60 * 60 * 1000);
 
   await startApiServer(client);

@@ -94,7 +94,10 @@ async function joinChannel(interaction) {
     return { content: 'You must be in a voice channel to use this command.', ephemeral: true };
   }
   const channel = member.voice.channel;
-  
+
+  // Model loading and connection setup can exceed the 3s interaction window.
+  await interaction.deferReply({ ephemeral: true }).catch(() => {});
+
   try {
     const connection = joinVoiceChannel({
       channelId: channel.id,
@@ -144,6 +147,8 @@ async function leaveChannel(interaction) {
     connection.destroy();
     const state = activeGuilds.get(interaction.guild.id);
     if (state) {
+      if (state.idleTimer) clearTimeout(state.idleTimer);
+      if (state.promptTimeout) clearTimeout(state.promptTimeout);
       state.owwModel = null; // Free up WASM/Model memory
     }
     activeGuilds.delete(interaction.guild.id);
@@ -352,8 +357,8 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
     if (!tenantCtx) return;
     
     const t = tenantCtx.tenant;
-    const voiceSecs = t.monthly_voice_time_seconds || 0;
-    const tier = t.subscription_tier || 'free';
+    const voiceSecs = t.monthlyVoiceTimeSeconds || 0;
+    const tier = t.subscriptionTier || 'free';
     
     let maxVoiceSecs = 2 * 60; // 2 minutes for free tier
     if (tier === 'core') maxVoiceSecs = 30 * 60;
@@ -403,13 +408,7 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
   
   // Play the second 'got it' charm
   await playGotItCharm(state.player);
-  
-  if (state.promptStartTime) {
-    const activeTimeSeconds = Math.ceil((Date.now() - state.promptStartTime) / 1000);
-    await incrementVoiceTime(guildId, activeTimeSeconds);
-    state.promptStartTime = null;
-  }
-  
+
   const cfg = loadConfig();
   let finalTranscript;
   try {
@@ -461,7 +460,15 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
       });
       return;
     }
-  
+
+    // Bill active time only after the consent check — unconsented users must
+    // not consume the tenant's voice quota.
+    if (state.promptStartTime) {
+      const activeTimeSeconds = Math.ceil((Date.now() - state.promptStartTime) / 1000);
+      await incrementVoiceTime(guildId, activeTimeSeconds);
+      state.promptStartTime = null;
+    }
+
     // 3. Package PCM into a WAV file using FFmpeg for pristine high-quality 16kHz downsampling
     const wavBytes = await new Promise((resolve, reject) => {
       let ffmpegCommand = 'ffmpeg';
@@ -503,10 +510,8 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
       ffmpeg.stdin.end();
     });
     
-    // Check WAV payload validity by writing to disk for debugging
-    const debugWavPath = path.join(__dirname, '..', '..', '..', 'data', `debug_${Date.now()}.wav`);
-    await fs.writeFile(debugWavPath, wavBytes).catch(() => {});
-    
+    // NOTE: never write user audio to disk — the privacy policy promises voice
+    // is processed in real time and immediately discarded.
     const payload = {
       model: 'nvidia/parakeet-tdt-0.6b-v3',
       input_audio: {
@@ -523,7 +528,8 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
         'HTTP-Referer': 'https://wren.atriasafety.org',
         'X-OpenRouter-Title': 'Wren Voice Agent'
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(30_000)
     });
 
     if (!res.ok) {
@@ -543,96 +549,103 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
     return;
   }
   
-  // 4. Run through Wren's Pipeline
-  const tenantCtx = await resolveTenantByGuildId(guildId);
-  if (!tenantCtx) {
-    state.isSpeaking = false;
-    return;
-  }
-  
-  let fullMember = state.guild.members.cache.get(userId);
-  if (!fullMember) {
-    try {
-      fullMember = await state.guild.members.fetch(userId);
-    } catch (e) {
-      console.warn(`[voice] Could not fetch full member for ${userId}`);
-    }
-  }
-  
-  const aiResult = await runAssistantPipeline(tenantCtx, {
-    question: finalTranscript,
-    channelContext: '', // We could fetch recent text channel messages if needed
-    actor: { kind: 'discord', member: fullMember || { id: userId, user: { username: userId } } },
-    channelId: discordChannelId,
-    mode: 'voice' // Custom mode to trigger concise responses
-  });
-  
-  if (!aiResult.text) {
-    state.isSpeaking = false;
-    return;
-  }
-  
-  // Clean text for TTS (remove emojis, markdown, URLs)
-  const cleanTtsText = aiResult.text
-    .replace(/\s?⚠️\s?/g, ' Warning: ')
-    .replace(/[*_~`]/g, '')
-    .replace(/https?:\/\/[^\s]+/g, 'the link')
-    .replace(/\//g, ' ')
-    .trim();
-  
-  // 5. Generate TTS via Kokoro 82M
-  const ttsRes = await fetch('https://openrouter.ai/api/v1/audio/speech', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${cfg.openRouterApiKey}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: 'hexgrad/kokoro-82m',
-      input: cleanTtsText,
-      voice: 'am_fenrir', // Best default voice
-      response_format: 'mp3'
-    })
-  });
-  
-  if (!ttsRes.ok) {
-    console.error('[voice] TTS failed:', await ttsRes.text());
-    state.isSpeaking = false;
-    return;
-  }
-  
-  const audioArrayBuffer = await ttsRes.arrayBuffer();
-  
-  // Save to a temporary file since createAudioResource works best with files or standard streams
-  // [SECURITY-FIX] Authentication & Authorization: replace non-cryptographic PRNG with CSPRNG
-  const tempId = crypto.randomBytes(8).toString('hex');
-  const tempPath = path.join(__dirname, '..', '..', '..', 'data', `temp_${tempId}.mp3`);
-  await fs.writeFile(tempPath, Buffer.from(audioArrayBuffer));
-  
+  // 4. Run through Wren's Pipeline and speak the answer. Any throw in here must
+  // reset isSpeaking, otherwise the bot goes permanently deaf in this guild.
   try {
-    const resource = createAudioResource(tempPath);
-    state.player.play(resource);
+    const tenantCtx = await resolveTenantByGuildId(guildId);
+    if (!tenantCtx) {
+      state.isSpeaking = false;
+      return;
+    }
+
+    let fullMember = state.guild.members.cache.get(userId);
+    if (!fullMember) {
+      try {
+        fullMember = await state.guild.members.fetch(userId);
+      } catch (e) {
+        console.warn(`[voice] Could not fetch full member for ${userId}`);
+      }
+    }
+
+    const aiResult = await runAssistantPipeline(tenantCtx, {
+      question: finalTranscript,
+      channelContext: '', // We could fetch recent text channel messages if needed
+      actor: { kind: 'discord', member: fullMember || { id: userId, user: { username: userId } } },
+      channelId: discordChannelId,
+      mode: 'voice' // Custom mode to trigger concise responses
+    });
+
+    if (!aiResult.text) {
+      state.isSpeaking = false;
+      return;
+    }
+
+    // Clean text for TTS (remove emojis, markdown, URLs)
+    const cleanTtsText = aiResult.text
+      .replace(/\s?⚠️\s?/g, ' Warning: ')
+      .replace(/[*_~`]/g, '')
+      .replace(/https?:\/\/[^\s]+/g, 'the link')
+      .replace(/\//g, ' ')
+      .trim();
+
+    // 5. Generate TTS via Kokoro 82M
+    const ttsRes = await fetch('https://openrouter.ai/api/v1/audio/speech', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${cfg.openRouterApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'hexgrad/kokoro-82m',
+        input: cleanTtsText,
+        voice: 'am_fenrir', // Best default voice
+        response_format: 'mp3'
+      }),
+      signal: AbortSignal.timeout(30_000)
+    });
+
+    if (!ttsRes.ok) {
+      console.error('[voice] TTS failed:', await ttsRes.text());
+      state.isSpeaking = false;
+      return;
+    }
+
+    const audioArrayBuffer = await ttsRes.arrayBuffer();
+
+    // Save to a temporary file since createAudioResource works best with files or standard streams
+    // [SECURITY-FIX] Authentication & Authorization: replace non-cryptographic PRNG with CSPRNG
+    const tempId = crypto.randomBytes(8).toString('hex');
+    const tempPath = path.join(__dirname, '..', '..', '..', 'data', `temp_${tempId}.mp3`);
+    await fs.writeFile(tempPath, Buffer.from(audioArrayBuffer));
+
+    try {
+      const resource = createAudioResource(tempPath);
+      state.player.play(resource);
+    } catch (err) {
+      console.error('[voice] Failed to play TTS:', err.message);
+      state.isSpeaking = false;
+      fs.unlink(tempPath).catch(()=>{});
+      return;
+    }
+
+    const onEnd = () => {
+      state.isSpeaking = false;
+      fs.unlink(tempPath).catch(()=>{});
+      state.player.off('error', onError);
+    };
+    const onError = (err) => {
+      console.error('[voice] Player error:', err.message);
+      state.isSpeaking = false;
+      fs.unlink(tempPath).catch(()=>{});
+      state.player.off(AudioPlayerStatus.Idle, onEnd);
+    };
+
+    state.player.once(AudioPlayerStatus.Idle, onEnd);
+    state.player.once('error', onError);
   } catch (err) {
-    console.error('[voice] Failed to play TTS:', err.message);
+    console.error('[voice] Response generation failed:', err);
     state.isSpeaking = false;
-    fs.unlink(tempPath).catch(()=>{});
-    return;
   }
-  
-  const onEnd = () => {
-    state.isSpeaking = false;
-    fs.unlink(tempPath).catch(()=>{});
-    state.player.off('error', onError);
-  };
-  const onError = (err) => {
-    console.error('[voice] Player error:', err.message);
-    state.isSpeaking = false;
-    fs.unlink(tempPath).catch(()=>{});
-    state.player.off(AudioPlayerStatus.Idle, onEnd);
-  };
-  
-  state.player.once(AudioPlayerStatus.Idle, onEnd);
-  state.player.once('error', onError);
 }
 
 export async function handleVoiceStateUpdate(oldState, newState) {
@@ -662,10 +675,16 @@ export async function handleVoiceStateUpdate(oldState, newState) {
       console.log(`[voice] Human joined ${guildId}. Idle timer cancelled.`);
     }
 
-    // If the model was previously slept, quietly wake it up.
-    if (state.owwModel === null) {
+    // If the model was previously slept, quietly wake it up. The loading flag
+    // stops concurrent voiceStateUpdate events from loading it twice.
+    if (state.owwModel === null && !state.owwModelLoading) {
       console.log(`[voice] Human joined ${guildId}. Waking up wake word model.`);
-      state.owwModel = await createWakeWordModel();
+      state.owwModelLoading = true;
+      try {
+        state.owwModel = await createWakeWordModel();
+      } finally {
+        state.owwModelLoading = false;
+      }
     }
   }
 }

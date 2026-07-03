@@ -4,7 +4,7 @@ import { retrieveSources } from '../rag/retrieve.js';
 import { executeTool } from './executor.js';
 import { buildSystemPrompt } from './prompts.js';
 import { loadConfig } from '../config.js';
-import { addMemory, incrementMessageUsage } from '../tenant/store.js';
+import { incrementMessageUsage } from '../tenant/store.js';
 import { actorKey } from './utils.js';
 
 let _client = null;
@@ -53,10 +53,10 @@ export async function runAssistantPipeline(tenantCtx, {
 
   let ragContext = '';
   try {
-    const chunks = await retrieveSources(tenantCtx, question, 6);
-    if (chunks.length) {
+    const results = await retrieveSources(tenantCtx, question, 6);
+    if (results.length) {
       ragContext = '\n\nRELEVANT KNOWLEDGE (retrieved from configured sources):\n' +
-        chunks.map((c, i) => `[${i + 1}] (${c.label || c.sourceRef}): ${c.text}`).join('\n\n');
+        results.map((r, i) => `[${i + 1}] (${r.chunk.label || r.chunk.sourceRef}): ${r.chunk.text}`).join('\n\n');
     }
   } catch (err) {
     console.warn('[pipeline] retrieve failed:', err.message);

@@ -34,7 +34,7 @@ const server = new Server(
 // Verify the token before allowing access
 async function verifyAccess() {
   const tokenHash = crypto.createHash('sha256').update(MCP_TOKEN).digest('hex');
-  const res = await query('SELECT discord_id FROM user_mcp_tokens WHERE tenant_id = $1 AND token_hash = $2', [TENANT_ID, tokenHash]);
+  const res = await query('SELECT discord_id FROM user_mcp_tokens WHERE tenant_id = $1 AND token_hash = $2 AND revoked_at IS NULL', [TENANT_ID, tokenHash]);
   
   if (res.rows.length === 0) {
     throw new Error("Invalid or revoked Wren MCP Token.");

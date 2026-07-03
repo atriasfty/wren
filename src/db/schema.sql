@@ -207,3 +207,11 @@ DO $$ BEGIN
   ALTER TABLE tenants RENAME COLUMN pow_server_a_id TO pow_server_id;
 EXCEPTION WHEN undefined_column THEN NULL;
 END $$;
+
+-- Backfill policy rows added after tenants were created (idempotent).
+INSERT INTO tenant_role_policy (tenant_id, tool, min_role)
+  SELECT tenant_id, 'delete_memory_server', 'leadership' FROM tenants
+  ON CONFLICT DO NOTHING;
+INSERT INTO tenant_role_policy (tenant_id, tool, min_role)
+  SELECT tenant_id, 'delete_memory_user', 'user' FROM tenants
+  ON CONFLICT DO NOTHING;

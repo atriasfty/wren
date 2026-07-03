@@ -18,7 +18,6 @@ import {
   removeBan,
   listMemory,
   removeMemory,
-  pruneExpiredEvents,
 } from '../tenant/store.js';
 import { loadConfig } from '../config.js';
 import { ingestTenant } from '../rag/ingest.js';
@@ -38,18 +37,6 @@ const CONFIG_CATEGORY_FOR_FIELD = Object.fromEntries(
 
 async function checkManageGuild(interaction) {
   if (interaction.member?.permissions?.has?.(PermissionFlagsBits.ManageGuild)) return true;
-  try {
-    const res = await query("SELECT value FROM global_state WHERE key = $1", [`bypass:${interaction.user.id}`]);
-    if (res.rows.length > 0) {
-      const val = res.rows[0].value;
-      if (val.tenantId === interaction.guild?.id && new Date(val.expiresAt) > new Date()) return true;
-    }
-  } catch (e) {}
-  return false;
-}
-
-async function isOwner(interaction) {
-  if (interaction.guild?.ownerId === interaction.user.id) return true;
   try {
     const res = await query("SELECT value FROM global_state WHERE key = $1", [`bypass:${interaction.user.id}`]);
     if (res.rows.length > 0) {
@@ -219,9 +206,11 @@ export async function handleMemory(interaction, ctx) {
   const tenantId = interaction.guild.id;
 
   if (sub === 'list') {
+    // Listing exposes every user's private memories — leadership only.
+    if (!isLeadershipOrHigher) return ephemeral('Only the leadership role can list memories.');
     const rows = await listMemory(tenantId);
     if (!rows.length) return ephemeral('No memory.');
-    return ephemeral(rows.slice(0, 25).map((m) => `[#${m.id} ${m.scope}${m.userKey ? ` /${m.userKey}` : ''}] ${m.content}`).join('\n'));
+    return ephemeral(rows.slice(0, 25).map((m) => `[#${m.id} ${m.scope}${m.user_key ? ` /${m.user_key}` : ''}] ${m.content}`).join('\n'));
   }
 
   if (sub === 'add') {
@@ -287,6 +276,9 @@ export async function handleUpgrade(interaction) {
   const productId = plan === 'core' ? process.env.POLAR_CORE_PRODUCT_ID : process.env.POLAR_PRO_PRODUCT_ID;
   if (!productId) return ephemeral('Billing is not fully configured yet (missing product IDs).');
 
+  // Polar checkout creation can exceed the 3s interaction window.
+  await interaction.deferReply({ ephemeral: true }).catch(() => {});
+
   try {
     const polar = new Polar({ accessToken: process.env.POLAR_ACCESS_TOKEN || '' });
     const isSmallServer = interaction.guild.memberCount < 500;
@@ -321,6 +313,9 @@ export async function handleUsage(interaction) {
 export async function handleManage(interaction) {
   const { ctx } = await loadCtx(interaction);
   if (!ctx) return ephemeral('Server not set up.');
+
+  // Multiple Polar API round-trips can exceed the 3s interaction window.
+  await interaction.deferReply({ ephemeral: true }).catch(() => {});
 
   const polar = new Polar({ accessToken: process.env.POLAR_ACCESS_TOKEN || '' });
   
@@ -469,7 +464,7 @@ export async function handleMcp(interaction) {
     .setDescription(`You have generated an MCP API key for this server (\`${ctx.tenant.displayName}\`). This gives your AI agents the same access you have in Discord!`)
     .addFields(
       { name: 'Your MCP Token', value: `\`\`\`${rawToken}\`\`\`\n*Keep this secret. If you run this command again, the old token will be invalidated.*`, inline: false },
-      { name: 'Installation (Claude Desktop)', value: `1. Open your Claude Desktop config file (\`claude_desktop_config.json\`).\n2. Add the Wren MCP server:\n\`\`\`json\n"mcpServers": {\n  "wren-mcp": {\n    "command": "npx",\n    "args": [\n      "-y",\n      "mcp-proxy",\n      "https://wrenapi.atriasafety.org/api/mcp/sse"\n    ],\n    "env": {\n      "WREN_MCP_TOKEN": "${rawToken}"\n    }\n  }\n}\n\`\`\``, inline: false }
+      { name: 'Installation (Claude Desktop)', value: `1. Open your Claude Desktop config file (\`claude_desktop_config.json\`).\n2. Add the Wren MCP server:\n\`\`\`json\n"mcpServers": {\n  "wren-mcp": {\n    "command": "npx",\n    "args": [\n      "-y",\n      "mcp-proxy",\n      "--headers", "Authorization", "Bearer ${rawToken}",\n      "https://wrenapi.atriasafety.org/api/mcp/sse"\n    ]\n  }\n}\n\`\`\``, inline: false }
     );
     
   return { embeds: [embed], ephemeral: true };
@@ -479,8 +474,6 @@ export async function handleComponentInteraction(interaction) {
   const customId = interaction.customId || '';
   const [route, tenantId, fieldKey] = customId.split(':');
 
-  const { loadConfig } = await import('../config.js');
-  const cfg = loadConfig();
   const ctx = await resolveTenantByGuildId(tenantId);
   if (!ctx) return interaction.reply(ephemeral('Server not set up.'));
 

@@ -1,13 +1,14 @@
-import { REST, Routes, SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
+import { REST, Routes, SlashCommandBuilder } from 'discord.js';
 import { loadConfig } from '../config.js';
-import { listTenants } from '../tenant/store.js';
 
 function buildCommandTree() {
   return [
     new SlashCommandBuilder()
       .setName('wren')
       .setDescription('Wren bot configuration and utilities')
-      .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+      // Visible to everyone: user-facing subcommands (usage, voice, memory, mcp)
+      // must be reachable; privileged subcommands enforce their own rank checks.
+      .setDMPermission(false)
       .addSubcommandGroup((g) =>
         g.setName('config').setDescription('View or change server configuration').addSubcommand((s) => s.setName('view').setDescription('Open the configuration panel')),
       )

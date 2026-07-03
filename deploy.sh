@@ -54,21 +54,25 @@ SHARED_ENV_FILE="${SHARED_DIR}/.env"
 
 if [ -f "${SHARED_ENV_FILE}" ]; then
     echo -e "${GREEN}Existing .env file found. Loading configuration...${NC}"
-    # Load env vars safely without running commands
-    export $(grep -v '^#' "${SHARED_ENV_FILE}" | xargs)
+    # set -a exports everything the file defines; unlike `export $(... | xargs)`
+    # this survives values containing spaces, quotes, or '='.
+    set -a
+    # shellcheck disable=SC1090
+    . "${SHARED_ENV_FILE}"
+    set +a
 else
     echo -e "${YELLOW}No existing .env file found. Starting first-time setup...${NC}"
     
     echo -e "${BLUE}=== ENTERING SECRETS ===${NC}"
-    read -p "GitHub Personal Access Token (for private repo): " GITHUB_PAT
-    read -p "Discord Bot Token: " DISCORD_TOKEN
-    read -p "OpenRouter API Key: " OPENROUTER_API_KEY
+    read -s -p "GitHub Personal Access Token (for private repo): " GITHUB_PAT; echo
+    read -s -p "Discord Bot Token: " DISCORD_TOKEN; echo
+    read -s -p "OpenRouter API Key: " OPENROUTER_API_KEY; echo
     read -p "OpenRouter Model [mistralai/mistral-large-2411]: " OPENROUTER_MODEL
     OPENROUTER_MODEL=${OPENROUTER_MODEL:-mistralai/mistral-large-2411}
-    read -p "Brave Search API Key (Optional, press enter to skip): " BRAVE_SEARCH_API_KEY
+    read -s -p "Brave Search API Key (Optional, press enter to skip): " BRAVE_SEARCH_API_KEY; echo
     read -p "API Listen Port [4167]: " API_PORT
     API_PORT=${API_PORT:-4167}
-    read -p "PostHog API Key (Optional, for observability): " POSTHOG_API_KEY
+    read -s -p "PostHog API Key (Optional, for observability): " POSTHOG_API_KEY; echo
     
     echo -e "${BLUE}=== DATABASE CONFIGURATION ===${NC}"
     read -p "Database Host [localhost]: " DB_HOST
@@ -82,7 +86,9 @@ else
     DB_NAME=${DB_NAME:-wren_prod}
     read -p "Database User [wren]: " DB_USER
     DB_USER=${DB_USER:-wren}
-    read -p "Database Password: " DB_PASS
+    read -s -p "Database Password: " DB_PASS; echo
+    # Escape single quotes for safe interpolation into SQL string literals
+    DB_PASS_SQL=${DB_PASS//\'/\'\'}
     
     # We only attempt automatic DB creation if the host is localhost
     if [ "$DB_HOST" = "localhost" ] || [ "$DB_HOST" = "127.0.0.1" ]; then
@@ -92,9 +98,9 @@ else
             
             # Check if user exists, if not create, else update password
             if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" | grep -q 1; then
-                sudo -u postgres psql -c "CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASS}';"
+                sudo -u postgres psql -c "CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASS_SQL}';"
             else
-                sudo -u postgres psql -c "ALTER USER ${DB_USER} WITH PASSWORD '${DB_PASS}';"
+                sudo -u postgres psql -c "ALTER USER ${DB_USER} WITH PASSWORD '${DB_PASS_SQL}';"
             fi
             
             # Create database owned by the user

@@ -21,8 +21,10 @@ vi.mock('discord.js', () => ({
   }))
 }));
 
-const STAFF_ID = '753552148167524422'; // From ATRIA_STAFF_IDS in code
+const STAFF_ID = '753552148167524422';
 const NON_STAFF_ID = '123456789012345678';
+// Staff membership is read lazily from the environment.
+process.env.ATRIA_STAFF_IDS = STAFF_ID;
 
 describe('Atria Commands', () => {
   let message;
@@ -421,26 +423,26 @@ describe('Atria Commands', () => {
     it('broadcasts successfully', async () => {
       query.mockResolvedValue({
         rows: [
-          { status_channel_id: 'ch1', security_role_id: 'role1' },
-          { status_channel_id: 'ch2', security_role_id: null }
+          { status_channel_id: 'ch1' },
+          { status_channel_id: 'ch2' }
         ]
       });
-      
+
       const mockSend1 = vi.fn();
       const mockSend2 = vi.fn();
-      
+
       message.client.channels.fetch
         .mockResolvedValueOnce({ send: mockSend1 })
         .mockResolvedValueOnce({ send: mockSend2 });
-        
+
       await runCommand('$atria broadcast hello world');
       await confirmCommand();
-      
-      expect(query).toHaveBeenCalledWith("SELECT tenant_id, status_channel_id, last_active_channel_id, security_role_id FROM tenants WHERE (status_channel_id IS NOT NULL AND status_channel_id != '') OR (last_active_channel_id IS NOT NULL AND last_active_channel_id != '')");
-      
-      expect(mockSend1).toHaveBeenCalledWith('<@&role1> **ATRIA PLATFORM BROADCAST:**\nhello world');
+
+      expect(query).toHaveBeenCalledWith("SELECT tenant_id, status_channel_id, last_active_channel_id FROM tenants WHERE (status_channel_id IS NOT NULL AND status_channel_id != '') OR (last_active_channel_id IS NOT NULL AND last_active_channel_id != '')");
+
+      expect(mockSend1).toHaveBeenCalledWith('**ATRIA PLATFORM BROADCAST:**\nhello world');
       expect(mockSend2).toHaveBeenCalledWith('**ATRIA PLATFORM BROADCAST:**\nhello world');
-      
+
       expect(message.reply.mock.calls[1][0]).toBe('Broadcast sent to 2 servers. (Failed: 0)');
     });
 

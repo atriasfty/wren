@@ -1,5 +1,5 @@
 function baseUrl(tenantCtx) {
-  return tenantCtx.tenant.prcBaseUrl || process.env.PRC_BASE_URL || 'https://api.erlc.gg/v2';
+  return tenantCtx.tenant.prcBaseUrl || process.env.PRC_BASE_URL || 'https://api.erlc.gg/v1';
 }
 
 function serverKey(tenantCtx) {
@@ -37,12 +37,15 @@ export async function getRobloxUserId(tenantCtx, username) {
   const clean = (username || '').trim();
   if (!clean) return null;
   const lower = clean.toLowerCase();
-  
-  const cached = ROBLOX_USER_CACHE.get(lower);
+
+  // Fuzzy matches against the tenant's online players are cached per tenant —
+  // a partial name resolved on one server must never leak into another.
+  const fuzzyKey = `${tenantCtx?.tenantId ?? '?'}:${lower}`;
+  const cached = ROBLOX_USER_CACHE.get(fuzzyKey) || ROBLOX_USER_CACHE.get(lower);
   if (cached && cached.expires > Date.now()) {
     return cached.data;
   }
-  
+
   if (clean.length >= 4) {
     const online = await getOnlinePlayers(tenantCtx);
     let match = online.find((p) => p.username.toLowerCase() === lower);
@@ -52,7 +55,7 @@ export async function getRobloxUserId(tenantCtx, username) {
     }
     if (match) {
       const data = { userId: match.userId, username: match.username };
-      ROBLOX_USER_CACHE.set(lower, { data, expires: Date.now() + CACHE_TTL });
+      ROBLOX_USER_CACHE.set(fuzzyKey, { data, expires: Date.now() + CACHE_TTL });
       return data;
     }
   }
@@ -66,6 +69,7 @@ export async function getRobloxUserId(tenantCtx, username) {
   const data = await res.json();
   if (data.data && data.data.length) {
     const result = { userId: data.data[0].id, username: data.data[0].name };
+    // Exact Roblox API resolutions are global — usernames are a global namespace.
     ROBLOX_USER_CACHE.set(lower, { data: result, expires: Date.now() + CACHE_TTL });
     return result;
   }
@@ -173,19 +177,32 @@ export async function getKillLogs(tenantCtx, { limit } = {}) {
   }
 }
 
+// The in-game bridge listens for `:pm <bot> <question>` messages. The ModCalls
+// endpoint carries no message text, so the actual PM text comes from the
+// command logs (each entry's Command field holds the full command line).
+// Returns entries shaped { callerName, message, timestamp }.
 export async function getModcalls(tenantCtx, { sinceTs, limit } = {}) {
   try {
-    const data = await getServerInfo(tenantCtx, ['ModCalls']);
-    if (!data.ModCalls) return [];
-    let out = data.ModCalls.map((l) => ({
-      caller: l.Caller.split(':')[0],
-      moderator: l.Moderator ? l.Moderator.split(':')[0] : null,
-      timestamp: l.Timestamp,
-    }));
-    if (typeof sinceTs === 'number') out = out.filter((m) => (m.timestamp || 0) > sinceTs);
+    const data = await getServerInfo(tenantCtx, ['CommandLogs']);
+    if (!data.CommandLogs) return [];
+    let out = data.CommandLogs
+      .filter((l) => /^:\s*pm\s+/i.test(l.Command || ''))
+      .map((l) => ({
+        callerName: l.Player.split(':')[0],
+        message: l.Command,
+        timestamp: l.Timestamp,
+      }));
+    if (typeof sinceTs === 'number' && sinceTs > 0) {
+      out = out.filter((m) => (m.timestamp || 0) > sinceTs);
+    } else {
+      // First poll after boot: only look at the last two minutes so we don't
+      // replay the whole historical log as fresh PMs.
+      const cutoff = Math.floor(Date.now() / 1000) - 120;
+      out = out.filter((m) => (m.timestamp || 0) > cutoff);
+    }
     if (typeof limit === 'number') out = out.slice(0, limit);
     return out;
-  } catch (err) {
+  } catch {
     return [];
   }
 }

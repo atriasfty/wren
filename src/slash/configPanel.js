@@ -9,7 +9,6 @@ import {
   RoleSelectMenuBuilder,
   ButtonBuilder,
   ButtonStyle,
-  ChannelType,
 } from 'discord.js';
 import { resolveTenantByGuildId, invalidateTenant } from '../tenant/resolve.js';
 import { updateTenant, setTenantSecret } from '../tenant/store.js';

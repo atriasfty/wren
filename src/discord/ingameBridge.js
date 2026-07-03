@@ -37,7 +37,8 @@ export async function pollModcallsFor(tenantCtx) {
     if (!cleanText.toLowerCase().startsWith(botName)) continue;
 
     const playerName = m.callerName || m.playerName;
-    
+    if (!playerName) continue;
+
     // Extract the actual question by removing the bot's name/handle
     const question = cleanText.slice(botName.length).trim();
     if (!question) continue;
@@ -90,23 +91,29 @@ export async function pollModcallsFor(tenantCtx) {
   }
 }
 
-function escapeRegex(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 export function attachIngameBridge(client) {
-  // Periodically poll modcalls — pass the encryption key so listTenants can decrypt secrets
+  // Periodically poll modcalls — pass the encryption key so listTenants can decrypt secrets.
+  // The in-flight guard prevents overlapping sweeps when PRC responds slowly.
+  let polling = false;
   setInterval(async () => {
-    const cfg = loadConfig();
-    const tenants = await listTenants(cfg.tenantSecretEncKey);
-    for (const t of tenants) {
-      const ctx = await resolveTenantById(t.tenantId);
-      if (!ctx) continue;
-      try {
-        await pollModcallsFor(ctx);
-      } catch (err) {
-        console.warn(`[ingame] poll failed for ${t.tenantId}:`, err.message);
+    if (polling) return;
+    polling = true;
+    try {
+      const cfg = loadConfig();
+      const tenants = await listTenants(cfg.tenantSecretEncKey);
+      for (const t of tenants) {
+        const ctx = await resolveTenantById(t.tenantId);
+        if (!ctx) continue;
+        try {
+          await pollModcallsFor(ctx);
+        } catch (err) {
+          console.warn(`[ingame] poll failed for ${t.tenantId}:`, err.message);
+        }
       }
+    } catch (err) {
+      console.warn('[ingame] poll sweep failed:', err.message);
+    } finally {
+      polling = false;
     }
   }, 15_000);
 

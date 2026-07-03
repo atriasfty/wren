@@ -15,10 +15,14 @@ export default [
         setInterval: 'readonly',
         clearInterval: 'readonly',
         AbortController: 'readonly',
+        AbortSignal: 'readonly',
         DOMException: 'readonly',
         fetch: 'readonly',
         FormData: 'readonly',
-        Blob: 'readonly'
+        Blob: 'readonly',
+        URL: 'readonly',
+        URLSearchParams: 'readonly',
+        Response: 'readonly'
       }
     },
     rules: {

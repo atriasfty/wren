@@ -24,17 +24,18 @@ const ALLOWED_ERLC_TOOLS = [
 
 // Middleware to authenticate MCP requests via the token
 async function mcpAuth(req, res, next) {
-  // Try to get token from Authorization header or query parameter
+  // Tokens are only accepted via the Authorization header — query-string tokens
+  // leak into access logs and proxies.
   const authHeader = req.headers.authorization || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : (req.query.token || '');
-  
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+
   if (!token) {
     return res.status(401).json({ error: 'Missing MCP token' });
   }
 
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
   try {
-    const dbRes = await query('SELECT tenant_id, discord_id FROM user_mcp_tokens WHERE token_hash = $1', [tokenHash]);
+    const dbRes = await query('SELECT tenant_id, discord_id FROM user_mcp_tokens WHERE token_hash = $1 AND revoked_at IS NULL', [tokenHash]);
     if (dbRes.rows.length === 0) {
       return res.status(403).json({ error: 'Invalid or revoked MCP token' });
     }
@@ -122,7 +123,7 @@ export function createMcpRouter(client) {
         
         if (toolName === "read_server_rules") {
           const results = await retrieveSources(tenantCtx, args.search_query, 8);
-          textResult = results.map(r => `Source (${r.kind}):\n${r.content}`).join('\n\n') || 'No rules found for this query.';
+          textResult = results.map(r => `Source (${r.chunk.label || r.chunk.sourceRef}):\n${r.chunk.text}`).join('\n\n') || 'No rules found for this query.';
         } else if (ALLOWED_ERLC_TOOLS.includes(toolName)) {
           // Pass the execution directly to the core AI executor engine!
           const resultObj = await executeTool(tenantCtx, toolName, args, actor);

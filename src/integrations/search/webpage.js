@@ -1,10 +1,14 @@
 import * as cheerio from 'cheerio';
+import { safeFetch } from '../../ai/ssrf.js';
 
 export async function fetchWebpage(url, { timeoutMs = 10_000, maxChars = 5000 } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, {
+    // safeFetch blocks private/loopback/metadata addresses (and re-checks every
+    // redirect hop) — source URLs are tenant-supplied and must not reach
+    // internal services.
+    const res = await safeFetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; WrenBot/1.0; +https://discord.com)' },
       signal: controller.signal,
     });

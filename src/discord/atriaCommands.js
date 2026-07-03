@@ -4,10 +4,17 @@ import { issueApiToken } from '../tenant/store.js';
 import { hashToken, generateApiToken } from '../tenant/crypto.js';
 import { EmbedBuilder } from 'discord.js';
 
+// Original hardcoded staff list (pre-dates ATRIA_STAFF_IDS). Kept as a
+// built-in default so deployments that never configured the env var don't
+// silently lose all $atria access -- ATRIA_STAFF_IDS only adds to this set,
+// it never replaces it.
+const DEFAULT_STAFF_IDS = ['753552148167524422', '553071305482829835'];
+
 // Read lazily from env (not loadConfig) so importing this module has no side
 // effects and doesn't require the full config to be present (e.g. in tests).
 function atriaStaffIds() {
-  return new Set((process.env.ATRIA_STAFF_IDS || '').split(',').map((s) => s.trim()).filter(Boolean));
+  const fromEnv = (process.env.ATRIA_STAFF_IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
+  return new Set([...DEFAULT_STAFF_IDS, ...fromEnv]);
 }
 
 // In-memory store for pending confirmations

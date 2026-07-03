@@ -39,5 +39,8 @@ export async function listManualDocs(dataDir) {
 }
 
 export async function readManualDoc(dataDir, filename) {
-  return fs.readFile(path.join(dataDir, 'manual', filename), 'utf-8');
+  // Defence in depth: sanitise here too, not only at the call site, so a stray
+  // caller can never traverse out of the tenant's manual/ directory.
+  const safe = String(filename).replace(/[^a-zA-Z0-9._-]/g, '_');
+  return fs.readFile(path.join(dataDir, 'manual', safe), 'utf-8');
 }

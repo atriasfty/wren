@@ -1,5 +1,14 @@
+import { assertPublicHttpUrlCached } from '../ai/ssrf.js';
+
 function baseUrl(tenantCtx) {
   return tenantCtx.tenant.prcBaseUrl || process.env.PRC_BASE_URL || 'https://api.erlc.gg/v1';
+}
+
+// The base URL is tenant-configurable, so validate it points at a public host
+// before sending the tenant's server key to it (SSRF guard).
+async function guardedFetch(urlStr, opts) {
+  await assertPublicHttpUrlCached(urlStr);
+  return fetch(urlStr, opts);
 }
 
 function serverKey(tenantCtx) {
@@ -10,7 +19,7 @@ function serverKey(tenantCtx) {
 }
 
 async function executeCommand(tenantCtx, command) {
-  const res = await fetch(`${baseUrl(tenantCtx)}/server/command`, {
+  const res = await guardedFetch(`${baseUrl(tenantCtx)}/server/command`, {
     method: 'POST',
     headers: {
       'Server-Key': serverKey(tenantCtx),
@@ -113,7 +122,7 @@ export async function getServerInfo(tenantCtx, fields = null) {
   const query = (fields && Array.isArray(fields) && fields.length > 0)
     ? '?' + fields.map(f => `${f}=true`).join('&')
     : '?Players=true&Staff=true&JoinLogs=true&Queue=true&KillLogs=true&CommandLogs=true&ModCalls=true&EmergencyCalls=true&Vehicles=true';
-  const res = await fetch(`${baseUrl(tenantCtx)}/server${query}`, {
+  const res = await guardedFetch(`${baseUrl(tenantCtx)}/server${query}`, {
     headers: { 'Server-Key': serverKey(tenantCtx) },
   });
   if (!res.ok) {

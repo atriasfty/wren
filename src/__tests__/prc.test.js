@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+// The SSRF base-URL guard is exercised in ssrf.test.js; here we stub it so the
+// test's synthetic prc.test host doesn't trigger a real DNS lookup.
+const ssrfMock = vi.hoisted(() => ({ assertPublicHttpUrlCached: vi.fn(async (u) => new URL(u)) }));
+vi.mock('../ai/ssrf.js', () => ({
+  assertPublicHttpUrlCached: (...a) => ssrfMock.assertPublicHttpUrlCached(...a),
+}));
+
 // prc.js keeps a module-level username cache; reimport fresh for each test so
 // cache state can't leak between tests.
 let prc;
@@ -50,6 +57,20 @@ describe('getOnlinePlayers', () => {
     const [url, opts] = globalThis.fetch.mock.calls[0];
     expect(opts.headers['Server-Key']).toBe('super-secret');
     expect(String(url)).not.toContain('super-secret');
+  });
+
+  it('validates the base URL through the SSRF guard before sending the server key', async () => {
+    globalThis.fetch.mockResolvedValue(jsonResponse({ Players: [] }));
+    await prc.getOnlinePlayers(tenant());
+    expect(ssrfMock.assertPublicHttpUrlCached).toHaveBeenCalledWith(expect.stringContaining('https://prc.test/v1/server'));
+  });
+
+  it('never sends the server key when the base URL fails the SSRF guard', async () => {
+    ssrfMock.assertPublicHttpUrlCached.mockRejectedValueOnce(new Error('URL resolves to a private/internal address'));
+    globalThis.fetch.mockResolvedValue(jsonResponse({ Players: [] }));
+    const players = await prc.getOnlinePlayers(tenant());
+    expect(players).toEqual([]); // getOnlinePlayers swallows errors
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });
 

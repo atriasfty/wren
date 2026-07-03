@@ -68,6 +68,41 @@ export async function assertPublicHttpUrl(urlStr) {
   return url;
 }
 
+// Host-level cache for repeated validations of the same base URL. Tenant
+// integration base URLs (PRC/POW) are hit on a tight polling loop, so we don't
+// want a DNS lookup on every request — but we still re-check each host once a
+// minute in case DNS records change.
+const hostCheckCache = new Map();
+const HOST_CACHE_TTL_MS = 60_000;
+
+/**
+ * Same guarantees as assertPublicHttpUrl, but memoises the result per host for
+ * a minute. Use for URLs that are validated over and over (integration base
+ * URLs), not for one-shot user-supplied URLs.
+ */
+export async function assertPublicHttpUrlCached(urlStr) {
+  let url;
+  try {
+    url = new URL(urlStr);
+  } catch {
+    throw new Error('Invalid URL');
+  }
+  const key = url.hostname.toLowerCase();
+  const cached = hostCheckCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) {
+    if (!cached.ok) throw new Error('URL resolves to a private/internal address');
+    return url;
+  }
+  try {
+    const validated = await assertPublicHttpUrl(urlStr);
+    hostCheckCache.set(key, { ok: true, expiresAt: Date.now() + HOST_CACHE_TTL_MS });
+    return validated;
+  } catch (err) {
+    hostCheckCache.set(key, { ok: false, expiresAt: Date.now() + HOST_CACHE_TTL_MS });
+    throw err;
+  }
+}
+
 /**
  * Fetches a URL while re-validating every redirect hop against
  * assertPublicHttpUrl, so an attacker can't bypass the SSRF guard by

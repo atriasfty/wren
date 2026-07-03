@@ -8,7 +8,7 @@ vi.mock('dns', () => ({
   default: { promises: { lookup: (...args) => mocks.lookup(...args) } },
 }));
 
-import { assertPublicHttpUrl, safeFetch } from '../ai/ssrf.js';
+import { assertPublicHttpUrl, assertPublicHttpUrlCached, safeFetch } from '../ai/ssrf.js';
 
 describe('assertPublicHttpUrl', () => {
   beforeEach(() => {
@@ -133,6 +133,37 @@ describe('assertPublicHttpUrl', () => {
       const url = await assertPublicHttpUrl('https://v6.example.com/');
       expect(url.hostname).toBe('v6.example.com');
     });
+  });
+});
+
+describe('assertPublicHttpUrlCached', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.lookup.mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
+  });
+
+  it('allows a public host and memoises the DNS lookup within the TTL', async () => {
+    // Distinct host so cache state from other tests can't interfere.
+    await assertPublicHttpUrlCached('https://cache-ok.example/a');
+    await assertPublicHttpUrlCached('https://cache-ok.example/b');
+    await assertPublicHttpUrlCached('https://cache-ok.example/c');
+    expect(mocks.lookup).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a private host and caches the rejection (no repeated lookups)', async () => {
+    mocks.lookup.mockResolvedValue([{ address: '10.0.0.9', family: 4 }]);
+    await expect(assertPublicHttpUrlCached('https://cache-bad.example/x')).rejects.toThrow('private/internal');
+    await expect(assertPublicHttpUrlCached('https://cache-bad.example/y')).rejects.toThrow('private/internal');
+    expect(mocks.lookup).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an IP literal in private space without any DNS lookup', async () => {
+    await expect(assertPublicHttpUrlCached('http://169.254.169.254/latest/')).rejects.toThrow('private/internal');
+    expect(mocks.lookup).not.toHaveBeenCalled();
+  });
+
+  it('throws on a malformed URL', async () => {
+    await expect(assertPublicHttpUrlCached('http://')).rejects.toThrow();
   });
 });
 

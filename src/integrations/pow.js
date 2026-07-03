@@ -1,7 +1,15 @@
 import { getRobloxUserId } from './prc.js';
+import { assertPublicHttpUrlCached } from '../ai/ssrf.js';
 
 function baseUrl(tenantCtx) {
   return tenantCtx.tenant.powBaseUrl || 'https://pow.ciankelly.xyz';
+}
+
+// The base URL is tenant-configurable, so validate it points at a public host
+// before sending the tenant's POW token to it (SSRF guard).
+async function guardedFetch(urlStr, opts) {
+  await assertPublicHttpUrlCached(urlStr);
+  return fetch(urlStr, opts);
 }
 
 function token(tenantCtx) {
@@ -17,7 +25,7 @@ export async function getPunishments(tenantCtx, username) {
   const serverId = tenantCtx.tenant.powServerId;
   const results = { username: userInfo.username, userId: userInfo.userId, punishments: [] };
   if (serverId) {
-    const res = await fetch(`${baseUrl(tenantCtx)}/api/punishments?server=${encodeURIComponent(serverId)}&userId=${userInfo.userId}`, {
+    const res = await guardedFetch(`${baseUrl(tenantCtx)}/api/punishments?server=${encodeURIComponent(serverId)}&userId=${userInfo.userId}`, {
       headers: { 'Authorization': `Bearer ${token(tenantCtx)}` },
     });
     if (res.ok) {
@@ -35,7 +43,7 @@ export async function logPunishment(tenantCtx, username, moderatorDiscordId, typ
   if (!userInfo) throw new Error(`Could not find Roblox user: ${username}`);
   const serverId = tenantCtx.tenant.powServerId;
   if (!serverId) throw new Error(`No POW server ID configured`);
-  const res = await fetch(`${baseUrl(tenantCtx)}/api/punishments`, {
+  const res = await guardedFetch(`${baseUrl(tenantCtx)}/api/punishments`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token(tenantCtx)}`,

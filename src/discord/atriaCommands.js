@@ -341,7 +341,11 @@ export async function handleAtriaCommands(message) {
 
   } catch (err) {
     console.error('[$atria command error]', err);
-    await message.reply(`Error executing command: ${err.message}`);
+    // Never let a failure to report the failure (missing permissions, a
+    // deleted channel/message, a Discord API hiccup) escape as an unhandled
+    // rejection — messageHandler.js awaits this with no try/catch of its
+    // own, and an unhandled rejection there crashes the whole process.
+    try { await message.reply(`Error executing command: ${err.message}`); } catch {}
     return true;
   }
 }

@@ -96,8 +96,15 @@ export function attachMessageHandler(client) {
     // $atria staff commands are checked before the guild gate below: several
     // of them (leave, broadcast, wipe, globalban, pause/unpause, etc.) are
     // meant to be issued via DM and take an explicit server ID rather than
-    // relying on message.guild.
-    if (await handleAtriaCommands(message)) return;
+    // relying on message.guild. Guarded here too: an uncaught rejection in
+    // this messageCreate listener is an unhandled rejection process-wide,
+    // and index.js treats those as fatal.
+    try {
+      if (await handleAtriaCommands(message)) return;
+    } catch (err) {
+      console.error('[messageCreate] handleAtriaCommands failed:', err);
+      return;
+    }
 
     if (!message.guild) return;
 

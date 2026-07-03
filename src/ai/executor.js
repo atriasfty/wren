@@ -27,6 +27,16 @@ function rejectTarget(username) {
   return null;
 }
 
+// `Math.min(args.count || fallback, max)` silently produces NaN when args.count
+// is a non-numeric truthy value (e.g. a string from a malformed tool call),
+// which then flows into Discord API calls as `{ limit: NaN }` / `bulkDelete(NaN)`
+// instead of a clean validation error.
+function clampPositiveInt(value, fallback, max) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 1) return fallback;
+  return Math.min(Math.floor(n), max);
+}
+
 function getGuild(tenantCtx, actor) {
   if (actor?.guild) return actor.guild;
   const client = getClient();
@@ -64,9 +74,16 @@ export async function executeTool(tenantCtx, name, args, actor) {
     if (denied) return { success: false, error: denied };
   }
 
-  // safety: blocked mass-action targets
+  // safety: blocked mass-action targets. This runs before the try/catch below,
+  // so a non-string truthy value here (e.g. a tool-call arg of `42` or `{}`)
+  // must never reach rejectTarget()'s .toLowerCase() call uncaught — that would
+  // reject executeTool's promise instead of resolving it, breaking every
+  // caller's implicit "this never throws" assumption.
   for (const k of ['username', 'player1', 'player2', 'destination_player']) {
-    if (args && args[k]) {
+    if (args && args[k] != null && args[k] !== '') {
+      if (typeof args[k] !== 'string') {
+        return { success: false, error: `${k} must be a string` };
+      }
       const reason = rejectTarget(args[k]);
       if (reason) return { success: false, error: reason };
     }
@@ -442,7 +459,7 @@ export async function executeTool(tenantCtx, name, args, actor) {
         if (!channel) return { success: false, error: 'Channel not found' };
         if (!channel.isTextBased()) return { success: false, error: 'Channel not text-based' };
         if (!actorCanViewChannel(actor, channel)) return { success: false, error: 'You do not have access to that channel.' };
-        const limit = Math.min(args.limit || 50, 100);
+        const limit = clampPositiveInt(args.limit, 50, 100);
         const msgs = await channel.messages.fetch({ limit });
         result = {
           success: true,
@@ -474,7 +491,7 @@ export async function executeTool(tenantCtx, name, args, actor) {
         const channel = await guild.channels.fetch(args.channel_id).catch(() => null);
         if (!channel || !channel.isTextBased()) return { success: false, error: 'Channel not found or not text-based' };
         if (!actorCanViewChannel(actor, channel)) return { success: false, error: 'You do not have access to that channel.' };
-        const limit = Math.min(args.message_count || 50, 100);
+        const limit = clampPositiveInt(args.message_count, 50, 100);
         const msgs = await channel.messages.fetch({ limit });
         const chatLog = msgs.map((m) => {
           const time = m.createdAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
@@ -489,7 +506,7 @@ export async function executeTool(tenantCtx, name, args, actor) {
         const channel = await guild.channels.fetch(args.channel_id).catch(() => null);
         if (!channel || !channel.isTextBased()) return { success: false, error: 'Channel not found' };
         if (!actorCanViewChannel(actor, channel)) return { success: false, error: 'You do not have access to that channel.' };
-        const count = Math.min(args.count || 10, 100);
+        const count = clampPositiveInt(args.count, 10, 100);
         const deleted = await channel.bulkDelete(count, true);
         result = { success: true, message: `Deleted ${deleted.size} messages`, count: deleted.size };
         break;

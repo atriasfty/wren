@@ -20,6 +20,10 @@ function publicErrorMessage() {
 
 export function splitForDiscord(text, limit = MAX_RESPONSE_LEN) {
   if (!text) return [''];
+  // limit must stay >= 1: the cut-point fallback below only guarantees forward
+  // progress (cut >= limit) when limit is positive — limit <= 0 previously
+  // produced a non-advancing loop that hung the process forever.
+  if (!Number.isFinite(limit) || limit < 1) limit = MAX_RESPONSE_LEN;
   if (text.length <= limit) return [text];
   const out = [];
   let rest = text;

@@ -36,6 +36,12 @@ function withStoreLock(tenantId, fn) {
 
 export function chunkText(text, size = CHUNK_SIZE, overlap = CHUNK_OVERLAP) {
   if (!text) return [];
+  // size must stay >= 1 so `size - actualOverlap` (the per-iteration progress
+  // step below) is always strictly positive — size <= 0 previously produced a
+  // non-advancing sub-chunk loop that pegged the event loop until the chunks
+  // array hit V8's length ceiling and crashed with a RangeError.
+  if (!Number.isFinite(size) || size < 1) size = CHUNK_SIZE;
+  if (!Number.isFinite(overlap) || overlap < 0) overlap = CHUNK_OVERLAP;
   const actualOverlap = Math.min(overlap, Math.floor(size / 2));
   // Split by standard and CJK period / question / exclamation marks, or newlines
   const sentences = text.match(/[^.!?。！？\n\r]+[.!?。！？\n\r]*/g) || [text];

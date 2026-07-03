@@ -19,13 +19,70 @@ function isPrivateIPv4(ip) {
   return false;
 }
 
+// Expands any valid textual IPv6 address — with or without "::" elision, and
+// with or without a trailing embedded IPv4 dotted-quad — into exactly 8
+// 16-bit integers. Returns null if the address isn't well-formed enough to
+// expand with confidence; callers must treat null as unsafe.
+//
+// This exists specifically so the IPv4-mapped check below works on the
+// decoded NUMBER, not on a specific textual notation: WHATWG URL parsing
+// always canonicalises "::ffff:10.0.0.1" to the hex-group form "::ffff:a00:1"
+// before this code ever sees it, so a regex tied to the dotted-decimal form
+// (the previous implementation) never matches a real URL's hostname and the
+// mapped-address check was silently dead — e.g. http://[::ffff:a9fe:a9fe]/,
+// the hex form of the 169.254.169.254 cloud-metadata address, sailed through
+// as "not private".
+function expandIPv6ToWords(ip) {
+  const clean = ip.split('%')[0]; // strip a zone/scope id, e.g. fe80::1%eth0
+  const halves = clean.split('::');
+  if (halves.length > 2) return null; // more than one "::" is invalid
+
+  function splitSide(side) {
+    if (side === '') return [];
+    const tokens = side.split(':');
+    const last = tokens[tokens.length - 1];
+    if (last.includes('.')) {
+      // An embedded IPv4 dotted-quad occupies the last TWO 16-bit words.
+      const octets = last.split('.');
+      if (octets.length !== 4 || !octets.every((o) => /^\d{1,3}$/.test(o) && Number(o) <= 255)) return null;
+      const hexTokens = tokens.slice(0, -1);
+      if (!hexTokens.every((t) => /^[0-9a-f]{1,4}$/i.test(t))) return null;
+      const hi = (Number(octets[0]) << 8) | Number(octets[1]);
+      const lo = (Number(octets[2]) << 8) | Number(octets[3]);
+      return [...hexTokens.map((t) => parseInt(t, 16)), hi, lo];
+    }
+    if (!tokens.every((t) => /^[0-9a-f]{1,4}$/i.test(t))) return null;
+    return tokens.map((t) => parseInt(t, 16));
+  }
+
+  const head = splitSide(halves[0] ?? '');
+  if (head === null) return null;
+  if (halves.length === 1) return head.length === 8 ? head : null;
+
+  const tail = splitSide(halves[1] ?? '');
+  if (tail === null) return null;
+  const missing = 8 - head.length - tail.length;
+  if (missing < 0) return null;
+  return [...head, ...Array(missing).fill(0), ...tail];
+}
+
 function isPrivateIPv6(ip) {
   const lower = ip.toLowerCase();
   if (lower === '::1' || lower === '::') return true;
   if (lower.startsWith('fe80:')) return true; // link-local
   if (lower.startsWith('fc') || lower.startsWith('fd')) return true; // unique local
-  const v4Mapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (v4Mapped) return isPrivateIPv4(v4Mapped[1]);
+
+  const words = expandIPv6ToWords(lower);
+  if (!words) return true; // couldn't confidently parse — treat as unsafe
+
+  // IPv4-mapped (::ffff:a.b.c.d): first 5 words zero, 6th is 0xffff, last two
+  // words hold the embedded IPv4 address — checked numerically so it can't be
+  // dodged by whichever textual form the address is written or normalised in.
+  if (words[0] === 0 && words[1] === 0 && words[2] === 0 && words[3] === 0 && words[4] === 0 && words[5] === 0xffff) {
+    const a = (words[6] >> 8) & 0xff, b = words[6] & 0xff;
+    const c = (words[7] >> 8) & 0xff, d = words[7] & 0xff;
+    return isPrivateIPv4(`${a}.${b}.${c}.${d}`);
+  }
   return false;
 }
 
@@ -34,6 +91,20 @@ function isPrivateIp(ip) {
   if (version === 4) return isPrivateIPv4(ip);
   if (version === 6) return isPrivateIPv6(ip);
   return true; // not a valid literal IP — treat as unsafe
+}
+
+// WHATWG URL.hostname keeps the brackets on an IPv6 literal (e.g. "[::1]"),
+// but net.isIP / our private-range checks expect the bare address. Without
+// stripping them, net.isIP("[::1]") returns 0 and every IPv6-literal URL
+// silently falls through to the DNS-lookup branch below instead of the
+// intended IP-literal fast path — it still ends up blocked today because
+// dns.lookup() can't resolve a bracket-containing string, but that's an
+// accident of DNS syntax rules, not the guard actually recognising the
+// address, and it incorrectly blocks legitimate public IPv6 hosts too.
+function stripIPv6Brackets(hostname) {
+  return hostname.startsWith('[') && hostname.endsWith(']')
+    ? hostname.slice(1, -1)
+    : hostname;
 }
 
 /**
@@ -52,10 +123,11 @@ export async function assertPublicHttpUrl(urlStr) {
   if (!['http:', 'https:'].includes(url.protocol)) {
     throw new Error('Only http/https URLs are allowed');
   }
-  const hostname = url.hostname.toLowerCase();
-  if (BLOCKED_HOSTNAMES.has(hostname)) {
+  const rawHostname = url.hostname.toLowerCase();
+  if (BLOCKED_HOSTNAMES.has(rawHostname)) {
     throw new Error('URL host is not allowed');
   }
+  const hostname = stripIPv6Brackets(rawHostname);
   if (net.isIP(hostname)) {
     if (isPrivateIp(hostname)) throw new Error('URL resolves to a private/internal address');
     return url;

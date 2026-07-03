@@ -14,13 +14,21 @@ function atriaStaffIds() {
 const pendingCommands = new Map();
 const CONFIRM_TTL_MS = 60_000;
 
-function parseDurationMs(durationStr) {
-  if (!durationStr) return null;
+// Exported (not just used internally) so it's directly fuzz-testable as a
+// pure parsing function, independent of today's call sites always passing a
+// string.
+export function parseDurationMs(durationStr) {
+  if (typeof durationStr !== 'string' || !durationStr) return null;
   const d = durationStr.toLowerCase();
-  if (d.endsWith('d')) return parseInt(d) * 24 * 60 * 60 * 1000;
-  if (d.endsWith('w')) return parseInt(d) * 7 * 24 * 60 * 60 * 1000;
-  if (d.endsWith('m')) return parseInt(d) * 30 * 24 * 60 * 60 * 1000;
-  return null;
+  let ms = null;
+  if (d.endsWith('d')) ms = parseInt(d, 10) * 24 * 60 * 60 * 1000;
+  else if (d.endsWith('w')) ms = parseInt(d, 10) * 7 * 24 * 60 * 60 * 1000;
+  else if (d.endsWith('m')) ms = parseInt(d, 10) * 30 * 24 * 60 * 60 * 1000;
+  // parseInt on a huge numeric string, or a string with no leading digits at
+  // all ("d" alone -> NaN), must not silently become an unusable duration
+  // (e.g. an Invalid Date ban expiry) instead of a clean "invalid format".
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  return ms;
 }
 
 export async function handleAtriaCommands(message) {

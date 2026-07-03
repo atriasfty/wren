@@ -73,7 +73,8 @@ else
     read -p "API Listen Port [4167]: " API_PORT
     API_PORT=${API_PORT:-4167}
     read -s -p "PostHog API Key (Optional, for observability): " POSTHOG_API_KEY; echo
-    
+    read -p "Atria Staff Discord User IDs, comma-separated (Optional, enables \$atria admin commands): " ATRIA_STAFF_IDS
+
     echo -e "${BLUE}=== DATABASE CONFIGURATION ===${NC}"
     read -p "Database Host [localhost]: " DB_HOST
     DB_HOST=${DB_HOST:-localhost}
@@ -143,6 +144,7 @@ DATABASE_URL=${DATABASE_URL}
 TENANT_SECRET_ENC_KEY=${TENANT_SECRET_ENC_KEY}
 API_PORT=${API_PORT}
 POSTHOG_API_KEY=${POSTHOG_API_KEY}
+ATRIA_STAFF_IDS=${ATRIA_STAFF_IDS}
 EOF
     echo -e "${GREEN}Environment file created at ${SHARED_ENV_FILE}${NC}"
     export GITHUB_PAT=$GITHUB_PAT

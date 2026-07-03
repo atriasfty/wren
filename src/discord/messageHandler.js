@@ -93,14 +93,6 @@ export function attachMessageHandler(client) {
     if (message.author.id === client.user.id) return;
     if (message.author.bot) return;
 
-    // TEMPORARY DEBUG: remove once the $atria dispatch issue is diagnosed.
-    // Logs for the known staff IDs regardless of content, so we can see if
-    // messageCreate fires at all and what content Discord actually sent
-    // (e.g. empty content would point to a Message Content intent issue).
-    if (['753552148167524422', '553071305482829835'].includes(message.author.id)) {
-      console.log(`[atria-debug] author=${message.author.id} guild=${message.guild?.id || 'DM'} content=${JSON.stringify(message.content)}`);
-    }
-
     // $atria staff commands are checked before the guild gate below: several
     // of them (leave, broadcast, wipe, globalban, pause/unpause, etc.) are
     // meant to be issued via DM and take an explicit server ID rather than

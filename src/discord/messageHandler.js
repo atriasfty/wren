@@ -173,64 +173,76 @@ export function attachMessageHandler(client) {
       return;
     }
 
-    // We still need refMsg for context if it's a reply but wasn't fetched yet
-    if (!refMsg && message.reference?.messageId) {
-      try {
-        refMsg = message.channel.messages.cache.get(message.reference.messageId) ||
+    // ⚡ Bolt Optimization: Batch independent DB checks and Discord API calls to execute concurrently
+    // This removes multiple sequential network round-trips from the hot path.
+    const checks = await Promise.all([
+      // 0: Fetch reference message
+      (async () => {
+        if (refMsg || !message.reference?.messageId) return refMsg;
+        try {
+          return message.channel.messages.cache.get(message.reference.messageId) ||
                  await message.channel.messages.fetch(message.reference.messageId);
-      } catch {}
+        } catch { return null; }
+      })(),
+
+      // 1: Check global pause
+      query("SELECT value FROM global_state WHERE key = 'paused'").catch(e => {
+        console.error('[message] Global pause check error:', e);
+        return { rows: [] };
+      }),
+
+      // 2: Check global ban
+      query("SELECT expires_at FROM global_bans WHERE discord_id = $1", [message.author.id]).catch(e => {
+        console.error('[message] Global ban check error:', e);
+        return { rows: [] };
+      }),
+
+      // 3: Check ToS Agreement
+      query('SELECT 1 FROM user_agreements WHERE discord_id = $1', [message.author.id]).catch(e => {
+        console.error('[message] ToS check error:', e);
+        return { rows: null }; // Pass null to fail closed on DB error
+      })
+    ]);
+
+    refMsg = checks[0];
+
+    const stateRes = checks[1];
+    if (stateRes.rows[0]?.value?.paused) {
+      await message.reply('Wren is currently undergoing maintenance and is paused globally. Please try again later.');
+      return;
     }
 
-    // Check global pause
-    try {
-      const stateRes = await query("SELECT value FROM global_state WHERE key = 'paused'");
-      if (stateRes.rows[0]?.value?.paused) {
-        await message.reply('Wren is currently undergoing maintenance and is paused globally. Please try again later.');
-        return;
+    const banRes = checks[2];
+    if (banRes.rows.length > 0) {
+      const expires = banRes.rows[0].expires_at;
+      if (!expires || new Date(expires) > new Date()) {
+        return; // Ignore globally banned users entirely without a reply
       }
-    } catch (e) {
-      console.error('[message] Global pause check error:', e);
     }
 
-    // Check global ban
-    try {
-      const banRes = await query("SELECT expires_at FROM global_bans WHERE discord_id = $1", [message.author.id]);
-      if (banRes.rows.length > 0) {
-        const expires = banRes.rows[0].expires_at;
-        if (!expires || new Date(expires) > new Date()) {
-          return; // Ignore globally banned users entirely without a reply
-        }
-      }
-    } catch (e) {
-      console.error('[message] Global ban check error:', e);
+    const tosRes = checks[3];
+    if (tosRes.rows === null) {
+      return; // ToS check error occurred, fail closed
     }
-
-    // Check ToS Agreement
-    try {
-      const res = await query('SELECT 1 FROM user_agreements WHERE discord_id = $1', [message.author.id]);
-      if (res.rows.length === 0) {
-        const embed = new EmbedBuilder()
-          .setTitle('Welcome to Wren!')
-          .setDescription('Before you get started, please accept our Terms of Service and Privacy Policy. By clicking "Agree", you agree to both documents.')
-          .setColor('#0099ff')
-          .addFields(
-            { name: 'Documentation', value: 'https://wren.atriasafety.org' },
-            { name: 'Terms of Service', value: 'http://atriasfty.org/wren-tos' },
-            { name: 'Privacy Policy', value: 'http://atriasfty.org/wren-privacy' }
-          );
-        
-        const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId('agree_tos')
-            .setLabel('Agree')
-            .setStyle(ButtonStyle.Primary)
+    if (tosRes.rows.length === 0) {
+      const embed = new EmbedBuilder()
+        .setTitle('Welcome to Wren!')
+        .setDescription('Before you get started, please accept our Terms of Service and Privacy Policy. By clicking "Agree", you agree to both documents.')
+        .setColor('#0099ff')
+        .addFields(
+          { name: 'Documentation', value: 'https://wren.atriasafety.org' },
+          { name: 'Terms of Service', value: 'http://atriasfty.org/wren-tos' },
+          { name: 'Privacy Policy', value: 'http://atriasfty.org/wren-privacy' }
         );
 
-        await message.reply({ embeds: [embed], components: [row] });
-        return;
-      }
-    } catch (err) {
-      console.error('[message] ToS check error:', err);
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('agree_tos')
+          .setLabel('Agree')
+          .setStyle(ButtonStyle.Primary)
+      );
+
+      await message.reply({ embeds: [embed], components: [row] });
       return;
     }
 

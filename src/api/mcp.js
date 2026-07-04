@@ -9,6 +9,7 @@ import { resolveTenantById } from '../tenant/resolve.js';
 import { retrieveSources } from '../rag/retrieve.js';
 import { executeTool } from '../ai/executor.js';
 import { TOOL_DEFS } from '../ai/tools.js';
+import { checkRateLimit } from './rateLimit.js';
 
 const transports = new Map();
 
@@ -62,7 +63,7 @@ export function createMcpRouter(client) {
   // Endpoint to establish SSE connection
   router.get('/sse', mcpAuth, async (req, res) => {
     const transport = new SSEServerTransport('/api/mcp/message', res);
-    const { tenantId, discordId } = req.mcpSession;
+    const { tenantId, discordId, tokenHash } = req.mcpSession;
     
     // Create a dedicated server instance for this connection
     const server = new Server(
@@ -98,7 +99,16 @@ export function createMcpRouter(client) {
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const toolName = request.params.name;
       const args = request.params.arguments || {};
-      
+
+      // Same per-token budget as /v1/chat — MCP calls hit the same ERLC/POW/
+      // Roblox upstreams and must not bypass the limit just by switching transport.
+      if (!checkRateLimit(tokenHash)) {
+        return {
+          content: [{ type: "text", text: "Rate limit exceeded. Try again in a minute." }],
+          isError: true
+        };
+      }
+
       // Log the tool execution in audit log
       await logAudit(tenantId, discordId, 'mcp_tool_execution', { tool: toolName, args });
       
@@ -159,7 +169,10 @@ export function createMcpRouter(client) {
       return res.status(404).send('Session not found');
     }
     
-    await sessionData.transport.handlePostMessage(req, res);
+    // express.json() upstream already consumed the request stream, so the SDK
+    // must not try to re-read it via getRawBody() — that fails every call with
+    // "stream is not readable". Hand it the already-parsed body instead.
+    await sessionData.transport.handlePostMessage(req, res, req.body);
   });
 
   return router;

@@ -92,6 +92,13 @@ describe('SSRF guard: IPv4 fuzzing against an independent RFC oracle', () => {
   });
 });
 
+// fast-check v4 dropped the dedicated hexaString arbitrary v3 had — rebuild an
+// equivalent one so these properties still generate actual hex digits instead
+// of erroring before they ever run an assertion.
+function hexString({ minLength = 1, maxLength = 4 } = {}) {
+  return fc.string({ unit: fc.constantFrom(...'0123456789abcdef'), minLength, maxLength });
+}
+
 describe('SSRF guard: IPv6 fuzzing', () => {
   it('blocks loopback (::1) and unspecified (::) regardless of how they are cased', async () => {
     for (const addr of ['::1', '::', '0:0:0:0:0:0:0:1']) {
@@ -103,7 +110,7 @@ describe('SSRF guard: IPv6 fuzzing', () => {
     await fc.assert(
       fc.asyncProperty(
         fc.constantFrom('fc', 'fd'),
-        fc.hexaString({ minLength: 1, maxLength: 4 }),
+        hexString({ minLength: 1, maxLength: 4 }),
         async (prefix, suffix) => {
           expect(await isBlocked(`http://[${prefix}00:${suffix}::1]/`)).toBe(true);
         },
@@ -114,7 +121,7 @@ describe('SSRF guard: IPv6 fuzzing', () => {
 
   it('blocks fe80::/10 link-local across random suffixes', async () => {
     await fc.assert(
-      fc.asyncProperty(fc.hexaString({ minLength: 1, maxLength: 4 }), async (suffix) => {
+      fc.asyncProperty(hexString({ minLength: 1, maxLength: 4 }), async (suffix) => {
         expect(await isBlocked(`http://[fe80::${suffix}]/`)).toBe(true);
       }),
       { numRuns: 50 },

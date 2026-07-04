@@ -108,7 +108,15 @@ export function attachMessageHandler(client) {
 
     if (!message.guild) return;
 
-    let tenantCtx = await resolveTenantByGuildId(message.guild.id);
+    let tenantCtx;
+    try {
+      tenantCtx = await resolveTenantByGuildId(message.guild.id);
+    } catch (err) {
+      // A transient DB error here must not become an unhandled rejection —
+      // index.js treats those as fatal for the whole process, not just this guild.
+      console.error('[messageCreate] resolveTenantByGuildId failed:', err);
+      return;
+    }
     if (!tenantCtx && isDirectlyMentioned(message, client.user.id)) {
       return message.reply('⚠️ This server is not configured with Wren yet. An admin must run `/wren setup` first.');
     } else if (!tenantCtx) {
@@ -158,7 +166,14 @@ export function attachMessageHandler(client) {
 
     // Now do the expensive DB checks
     const actor = { kind: 'discord', member: message.member, id: message.author.id };
-    const isUserBanned = await enforceBan(tenantCtx, actor);
+    let isUserBanned = false;
+    try {
+      isUserBanned = await enforceBan(tenantCtx, actor);
+    } catch (err) {
+      // Same rationale as above: never let a DB blip escape as an unhandled
+      // rejection. Fail open (treat as not banned) rather than crash the bot.
+      console.error('[messageCreate] enforceBan failed:', err);
+    }
 
     if (isSourceChannel && !isUserBanned) {
       ingestDiscordMessage(tenantCtx, message).catch((err) => {
@@ -336,7 +351,13 @@ export function attachMessageHandler(client) {
     if (!newMessage.guild) return;
     if (newMessage.author?.bot) return;
 
-    const tenantCtx = await resolveTenantByGuildId(newMessage.guild.id);
+    let tenantCtx;
+    try {
+      tenantCtx = await resolveTenantByGuildId(newMessage.guild.id);
+    } catch (err) {
+      console.error('[messageUpdate] resolveTenantByGuildId failed:', err);
+      return;
+    }
     if (!tenantCtx) return;
 
     const isSourceChannel = tenantCtx.sources.some(
@@ -344,7 +365,11 @@ export function attachMessageHandler(client) {
     );
     if (isSourceChannel) {
       const actor = { kind: 'discord', member: newMessage.member, id: newMessage.author?.id };
-      if (await enforceBan(tenantCtx, actor)) return;
+      try {
+        if (await enforceBan(tenantCtx, actor)) return;
+      } catch (err) {
+        console.error('[messageUpdate] enforceBan failed:', err);
+      }
       ingestDiscordMessage(tenantCtx, newMessage).catch((err) => {
         console.error('[messageUpdate] Auto-ingestion failed:', err.message);
       });
@@ -358,7 +383,13 @@ export function attachMessageHandler(client) {
     const channelId = message.channelId;
     if (!guildId || !channelId) return;
 
-    const tenantCtx = await resolveTenantByGuildId(guildId);
+    let tenantCtx;
+    try {
+      tenantCtx = await resolveTenantByGuildId(guildId);
+    } catch (err) {
+      console.error('[messageDelete] resolveTenantByGuildId failed:', err);
+      return;
+    }
     if (!tenantCtx) return;
 
     const isSourceChannel = tenantCtx.sources.some(

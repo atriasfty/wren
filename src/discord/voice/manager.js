@@ -682,6 +682,12 @@ export async function handleVoiceStateUpdate(oldState, newState) {
       state.owwModelLoading = true;
       try {
         state.owwModel = await createWakeWordModel();
+      } catch (err) {
+        // A load failure here must not become an unhandled rejection — this
+        // listener is registered directly on the client with no wrapping
+        // try/catch, and index.js treats any unhandled rejection as fatal for
+        // the whole bot, not just this guild's voice session.
+        console.error(`[voice] Failed to reload wake word model for ${guildId}:`, err);
       } finally {
         state.owwModelLoading = false;
       }

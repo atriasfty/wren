@@ -6,35 +6,9 @@ import { validateEvent } from '@polar-sh/sdk/webhooks';
 import { runAssistantPipeline } from '../ai/pipeline.js';
 import { loadConfig } from '../config.js';
 import { createMcpRouter } from './mcp.js';
+import { checkRateLimit } from './rateLimit.js';
 
 const SCOPES = new Set(['chat', 'mod']);
-
-// Simple in-memory rate limiter: 20 requests per token per 60 s window.
-const rateLimitMap = new Map();
-
-function pruneExpiredRateLimits(now = Date.now()) {
-  for (const [key, entry] of rateLimitMap.entries()) {
-    if (!entry || now > entry.resetAt) {
-      rateLimitMap.delete(key);
-    }
-  }
-}
-
-function checkRateLimit(tokenHash, limit = 20, windowMs = 60_000) {
-  const now = Date.now();
-  pruneExpiredRateLimits(now);
-  let entry = rateLimitMap.get(tokenHash);
-  if (!entry || now > entry.resetAt) {
-    entry = { count: 0, resetAt: now + windowMs };
-  }
-  if (entry.count >= limit) {
-    rateLimitMap.set(tokenHash, entry);
-    return false;
-  }
-  entry.count++;
-  rateLimitMap.set(tokenHash, entry);
-  return true;
-}
 
 export async function createApiServer(client) {
   const cfg = loadConfig();

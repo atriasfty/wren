@@ -12,13 +12,13 @@ Below is a list of the exact error messages Wren might output and how to resolve
 **What it means:** Wren has been invited to your server, but hasn't been initialized. Wren requires an underlying database record to store your settings, memories, and bans.
 **How to fix:** Have the Server Owner or an Administrator type `/wren setup` in any channel. 
 
-### `"You need ManageGuild permission for this."`
-**What it means:** You tried to run a configuration command (like `/wren config` or `/wren bans`), but your Discord role lacks the `Manage Server` (ManageGuild) permission.
+### `"You need the Manage Server permission for this."`
+**What it means:** You tried to run `/wren setup` or `/wren upgrade`, but your Discord role lacks the `Manage Server` permission.
 **How to fix:** Ask the Server Owner to grant your role the "Manage Server" permission in Discord's server settings.
 
-### `"Only the server owner can run ingestion."`
-**What it means:** You tried to force Wren to re-read your server's documentation using `/wren ingest status`, but this command places a heavy load on the system and is restricted.
-**How to fix:** Ask the user with the crown icon (the Discord Server Owner) to run the command instead.
+### `"You need the Leadership role … for this."`
+**What it means:** You tried to run a restricted command (like `/wren config view`, `/wren bans`, or `/wren ingest run`), but you don't hold the server's configured Leadership role (or a role above it), and you don't have Manage Server.
+**How to fix:** Ask someone with the Leadership role to run the command — the error message shows which role that is, if one is configured.
 
 ### `"You are blocked from using this bot."`
 **What it means:** Your Discord account has been banned from interacting with Wren. This can happen at the server level (if a server admin ran `/wren bans add target:@you`) or at the global level (if you violated Atria's Terms of Service).
@@ -29,9 +29,9 @@ Below is a list of the exact error messages Wren might output and how to resolve
 **How to fix:** Just wait! Maintenance usually lasts less than 15 minutes. 
 
 
-### `"Only the server owner can add server-scoped memory."`
-**What it means:** You tried to use `/wren memory add scope:server`. Server-scoped memories apply to *everyone* in the server permanently, so they are highly restricted.
-**How to fix:** Ask the server owner to add the memory, or use `scope:user` to save the memory just for yourself.
+### Permission error on `/wren memory add scope:server`
+**What it means:** Server-scoped memories apply to *everyone* in the server permanently, so they require the Leadership role.
+**How to fix:** Ask someone with the Leadership role to add the memory, or use `scope:user` to save the memory just for yourself.
 
 ---
 

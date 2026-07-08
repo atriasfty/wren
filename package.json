@@ -39,6 +39,7 @@
     "prism-media": "^1.3.5",
     "sharp": "^0.32.6",
     "turndown": "^7.2.4",
+    "undici": "^7.28.0",
     "wavefile": "^11.0.0"
   },
   "devDependencies": {

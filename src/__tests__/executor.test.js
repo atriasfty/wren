@@ -199,8 +199,14 @@ describe('executeTool', () => {
     it('successfully calls logPunishment if Discord actor is present', async () => {
       mocks.logPunishment.mockResolvedValue({ player: 'User1', type: 'Warn', reason: 'Trolling' });
       const result = await executeTool(tenantCtx, 'log_punishment', { username: 'User1', type: 'Warn', reason: 'Trolling' }, actor);
-      expect(mocks.logPunishment).toHaveBeenCalledWith(tenantCtx, 'User1', 'moderator-123', 'Warn', 'Trolling');
+      expect(mocks.logPunishment).toHaveBeenCalledWith(tenantCtx, 'User1', 'moderator-123', 'Warn', 'Trolling', undefined);
       expect(result.success).toBe(true);
+    });
+
+    it('passes moderator_roblox_username through to logPunishment', async () => {
+      mocks.logPunishment.mockResolvedValue({ player: 'User1', type: 'Warn', reason: 'Trolling' });
+      await executeTool(tenantCtx, 'log_punishment', { username: 'User1', type: 'Warn', reason: 'Trolling', moderator_roblox_username: 'ModRblx' }, actor);
+      expect(mocks.logPunishment).toHaveBeenCalledWith(tenantCtx, 'User1', 'moderator-123', 'Warn', 'Trolling', 'ModRblx');
     });
   });
 

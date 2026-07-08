@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { ActionRowBuilder, ButtonBuilder } from 'discord.js';
 
 // TODO [SECURITY]: upgrade vitest — breaking change, requires manual review
 // TODO [SECURITY]: upgrade discord.js — breaking change, requires manual review
@@ -21,7 +22,7 @@ import { listTenants } from './tenant/store.js';
 import { createClient } from './discord/client.js';
 import { attachMessageHandler } from './discord/messageHandler.js';
 import { attachIngameBridge } from './discord/ingameBridge.js';
-import { dispatchGarminCommand, handleComponentInteraction } from './slash/handlers.js';
+import { dispatchGarminCommand, handleComponentInteraction, handleSourcesAutocomplete } from './slash/handlers.js';
 import { syncAllGuilds } from './slash/register.js';
 import { startApiServer } from './api/server.js';
 import { pruneExpiredEvents } from './tenant/store.js';
@@ -33,6 +34,13 @@ import { runAssistantPipeline } from './ai/pipeline.js';
 function publicInteractionError() {
   return 'Something went wrong while processing that request.';
 }
+
+// Guards the ToS "Agree" button against double-clicks: two near-simultaneous
+// clicks are two separate interactions, so Discord's own "can't reply twice"
+// protection doesn't stop both from reaching this handler and both replaying
+// the original message (double LLM run, double reply). Keyed by the button
+// message's id, checked and set before any await so it's race-free.
+const tosClickInFlight = new Set();
 
 async function main() {
   const cfg = loadConfig();
@@ -52,6 +60,17 @@ async function main() {
   client.on('voiceStateUpdate', handleVoiceStateUpdate);
 
   client.on('interactionCreate', async (interaction) => {
+    if (interaction.isAutocomplete()) {
+      if (interaction.commandName !== 'wren') return;
+      try {
+        await handleSourcesAutocomplete(interaction);
+      } catch (err) {
+        console.warn('[autocomplete] failed:', err.message);
+        await interaction.respond([]).catch(() => {});
+      }
+      return;
+    }
+
     if (interaction.isChatInputCommand()) {
       if (interaction.commandName !== 'wren') return;
       try {
@@ -74,8 +93,29 @@ async function main() {
 
     if (interaction.isButton()) {
       if (interaction.customId === 'agree_tos') {
+        const dedupeKey = interaction.message.id;
+        if (tosClickInFlight.has(dedupeKey)) {
+          await interaction.reply({ content: 'Already processing your agreement — one moment!', ephemeral: true }).catch(() => {});
+          return;
+        }
+        tosClickInFlight.add(dedupeKey);
         try {
           await query('INSERT INTO user_agreements (discord_id) VALUES ($1) ON CONFLICT DO NOTHING', [interaction.user.id]);
+
+          // Disable the button so it can't be replayed again later — not just
+          // during this race window, but from a stale click hours afterward.
+          try {
+            const existingButton = interaction.message.components?.[0]?.components?.[0];
+            if (existingButton) {
+              const disabledRow = new ActionRowBuilder().addComponents(
+                ButtonBuilder.from(existingButton).setDisabled(true)
+              );
+              await interaction.message.edit({ components: [disabledRow] });
+            }
+          } catch (editErr) {
+            console.warn('[slash] failed to disable agree_tos button:', editErr.message);
+          }
+
           if (interaction.message.reference?.messageId) {
             const originalMsg = await interaction.channel.messages.fetch(interaction.message.reference.messageId).catch(()=>null);
             // Only replay the original request if the person agreeing is its
@@ -91,7 +131,9 @@ async function main() {
           }
         } catch (err) {
           console.error('[slash] button failed:', err);
-          await interaction.reply({ content: 'Failed to record agreement.', ephemeral: true });
+          await interaction.reply({ content: 'Failed to record agreement.', ephemeral: true }).catch(() => {});
+        } finally {
+          tosClickInFlight.delete(dedupeKey);
         }
         return;
       }

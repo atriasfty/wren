@@ -69,7 +69,7 @@ Wren Plans: Free (10 msgs/mo, 2 voice mins), Core ($10/mo, 1000 msgs/mo, 30 voic
 Slash Commands Guide:
 - /wren config view: Open the configuration panel to change server settings.
 - /wren sources [list/add/remove/toggle]: Manage knowledge base sources (channels, websites, documents).
-- /wren policy view: Show the current tool permission policy.
+- /wren mcp: Generate an MCP API key so desktop AI agents (e.g. Claude Desktop) can connect to Wren.
 - /wren bans [list/add/remove]: Manage the Wren-specific ban list.
 - /wren memory [list/add/remove]: Manage your long-term conversation memories.
 - /wren ingest [run/status]: Run or check the status of knowledge-base ingestion.

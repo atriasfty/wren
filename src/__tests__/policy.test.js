@@ -1,18 +1,34 @@
 import { describe, it, expect } from 'vitest';
 import { canRunTool, resolveActorRank, denialReason } from '../ai/policy.js';
 
-function tenantCtxWith(policy, roleSlots = {}) {
-  return { policy, roleSlots, tenantId: 'test', tenant: {} };
+function tenantCtxWith(policy, roleSlots = {}, tenant = {}) {
+  return { policy, roleSlots, tenantId: 'test', tenant };
 }
 
-function discordActor({ id = '1', owner = false, admin = false, roleIds = [] } = {}) {
-  const guild = { ownerId: owner ? id : '999' };
+// rolePositions maps every role id that matters for a test (both roles the
+// member holds and tenant-configured role ids) to its hierarchy position, so
+// hasRoleAtOrAbove can be exercised the same way it runs against a real
+// discord.js guild.
+function discordActor({ id = '1', owner = false, admin = false, roleIds = [], rolePositions = {} } = {}) {
+  const guild = {
+    ownerId: owner ? id : '999',
+    roles: {
+      cache: {
+        get: (rid) => (rid in rolePositions ? { id: rid, position: rolePositions[rid] } : undefined),
+      },
+    },
+  };
   const perms = { has: (p) => (p === 'Administrator' ? admin : false) };
   const member = {
     id,
     guild,
     permissions: perms,
-    roles: { cache: { has: (rid) => roleIds.includes(rid) } },
+    roles: {
+      cache: {
+        has: (rid) => roleIds.includes(rid),
+        some: (fn) => roleIds.some((rid) => fn({ id: rid, position: rolePositions[rid] ?? 0 })),
+      },
+    },
   };
   return { kind: 'discord', member };
 }
@@ -64,5 +80,56 @@ describe('policy.canRunTool', () => {
     expect(reason).toMatch(/purge_messages/);
     expect(reason).toMatch(/mod/);
     expect(reason).toMatch(/user/);
+  });
+});
+
+describe('resolveActorRank: configured role hierarchy (leadership/admin/mod all position-based)', () => {
+  const tenant = { leadershipRoleId: 'lead-role', adminRoleId: 'admin-role', modRoleId: 'mod-role' };
+  // Higher position = more senior, matching discord.js semantics.
+  const rolePositions = { 'lead-role': 30, 'admin-role': 20, 'mod-role': 10, 'other-role': 5 };
+
+  it('grants leadership via an exact match on the configured role', () => {
+    const ctx = tenantCtxWith({}, {}, tenant);
+    const actor = discordActor({ roleIds: ['lead-role'], rolePositions });
+    expect(resolveActorRank(actor, ctx)).toBe('leadership');
+  });
+
+  it('grants leadership to a role positioned above the configured leadership role, not just an exact match', () => {
+    const ctx = tenantCtxWith({}, {}, tenant);
+    const actor = discordActor({ roleIds: ['above-lead'], rolePositions: { ...rolePositions, 'above-lead': 40 } });
+    expect(resolveActorRank(actor, ctx)).toBe('leadership');
+  });
+
+  it('grants admin to a role at or above the configured admin role but below leadership', () => {
+    const ctx = tenantCtxWith({}, {}, tenant);
+    const exact = discordActor({ roleIds: ['admin-role'], rolePositions });
+    expect(resolveActorRank(exact, ctx)).toBe('admin');
+
+    const above = discordActor({ roleIds: ['between'], rolePositions: { ...rolePositions, between: 25 } });
+    expect(resolveActorRank(above, ctx)).toBe('admin');
+  });
+
+  it('grants mod to a role at or above the configured mod role but below admin', () => {
+    const ctx = tenantCtxWith({}, {}, tenant);
+    const actor = discordActor({ roleIds: ['mod-role'], rolePositions });
+    expect(resolveActorRank(actor, ctx)).toBe('mod');
+  });
+
+  it('falls back to user when no held role clears any configured tier', () => {
+    const ctx = tenantCtxWith({}, {}, tenant);
+    const actor = discordActor({ roleIds: ['other-role'], rolePositions });
+    expect(resolveActorRank(actor, ctx)).toBe('user');
+  });
+
+  it('cascades: clearing the leadership bar unlocks admin-gated tools too, without an exact admin-role match', () => {
+    const ctx = tenantCtxWith({ ban_player: 'admin' }, {}, tenant);
+    const actor = discordActor({ roleIds: ['above-lead'], rolePositions: { ...rolePositions, 'above-lead': 40 } });
+    expect(canRunTool(ctx, 'ban_player', {}, actor)).toBe(true);
+  });
+
+  it('an unrelated role positioned below every configured tier does not escalate', () => {
+    const ctx = tenantCtxWith({ ban_player: 'admin' }, {}, tenant);
+    const actor = discordActor({ roleIds: ['other-role'], rolePositions });
+    expect(canRunTool(ctx, 'ban_player', {}, actor)).toBe(false);
   });
 });

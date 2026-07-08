@@ -15,6 +15,8 @@ In your Discord server, run the slash command:
 
 Wren will generate a cryptographic API token locked to your Discord account. Copy the provided JSON snippet into your MCP client's configuration file.
 
+If you already have a token, `/wren mcp` will ask you to confirm before regenerating — regenerating **invalidates your previous token**, so any agent still using it stops working until you update its config.
+
 For **Claude Desktop** (`claude_desktop_config.json`):
 ```json
 "mcpServers": {
@@ -23,11 +25,9 @@ For **Claude Desktop** (`claude_desktop_config.json`):
     "args": [
       "-y",
       "mcp-proxy",
+      "--headers", "Authorization", "Bearer your_secure_token",
       "https://wrenapi.atriasafety.org/api/mcp/sse"
-    ],
-    "env": {
-      "WREN_MCP_TOKEN": "your_secure_token"
-    }
+    ]
   }
 }
 ```

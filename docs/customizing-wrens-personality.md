@@ -8,9 +8,9 @@ This is done using the **Core Info** and **Response Style** settings in the conf
 
 ## How to Edit Personality
 
-1. Type `/wren config` in your server.
-2. Click the **Core Settings** button in the interactive menu.
-3. Use the modal to update the text fields.
+1. Type `/wren config view` in your server.
+2. Pick the **Behaviour** category in the interactive menu.
+3. Select **Core info** or **Response style** and use the form to update it. Submitting an empty form clears the setting.
 
 ---
 

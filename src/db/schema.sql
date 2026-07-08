@@ -192,6 +192,18 @@ CREATE TABLE IF NOT EXISTS global_state (
   value JSONB NOT NULL
 );
 
+-- Permanent cache of a Discord staff member's verified Roblox account, per tenant.
+-- Verified once via POW's /members/lookup (their POW staff record's linked Discord
+-- ID must match), then reused for every subsequent log_punishment without re-asking.
+CREATE TABLE IF NOT EXISTS tenant_staff_links (
+  tenant_id       TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+  discord_id      TEXT NOT NULL,
+  roblox_user_id  TEXT NOT NULL,
+  roblox_username TEXT,
+  verified_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (tenant_id, discord_id)
+);
+
 CREATE TABLE IF NOT EXISTS user_mcp_tokens (
   token_id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id   TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
@@ -214,4 +226,7 @@ INSERT INTO tenant_role_policy (tenant_id, tool, min_role)
   ON CONFLICT DO NOTHING;
 INSERT INTO tenant_role_policy (tenant_id, tool, min_role)
   SELECT tenant_id, 'delete_memory_user', 'user' FROM tenants
+  ON CONFLICT DO NOTHING;
+INSERT INTO tenant_role_policy (tenant_id, tool, min_role)
+  SELECT tenant_id, 'read_webpage', 'user' FROM tenants
   ON CONFLICT DO NOTHING;

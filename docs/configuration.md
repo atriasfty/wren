@@ -6,7 +6,7 @@ There are no confusing text files to edit. Everything is managed through simple,
 
 ## The Configuration Panel
 
-To change Wren's core settings, just type `/wren config view` in any channel. This will open up an interactive menu with four main categories:
+To change Wren's core settings, just type `/wren config view` in any channel. This will open up an interactive menu with five main categories. To un-set a value later, use the **Clear** button (for channels and roles) or submit an empty form (for text settings).
 
 ### 1. Identity
 This is how Wren presents itself in your community.
@@ -38,6 +38,9 @@ If you are connecting Wren to external services, you can securely store the keys
 {% hint style="info" %}
 All secrets are heavily encrypted in our database. We take your security very seriously!
 {% endhint %}
+
+### 5. Policy
+A read-only view of which rank (Everyone, Mod, Admin, Leadership, Owner) is required to use each of Wren's tools. See the [Permissions](permissions.md) page for how ranks are resolved.
 
 ## Other Configuration Commands
 

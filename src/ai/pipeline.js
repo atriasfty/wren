@@ -44,9 +44,9 @@ export async function runAssistantPipeline(tenantCtx, {
   const limits = { free: 10, core: 1000, pro: 5000 };
   const limit = limits[tier] || 10;
   
-  const used = await incrementMessageUsage(tenantCtx.tenantId);
+  const used = await incrementMessageUsage(tenantCtx.tenantId, limit);
   if (used > limit) {
-    return { text: `⚠️ You've hit your monthly message limit of **${limit}** for the **${tier.toUpperCase()}** plan. Use \`/wren upgrade\` to increase your limits!`, error: null };
+    return { text: `⚠️ This server has used all **${limit}** messages included in its **${tier.toUpperCase()}** plan this month. A server manager can run \`/wren upgrade\` to raise the limit, or \`/wren usage\` to see when it resets.`, error: null };
   }
 
   const sys = buildSystemPrompt(tenantCtx, { actorKey: actorKey(actor), actor, channelId, mode });
@@ -113,7 +113,9 @@ export async function runAssistantPipeline(tenantCtx, {
       span.recordException(err);
       span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
       span.end();
-      return { text: `LLM call failed: ${err.message}`, tools: [], error: err.message };
+      console.error('[pipeline] LLM call failed:', err);
+      // The reply is posted publicly — never surface provider/internal detail.
+      return { text: 'Sorry, something went wrong while generating a response. Please try again in a moment.', tools: [], error: err.message };
     }
     span.end();
 

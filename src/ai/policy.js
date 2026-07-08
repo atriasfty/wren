@@ -16,7 +16,7 @@ export const POLICY_GATED_TOOLS = new Set([
   'list_online_players', 'check_if_online', 'check_if_staff', 'get_player_info',
   'get_all_channels', 'get_channel_messages', 'get_user_info',
   'search_command_logs', 'lookup_roblox_profile', 'analyze_player_activity',
-  'summarize_chat', 'check_punishments', 'search_web',
+  'summarize_chat', 'check_punishments', 'search_web', 'read_webpage',
 ]);
 
 export function resolveActorRank(actor, tenantCtx) {
@@ -27,21 +27,28 @@ export function resolveActorRank(actor, tenantCtx) {
     if (member.id === member.guild?.ownerId) return 'owner';
     if (member.permissions?.has?.('ManageGuild')) return 'owner';
     if (member.permissions?.has?.('Administrator')) return 'admin';
-    // Dedicated leadership role on tenant config
-    const leadershipRoleId = tenantCtx.tenant?.leadershipRoleId;
-    if (leadershipRoleId && member.roles?.cache?.has?.(leadershipRoleId)) return 'leadership';
-    
-    // Dedicated admin role on tenant config (matches the role and every role above it)
-    const adminRoleId = tenantCtx.tenant?.adminRoleId;
-    if (adminRoleId) {
-      const adminRole = member.guild?.roles?.cache?.get?.(adminRoleId);
-      if (adminRole && member.roles?.cache?.some?.(r => r.position >= adminRole.position && r.id !== member.guild.id)) return 'admin';
+
+    // Configured Leadership/Admin/Mod roles each grant their tier to any
+    // member holding a role at or above that role's position in the guild's
+    // hierarchy — not just an exact match. This mirrors how Discord's own
+    // role ordering implies seniority, and means a member doesn't have to
+    // hold the exact configured role, just something ranked at or above it.
+    // Checking tiers highest-first with an early return makes this cascade
+    // correctly: clearing the (higher) leadership bar returns 'leadership'
+    // immediately without needing a separate admin/mod check.
+    function hasRoleAtOrAbove(configuredRoleId) {
+      if (!configuredRoleId) return false;
+      const configuredRole = member.guild?.roles?.cache?.get?.(configuredRoleId);
+      if (!configuredRole) return false;
+      return !!member.roles?.cache?.some?.(
+        (r) => r.id !== member.guild.id && r.position >= configuredRole.position
+      );
     }
 
-    // Dedicated mod role on tenant config
-    const modRoleId = tenantCtx.tenant?.modRoleId;
-    if (modRoleId && member.roles?.cache?.has?.(modRoleId)) return 'mod';
-    
+    if (hasRoleAtOrAbove(tenantCtx.tenant?.leadershipRoleId)) return 'leadership';
+    if (hasRoleAtOrAbove(tenantCtx.tenant?.adminRoleId)) return 'admin';
+    if (hasRoleAtOrAbove(tenantCtx.tenant?.modRoleId)) return 'mod';
+
     return 'user';
   }
   if (actor.kind === 'in_game') {

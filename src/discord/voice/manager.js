@@ -17,7 +17,7 @@ import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { loadConfig } from '../../config.js';
 import { resolveTenantByGuildId } from '../../tenant/resolve.js';
-import { incrementVoiceTime } from '../../tenant/store.js';
+import { incrementVoiceTime, getVoiceUsageSeconds } from '../../tenant/store.js';
 import { runAssistantPipeline } from '../../ai/pipeline.js';
 import { query } from '../../db/pool.js';
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
@@ -37,20 +37,24 @@ process.env.FFMPEG_PATH = ffmpegPath;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Node.js undici fetch() does not support file:// protocol.
-// We polyfill it here so onnxruntime-web can fetch local model files.
+// Node's fetch() does not support the file:// protocol, but onnxruntime-web
+// needs it to load local wake-word models. This patches globalThis.fetch for
+// the whole process — every SSRF-guarded fetch in ai/ssrf.js, prc.js, and
+// pow.js goes through here too — so the pass-through branch is written first
+// and is the ONLY place a non-file:// URL can go, specifically so a future
+// edit adding more file:// handling can't accidentally start dropping or
+// mutating `options` (e.g. the SSRF dispatcher) for real network requests.
 const originalFetch = globalThis.fetch;
-globalThis.fetch = async (url, options) => {
-  if (typeof url === 'string' && url.startsWith('file://')) {
+globalThis.fetch = function patchedFetch(url, options) {
+  const isFileUrl =
+    (typeof url === 'string' && url.startsWith('file://')) ||
+    (url instanceof globalThis.URL && url.protocol === 'file:');
+  if (!isFileUrl) return originalFetch(url, options);
+  return (async () => {
     const filePath = fileURLToPath(url);
     const data = await fs.readFile(filePath);
     return new globalThis.Response(data);
-  } else if (url instanceof globalThis.URL && url.protocol === 'file:') {
-    const filePath = fileURLToPath(url);
-    const data = await fs.readFile(filePath);
-    return new globalThis.Response(data);
-  }
-  return originalFetch(url, options);
+  })();
 };
 
 async function createWakeWordModel() {
@@ -78,6 +82,39 @@ async function createWakeWordModel() {
 
 const activeGuilds = new Map();
 
+// Clears local tracking state for a guild (timers, loaded model, map entry)
+// without touching the underlying connection — safe to call whether or not
+// the connection is already destroyed.
+function clearGuildVoiceState(guildId) {
+  const state = activeGuilds.get(guildId);
+  if (state) {
+    if (state.idleTimer) clearTimeout(state.idleTimer);
+    if (state.promptTimeout) clearTimeout(state.promptTimeout);
+    state.owwModel = null; // Free up WASM/Model memory
+  }
+  activeGuilds.delete(guildId);
+}
+
+// Destroys the live connection for a guild (if any) and clears local state.
+// Used by the explicit /leave command, by a forced/unexpected disconnect, and
+// to guarantee a clean slate before joining again — @discordjs/voice reuses
+// the existing VoiceConnection (and its receiver) for a guild that already
+// has one, so joining again without tearing down first would register a
+// second 'speaking' listener on the same receiver and process every
+// utterance (and bill voice time) twice.
+function teardownGuildVoice(guildId) {
+  const connection = getVoiceConnection(guildId);
+  const wasConnected = !!connection;
+  if (connection) connection.destroy();
+  clearGuildVoiceState(guildId);
+  return wasConnected;
+}
+
+// Voice replies use the same branded embed as every other Wren response.
+function voiceReply(text) {
+  return { embeds: [new EmbedBuilder().setColor(0x0bb0d1).setDescription(text)], ephemeral: true };
+}
+
 export async function handleVoice(interaction) {
   const sub = interaction.options.getSubcommand();
   if (sub === 'join') {
@@ -85,34 +122,65 @@ export async function handleVoice(interaction) {
   } else if (sub === 'leave') {
     return await leaveChannel(interaction);
   }
-  return { content: 'Unknown voice command.', ephemeral: true };
+  return voiceReply('Unknown voice command.');
 }
 
 async function joinChannel(interaction) {
   const member = interaction.member;
   if (!member || !member.voice.channel) {
-    return { content: 'You must be in a voice channel to use this command.', ephemeral: true };
+    return voiceReply('You must be in a voice channel to use this command — join one first, then run `/wren voice join`.');
   }
   const channel = member.voice.channel;
+
+  // Tell the user about a missing permission specifically — a generic failure
+  // sends them chasing bugs when the fix is a channel-permission checkbox.
+  const perms = channel.permissionsFor?.(channel.guild.members.me);
+  if (perms && (!perms.has('Connect') || !perms.has('Speak'))) {
+    return voiceReply(`I don’t have permission to join <#${channel.id}>. Please grant me **Connect** and **Speak** there and try again.`);
+  }
 
   // Model loading and connection setup can exceed the 3s interaction window.
   await interaction.deferReply({ ephemeral: true }).catch(() => {});
 
   try {
+    // Always start from a clean slate — see teardownGuildVoice for why this
+    // matters (duplicate listeners on a reused connection otherwise).
+    teardownGuildVoice(channel.guild.id);
+
     const connection = joinVoiceChannel({
       channelId: channel.id,
       guildId: channel.guild.id,
       adapterCreator: channel.guild.voiceAdapterCreator,
       selfDeaf: false,
     });
-    
+
+    // Clean up local state on an unexpected/forced disconnect (channel
+    // deletion, manual disconnect, voice server issues) — without this,
+    // activeGuilds and the loaded wake-word model leak in memory, and the
+    // next /join would layer onto whatever @discordjs/voice does with the
+    // dead connection instead of starting fresh.
+    connection.on(VoiceConnectionStatus.Disconnected, async () => {
+      try {
+        await Promise.race([
+          entersState(connection, VoiceConnectionStatus.Signalling, 5_000),
+          entersState(connection, VoiceConnectionStatus.Connecting, 5_000),
+        ]);
+        // Looks like it's reconnecting (e.g. moved to another channel) — leave it alone.
+      } catch {
+        connection.destroy();
+      }
+    });
+    connection.on(VoiceConnectionStatus.Destroyed, () => {
+      clearGuildVoiceState(channel.guild.id);
+    });
+
     // Create player and state
     const player = createAudioPlayer();
     connection.subscribe(player);
-    
+
     // Load the wake word model for this specific guild
     const owwModel = await createWakeWordModel();
-    
+
     activeGuilds.set(channel.guild.id, {
       connection,
       player,
@@ -121,40 +189,31 @@ async function joinChannel(interaction) {
       guild: channel.guild,
       owwModel // Guild-specific instance
     });
-    
+
     // Wait for connection to be ready before playing anything, otherwise audio drops
     try {
       await entersState(connection, VoiceConnectionStatus.Ready, 20e3);
     } catch (e) {
       console.warn('[voice] Connection did not become Ready within 20s. Proceeding anyway.');
     }
-    
+
     // Play privacy disclaimer
     await playDisclaimer(channel.guild.id, player);
-    
+
     setupVoiceReceiver(connection, channel.guild.id, channel.id);
-    
-    return { content: `Joined voice channel: <#${channel.id}>. Wren is now listening! Say "Hey Wren" to activate.`, ephemeral: true };
+
+    return voiceReply(`Joined <#${channel.id}>. Wren is now listening — say **"Hey Wren"** to activate.`);
   } catch (err) {
     console.error('[voice] Join failed:', err);
-    return { content: 'Failed to join voice channel.', ephemeral: true };
+    return voiceReply('Failed to join the voice channel. Please try again in a moment — if it keeps failing, contact support.');
   }
 }
 
 async function leaveChannel(interaction) {
-  const connection = getVoiceConnection(interaction.guild.id);
-  if (connection) {
-    connection.destroy();
-    const state = activeGuilds.get(interaction.guild.id);
-    if (state) {
-      if (state.idleTimer) clearTimeout(state.idleTimer);
-      if (state.promptTimeout) clearTimeout(state.promptTimeout);
-      state.owwModel = null; // Free up WASM/Model memory
-    }
-    activeGuilds.delete(interaction.guild.id);
-    return { content: 'Left the voice channel.', ephemeral: true };
-  }
-  return { content: 'Wren is not currently in a voice channel on this server.', ephemeral: true };
+  const wasConnected = teardownGuildVoice(interaction.guild.id);
+  return wasConnected
+    ? voiceReply('Left the voice channel.')
+    : voiceReply('Wren is not currently in a voice channel on this server.');
 }
 
 async function playDisclaimer(guildId, player) {
@@ -357,9 +416,12 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
     if (!tenantCtx) return;
     
     const t = tenantCtx.tenant;
-    const voiceSecs = t.monthlyVoiceTimeSeconds || 0;
+    // Read usage fresh from the DB, not the 60s-cached tenant context — rapid
+    // back-to-back voice sessions would otherwise all see the same stale count
+    // and blow past the quota before the cache refreshes.
+    const voiceSecs = await getVoiceUsageSeconds(guildId);
     const tier = t.subscriptionTier || 'free';
-    
+
     let maxVoiceSecs = 2 * 60; // 2 minutes for free tier
     if (tier === 'core') maxVoiceSecs = 30 * 60;
     if (tier === 'pro') maxVoiceSecs = 120 * 60;
@@ -441,8 +503,8 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
           .setColor('#0099ff')
           .addFields(
             { name: 'Documentation', value: 'https://wren.atriasafety.org' },
-            { name: 'Terms of Service', value: 'http://atriasfty.org/wren-tos' },
-            { name: 'Privacy Policy', value: 'http://atriasfty.org/wren-privacy' }
+            { name: 'Terms of Service', value: 'https://atriasfty.org/wren-tos' },
+            { name: 'Privacy Policy', value: 'https://atriasfty.org/wren-privacy' }
           );
         const row = new ActionRowBuilder().addComponents(
           new ButtonBuilder()

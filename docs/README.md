@@ -7,7 +7,7 @@ Wren is always learning and getting better!
 {% endhint %}
 
 {% hint style="info" %}
-**Want to invite Wren to your server?** Click [here to add Wren](http://atriasfty.org/add-wren) to your Discord!
+**Want to invite Wren to your server?** Click [here to add Wren](https://atriasfty.org/add-wren) to your Discord!
 {% endhint %}
 
 ## What can Wren do?

@@ -128,7 +128,10 @@ describe('observability tracing in assistant pipeline', () => {
       actor,
     });
 
-    expect(result.text).toContain('LLM call failed');
+    // The public reply must stay generic — internal error detail lives only
+    // in result.error (and the span/log), never in channel-visible text.
+    expect(result.text).toContain('something went wrong');
+    expect(result.text).not.toContain(errorMsg);
     expect(result.error).toBe(errorMsg);
 
     const spans = memoryExporter.getFinishedSpans();

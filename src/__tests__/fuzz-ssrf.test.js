@@ -13,6 +13,11 @@ vi.mock('dns', () => ({
 
 import { assertPublicHttpUrl, assertPublicHttpUrlCached } from '../ai/ssrf.js';
 
+// fast-check v4 removed fc.hexaString; build an equivalent from single hex
+// characters so the IPv6-suffix fuzz cases keep generating valid hex groups.
+const hexString = ({ minLength = 0, maxLength } = {}) =>
+  fc.string({ unit: fc.constantFrom(...'0123456789abcdef'.split('')), minLength, maxLength });
+
 // Independent, spec-derived reference oracle for "is this IPv4 address in a
 // reserved/private range" — written directly from the RFCs (1918 private
 // space, 5735/5737 special-use, 6598 CGNAT, 3927 link-local, 1122 loopback +
@@ -103,7 +108,7 @@ describe('SSRF guard: IPv6 fuzzing', () => {
     await fc.assert(
       fc.asyncProperty(
         fc.constantFrom('fc', 'fd'),
-        fc.hexaString({ minLength: 1, maxLength: 4 }),
+        hexString({ minLength: 1, maxLength: 4 }),
         async (prefix, suffix) => {
           expect(await isBlocked(`http://[${prefix}00:${suffix}::1]/`)).toBe(true);
         },
@@ -114,7 +119,7 @@ describe('SSRF guard: IPv6 fuzzing', () => {
 
   it('blocks fe80::/10 link-local across random suffixes', async () => {
     await fc.assert(
-      fc.asyncProperty(fc.hexaString({ minLength: 1, maxLength: 4 }), async (suffix) => {
+      fc.asyncProperty(hexString({ minLength: 1, maxLength: 4 }), async (suffix) => {
         expect(await isBlocked(`http://[fe80::${suffix}]/`)).toBe(true);
       }),
       { numRuns: 50 },
@@ -152,6 +157,17 @@ describe('SSRF guard: hostname and scheme fuzzing', () => {
       ),
       { numRuns: 100 },
     );
+  });
+
+  it('blocks "localhost." (trailing DNS root-zone dot) via the denylist fast path, not just the DNS fallback', async () => {
+    // The mocked dns.lookup below resolves ANY hostname to a public address,
+    // so if the BLOCKED_HOSTNAMES check didn't normalize the trailing dot and
+    // fell through to DNS resolution, this would incorrectly resolve as
+    // allowed instead of being caught by the fast-path denylist.
+    mocks.lookup.mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
+    expect(await isBlocked('http://localhost./')).toBe(true);
+    expect(await isBlocked('http://LOCALHOST./')).toBe(true);
+    expect(await isBlocked('http://metadata.google.internal./')).toBe(true);
   });
 
   it('rejects every non-http(s) scheme tried', async () => {

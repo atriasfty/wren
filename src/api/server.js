@@ -1,7 +1,7 @@
 import express from 'express';
 import { hashToken } from '../tenant/crypto.js';
-import { findTenantByTokenHash, updateSubscription } from '../tenant/store.js';
-import { resolveTenantById, setEncryptionKey } from '../tenant/resolve.js';
+import { findTenantByTokenHash, updateSubscription, tryClaimEvent } from '../tenant/store.js';
+import { resolveTenantById, setEncryptionKey, invalidateTenant } from '../tenant/resolve.js';
 import { validateEvent } from '@polar-sh/sdk/webhooks';
 import { runAssistantPipeline } from '../ai/pipeline.js';
 import { loadConfig } from '../config.js';
@@ -75,6 +75,12 @@ export async function createApiServer(client) {
       );
 
       const event = payload;
+      // Standard Webhooks delivery id — stable across retries of the SAME
+      // delivery (Polar redelivery, or a plain double-send), unlike anything
+      // in the payload body. Used below to make a replay a no-op instead of
+      // reprocessing it.
+      const webhookId = req.headers['webhook-id'];
+
       if (event.type === 'subscription.created' || event.type === 'subscription.updated') {
         const sub = event.data;
         const tenantId = sub.metadata?.tenantId;
@@ -84,11 +90,14 @@ export async function createApiServer(client) {
         let tier = 'free';
         if (productId === process.env.POLAR_CORE_PRODUCT_ID) tier = 'core';
         else if (productId === process.env.POLAR_PRO_PRODUCT_ID) tier = 'pro';
-        
+
         if (tenantId) {
-          const { resolveTenantById } = await import('../tenant/resolve.js');
+          if (webhookId && !(await tryClaimEvent({ tenantId, eventId: webhookId, ttlSeconds: 7 * 24 * 60 * 60 }))) {
+            return res.json({ ok: true, note: 'duplicate delivery, already processed' });
+          }
+
           const ctx = await resolveTenantById(tenantId);
-          
+
           if (ctx) {
             const oldSubId = ctx.tenant.polarSubscriptionId;
             const oldTier = ctx.tenant.subscriptionTier || 'free';
@@ -143,6 +152,7 @@ export async function createApiServer(client) {
           }
 
           await updateSubscription(tenantId, tier, sub.id, ownerId, customerId);
+          invalidateTenant(tenantId);
           // Try to send a success message to the guild
           if (client) {
             try {
@@ -169,11 +179,14 @@ export async function createApiServer(client) {
         const sub = event.data;
         const tenantId = sub.metadata?.tenantId;
         if (tenantId) {
-          const { resolveTenantById } = await import('../tenant/resolve.js');
+          if (webhookId && !(await tryClaimEvent({ tenantId, eventId: webhookId, ttlSeconds: 7 * 24 * 60 * 60 }))) {
+            return res.json({ ok: true, note: 'duplicate delivery, already processed' });
+          }
           const ctx = await resolveTenantById(tenantId);
           // Only downgrade to free if the canceled sub is the currently active one
           if (ctx && ctx.tenant.polarSubscriptionId === sub.id) {
             await updateSubscription(tenantId, 'free', null, null, null);
+            invalidateTenant(tenantId);
           }
         }
       }

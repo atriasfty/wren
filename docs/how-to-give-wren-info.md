@@ -15,9 +15,19 @@ Currently, Wren supports three types of sources:
 
 ---
 
+## ⚠️ Important: Sources Are Visible to Everyone
+
+Anything you add as a source becomes part of Wren's shared knowledge base for your server. When **any** member talks to Wren (or uses an API/MCP token for your server), Wren can quote from that knowledge to answer them — **regardless of who can see the original channel, website, or document in Discord.**
+
+In other words, adding a private staff-only channel as a source will let ordinary members indirectly read its contents through Wren's answers. This is by design: the knowledge base is intentionally server-wide.
+
+**Only add channels and documents whose contents you are comfortable exposing to every member who can talk to Wren.** Keep confidential staff discussions out of your configured sources.
+
+---
+
 ## How to Add a Source
 
-You must have the "Manage Server" permission to manage sources.
+You must have the Leadership role (or be the server owner, or hold the Discord "Manage Server" permission) to manage sources.
 
 ### Step 1: Open the Sources Menu
 In any channel, type:
@@ -27,11 +37,11 @@ In any channel, type:
 
 ### Step 2: Fill out the Command Options
 The command will prompt you for a few details:
-- **`kind`**: Choose the type of source (`discord_channel`, `website`, or `manual_doc`).
-- **`ref`**: This is the actual link or ID. 
-  - If you chose `discord_channel`, paste the Channel ID (e.g., `123456789012345678`).
+- **`kind`**: Choose the type of source (`channel`, `website`, or `document`).
+- **`channel`**: If you chose `channel`, pick the channel here with Discord's channel picker — no IDs needed.
+- **`ref`**: For the other kinds:
   - If you chose `website`, paste the full URL (e.g., `https://my-community-rules.com`).
-  - If you chose `manual_doc`, type a short label for it (e.g., `staff_guidelines`).
+  - If you chose `document`, type a short label for it (e.g., `staff_guidelines`).
 - **`label`** (Optional): A friendly name for this source so you can remember what it is.
 
 ### Step 3: Run the Command
@@ -46,11 +56,11 @@ Hit enter! Wren will save the source to your database.
 Adding a source doesn't mean Wren instantly knows everything in it. Wren runs a background process called **Ingestion** to read and index your sources. 
 
 - **Automatic Ingestion:** Wren automatically checks your `discord_channel` sources for new messages and reads them in real-time. 
-- **Manual Ingestion:** If you added a `website`, or if you want to force Wren to re-read everything immediately, the **Server Owner** can run:
+- **Manual Ingestion:** If you added a `website`, or if you want to force Wren to re-read everything immediately, anyone with the **Leadership role** can run:
   ```
-  /wren ingest status
+  /wren ingest run
   ```
-  This will queue your server for a full sync. Once it finishes, Wren will have perfect knowledge of your server's info!
+  This starts a full sync right away. Once it finishes, Wren will have perfect knowledge of your server's info! You can check each source's last-ingested time at any point with `/wren ingest status` — that command only reports status, it doesn't trigger a sync itself.
 
 ---
 
@@ -65,4 +75,4 @@ If a document becomes outdated or you want Wren to stop referencing a specific c
 ```
 /wren sources remove kind:<kind> ref:<ref>
 ```
-*(You can find the exact `kind` and `ref` by looking at your sources list).*
+*(Start typing in the `ref` option and Discord will suggest your existing sources — no need to copy anything exactly. You can also temporarily disable a source without deleting it using `/wren sources toggle`.)*

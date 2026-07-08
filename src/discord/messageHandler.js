@@ -215,8 +215,8 @@ export function attachMessageHandler(client) {
           .setColor('#0099ff')
           .addFields(
             { name: 'Documentation', value: 'https://wren.atriasafety.org' },
-            { name: 'Terms of Service', value: 'http://atriasfty.org/wren-tos' },
-            { name: 'Privacy Policy', value: 'http://atriasfty.org/wren-privacy' }
+            { name: 'Terms of Service', value: 'https://atriasfty.org/wren-tos' },
+            { name: 'Privacy Policy', value: 'https://atriasfty.org/wren-privacy' }
           );
         
         const row = new ActionRowBuilder().addComponents(

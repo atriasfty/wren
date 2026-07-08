@@ -7,8 +7,19 @@ import { findPlayer } from '../integrations/prc.js';
 
 const HANDLE_PREFIX_RE = /^:\s*pm\s+/i;
 
+// In-game PMs are capped; cut at a word boundary with a visible ellipsis so a
+// truncated reply never ends mid-word and the player can tell it was cut.
+const MAX_PM_LEN = 500;
+export function truncatePm(text, limit = MAX_PM_LEN) {
+  if (!text || text.length <= limit) return text;
+  let cut = text.lastIndexOf(' ', limit - 1);
+  if (cut < limit * 0.6) cut = limit - 1;
+  return `${text.slice(0, cut).trimEnd()}…`;
+}
+
 // Per-tenant last-polled timestamp to avoid cross-tenant timestamp bleed.
-const lastPollTs = new Map();
+// Exported (like playerSessions below) so tests can reset it between cases.
+export const lastPollTs = new Map();
 
 // Per-player conversational history for in-game PMs (multi-turn bridge session state)
 export const playerSessions = new Map(); // key: `${tenantId}:${playerName}`, value: { messages: [], lastActive: Date.now() }
@@ -18,30 +29,39 @@ export async function pollModcallsFor(tenantCtx) {
   const sinceTs = lastPollTs.get(tenantCtx.tenantId) || 0;
   const modcalls = await (await import('../integrations/prc.js')).getModcalls(tenantCtx, { sinceTs });
   if (!modcalls.length) return;
-  lastPollTs.set(
-    tenantCtx.tenantId,
-    Math.max(...modcalls.map((m) => m.timestamp || 0), sinceTs),
-  );
 
   const botHandle = (tenantCtx.tenant.inGameHandle || ':pm wren').toLowerCase();
   const botName = botHandle.replace(HANDLE_PREFIX_RE, '').trim();
 
+  // Only advance the cursor past modcalls we actually finished handling
+  // (successfully, or because they weren't for us). A modcall left unhandled
+  // by a thrown error must stay at/after `sinceTs` so the next sweep retries
+  // it — the old behavior advanced the cursor past every modcall in the batch
+  // up front, so a single transient failure silently dropped that player's
+  // request forever. If anything in this batch fails, the cursor stops right
+  // before the EARLIEST failure — even if a later, independent modcall in the
+  // same batch already succeeded (that one just gets harmlessly reprocessed
+  // next sweep, which beats losing the failed one forever).
+  let maxHandledTs = sinceTs;
+  let firstFailureTs = null;
+
   for (const m of modcalls) {
+    const ts = m.timestamp || 0;
     const text = (m.message || m.content || '').trim();
-    if (!text) continue;
+    if (!text) { maxHandledTs = Math.max(maxHandledTs, ts); continue; }
 
     // Strip the leading PM command if present to get the target and message
     const cleanText = text.replace(HANDLE_PREFIX_RE, '').trim();
 
     // Check if the message is directed to the bot
-    if (!cleanText.toLowerCase().startsWith(botName)) continue;
+    if (!cleanText.toLowerCase().startsWith(botName)) { maxHandledTs = Math.max(maxHandledTs, ts); continue; }
 
     const playerName = m.callerName || m.playerName;
-    if (!playerName) continue;
+    if (!playerName) { maxHandledTs = Math.max(maxHandledTs, ts); continue; }
 
     // Extract the actual question by removing the bot's name/handle
     const question = cleanText.slice(botName.length).trim();
-    if (!question) continue;
+    if (!question) { maxHandledTs = Math.max(maxHandledTs, ts); continue; }
 
     // Retrieve or initialize session state
     const sessionKey = `${tenantCtx.tenantId}:${playerName.toLowerCase()}`;
@@ -78,17 +98,34 @@ export async function pollModcallsFor(tenantCtx) {
           await executeTool(
             tenantCtx,
             'send_pm',
-            { username: playerName, message: result.text.slice(0, 500) },
+            { username: playerName, message: truncatePm(result.text) },
             { kind: 'system' },
           );
         } catch (err) {
           console.warn('[ingame] send_pm failed:', err.message);
         }
       }
+      maxHandledTs = Math.max(maxHandledTs, ts);
     } catch (err) {
       console.error(`[ingame] failed to process modcall from ${playerName}:`, err.message);
+      firstFailureTs = firstFailureTs === null ? ts : Math.min(firstFailureTs, ts);
+      // Let the player know rather than leaving them with silence; best-effort
+      // and doesn't block the retry this modcall gets on the next sweep.
+      try {
+        await executeTool(
+          tenantCtx,
+          'send_pm',
+          { username: playerName, message: 'Sorry, something went wrong processing your request. Please try again.' },
+          { kind: 'system' },
+        );
+      } catch {}
     }
   }
+
+  const cursor = firstFailureTs === null
+    ? maxHandledTs
+    : Math.max(sinceTs, Math.min(maxHandledTs, firstFailureTs - 1));
+  lastPollTs.set(tenantCtx.tenantId, cursor);
 }
 
 export function attachIngameBridge(client) {

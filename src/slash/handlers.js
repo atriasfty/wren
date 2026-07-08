@@ -12,7 +12,6 @@ import {
   addSource,
   removeSource,
   setSourceEnabled,
-  getPolicy,
   listBans,
   addBan,
   removeBan,
@@ -47,8 +46,43 @@ async function checkManageGuild(interaction) {
   return false;
 }
 
+// Discord caps embed descriptions at 4096 chars — keep headroom so a long
+// list or message never turns into a raw API error for the user.
+const MAX_EMBED_DESC = 3900;
+
 function ephemeral(text) {
-  return { embeds: [new EmbedBuilder().setColor(0x0bb0d1).setDescription(text)], ephemeral: true };
+  const t = String(text ?? '');
+  const safe = t.length > MAX_EMBED_DESC ? `${t.slice(0, MAX_EMBED_DESC - 1)}…` : t;
+  return { embeds: [new EmbedBuilder().setColor(0x0bb0d1).setDescription(safe)], ephemeral: true };
+}
+
+function errorEphemeral(text) {
+  return { embeds: [new EmbedBuilder().setColor(0xff3333).setDescription(`❌ ${text}`)], ephemeral: true };
+}
+
+// Renders a list of lines into a single ephemeral embed, keeping under the
+// description cap and saying explicitly how many entries were omitted.
+function listEphemeral(lines, { header = null } = {}) {
+  const out = [];
+  let used = header ? header.length + 1 : 0;
+  for (const line of lines) {
+    if (used + line.length + 1 > MAX_EMBED_DESC - 80) break;
+    out.push(line);
+    used += line.length + 1;
+  }
+  const omitted = lines.length - out.length;
+  const parts = [];
+  if (header) parts.push(header);
+  parts.push(out.join('\n'));
+  if (omitted > 0) parts.push(`…and **${omitted}** more (${lines.length} total).`);
+  return ephemeral(parts.join('\n'));
+}
+
+function needLeadership(ctx) {
+  const roleId = ctx?.tenant?.leadershipRoleId;
+  return ephemeral(
+    `You need the Leadership role${roleId ? ` (<@&${roleId}>)` : ''} or the **Manage Server** permission for this.`,
+  );
 }
 
 async function loadCtx(interaction) {
@@ -58,10 +92,10 @@ async function loadCtx(interaction) {
 }
 
 export async function handleSetup(interaction) {
-  if (!(await checkManageGuild(interaction))) return ephemeral('You need ManageGuild permission for this.');
+  if (!(await checkManageGuild(interaction))) return ephemeral('You need the **Manage Server** permission for this.');
   const { ctx, cfg } = await loadCtx(interaction);
   if (ctx) {
-    return ephemeral('This server is already set up. Use `/wren config` to manage it.');
+    return ephemeral('This server is already set up. Use `/wren config view` to manage it.');
   }
   await createTenant({
     tenantId: interaction.guild.id,
@@ -70,7 +104,7 @@ export async function handleSetup(interaction) {
     encKey: cfg.tenantSecretEncKey,
   });
   return {
-    embeds: [new EmbedBuilder().setColor(0x0bb0d1).setDescription("✅ **Wren is now configured for this server!**\n\n⚠️ **IMPORTANT**: You must whitelist Wren's IP (`152.53.21.47`) in your ERLC server dashboard (https://api.erlc.gg/server-owners), otherwise Wren won't be able to connect or perform any actions.\n\nYou can now use `/wren config view` to set up your channels, API keys, and options.\nBe sure to check out the setup guide at **https://wrendocs.atriasafety.org** to learn how to add knowledge sources.")],
+    embeds: [new EmbedBuilder().setColor(0x0bb0d1).setDescription("✅ **Wren is now configured for this server!**\n\n⚠️ **IMPORTANT**: You must whitelist Wren's IP (`152.53.21.47`) in your ERLC server dashboard (https://api.erlc.gg/server-owners), otherwise Wren won't be able to connect or perform any actions.\n\nYou can now use `/wren config view` to set up your channels, API keys, and options.\nBe sure to check out the setup guide at **https://wren.atriasafety.org** to learn how to add knowledge sources.")],
     ephemeral: false
   };
 }
@@ -79,7 +113,7 @@ export async function handleSetup(interaction) {
 
 export async function handleConfig(interaction, ctx) {
   if (RANK_ORDER[resolveActorRank({ kind: 'discord', member: interaction.member, id: interaction.user.id }, ctx)] < RANK_ORDER['leadership']) {
-    return ephemeral('You need the Leadership role for this.');
+    return needLeadership(ctx);
   }
 
   const panel = await buildMainPanel(interaction.guild.id);
@@ -87,33 +121,57 @@ export async function handleConfig(interaction, ctx) {
   return { ...panel, ephemeral: true };
 }
 
+const SOURCE_KIND_LABELS = { discord_channel: 'channel', website: 'website', manual_doc: 'document' };
+
+function describeSource(kind, ref, label = null) {
+  const display = kind === 'discord_channel' ? `<#${ref}>` : `\`${ref}\``;
+  return `${SOURCE_KIND_LABELS[kind] || kind} ${display}${label ? ` \u2014 ${label}` : ''}`;
+}
+
 export async function handleSources(interaction, ctx) {
   if (RANK_ORDER[resolveActorRank({ kind: 'discord', member: interaction.member, id: interaction.user.id }, ctx)] < RANK_ORDER['leadership']) {
-    return ephemeral('You need the Leadership role for this.');
+    return needLeadership(ctx);
   }
   const sub = interaction.options.getSubcommand();
   const tenantId = interaction.guild.id;
 
   if (sub === 'list') {
     const rows = await listSources(tenantId);
-    if (!rows.length) return ephemeral('No sources configured.');
-    const lines = rows.map((r) => `${r.enabled ? '\u2705' : '\u26d4'} \`${r.kind}\` ${r.ref}${r.label ? ` \u2014 ${r.label}` : ''}`);
-    return ephemeral(lines.join('\n'));
+    if (!rows.length) return ephemeral('No sources configured. Add one with `/wren sources add`.');
+    const lines = rows.map((r) => `${r.enabled ? '\u2705' : '\u26d4'} ${describeSource(r.kind, r.ref, r.label)}`);
+    return listEphemeral(lines, { header: `**${rows.length}** source${rows.length === 1 ? '' : 's'} configured:` });
   }
 
   if (sub === 'add') {
     const kind = interaction.options.getString('kind');
-    const ref = interaction.options.getString('ref');
+    const channel = interaction.options.getChannel?.('channel');
+    let ref = interaction.options.getString('ref');
     const label = interaction.options.getString('label') || null;
+
+    if (kind === 'discord_channel') {
+      ref = channel?.id || ref;
+      if (!ref || !/^\d{17,20}$/.test(ref)) {
+        return errorEphemeral('For a channel source, pick the channel with the **channel** option.');
+      }
+    } else if (!ref) {
+      return errorEphemeral(`Provide the **ref** option: ${kind === 'website' ? 'the page URL' : 'the document filename'}.`);
+    } else if (kind === 'website') {
+      let url;
+      try { url = new URL(ref); } catch { url = null; }
+      if (!url || !['http:', 'https:'].includes(url.protocol)) {
+        return errorEphemeral('That doesn\u2019t look like a valid website URL \u2014 it should start with `https://`.');
+      }
+    }
+
     await addSource({ tenantId, kind, ref, label });
-    return ephemeral(`Added source: \`${kind}\` ${ref}`);
+    return ephemeral(`\u2705 Added ${describeSource(kind, ref, label)}.\nRun \`/wren ingest run\` to index it now.`);
   }
 
   if (sub === 'remove') {
     const kind = interaction.options.getString('kind');
     const ref = interaction.options.getString('ref');
     await removeSource({ tenantId, kind, ref });
-    return ephemeral(`Removed source: \`${kind}\` ${ref}`);
+    return ephemeral(`Removed ${describeSource(kind, ref)}.`);
   }
 
   if (sub === 'toggle') {
@@ -121,32 +179,48 @@ export async function handleSources(interaction, ctx) {
     const ref = interaction.options.getString('ref');
     const enabled = interaction.options.getBoolean('enabled');
     await setSourceEnabled({ tenantId, kind, ref, enabled });
-    return ephemeral(`${enabled ? 'Enabled' : 'Disabled'} \`${kind}\` ${ref}.`);
+    return ephemeral(`${enabled ? 'Enabled' : 'Disabled'} ${describeSource(kind, ref)}.`);
   }
 
   return ephemeral(`Unknown subcommand: ${sub}`);
 }
 
-export async function handlePolicy(interaction, ctx) {
-  if (RANK_ORDER[resolveActorRank({ kind: 'discord', member: interaction.member, id: interaction.user.id }, ctx)] < RANK_ORDER['leadership']) {
-    return ephemeral('You need the Leadership role for this.');
-  }
-  const sub = interaction.options.getSubcommand();
-  const tenantId = interaction.guild.id;
+// Autocomplete for the `ref` option on `/wren sources remove|toggle`:
+// suggests the server's existing sources (filtered by the chosen kind and the
+// typed prefix) so users never have to re-type a URL or channel id exactly.
+export async function handleSourcesAutocomplete(interaction) {
+  if (!interaction.guild?.id) return interaction.respond([]);
+  const kind = interaction.options.getString('kind');
+  const typed = String(interaction.options.getFocused() ?? '').toLowerCase();
 
-  if (sub === 'view') {
-    const policy = await getPolicy(tenantId);
-    const lines = Object.entries(policy).sort().map(([k, v]) => `\`${k}\` \u2192 ${v}`);
-    return ephemeral(lines.length ? lines.join('\n') : '(no policy rows)');
-  }
+  let rows = [];
+  try { rows = await listSources(interaction.guild.id); } catch { /* fall through to empty */ }
 
-  return ephemeral(`Unknown subcommand: ${sub}`);
+  const choices = rows
+    .filter((r) => (!kind || r.kind === kind))
+    .filter((r) => !typed || r.ref.toLowerCase().includes(typed) || (r.label || '').toLowerCase().includes(typed))
+    // Discord caps choice values at 100 chars; a truncated ref would silently
+    // fail to match on remove/toggle, so skip over-long refs instead.
+    .filter((r) => r.ref.length <= 100)
+    .slice(0, 25)
+    .map((r) => ({
+      name: `${SOURCE_KIND_LABELS[r.kind] || r.kind}: ${r.label ? `${r.label} (${r.ref})` : r.ref}`.slice(0, 100),
+      value: r.ref,
+    }));
+  return interaction.respond(choices);
+}
+
+// Renders `discord:123` keys as user mentions; other keys stay as code.
+function formatUserKey(userKey) {
+  if (!userKey) return '`?`';
+  const m = /^discord:(\d{17,20})$/.exec(userKey);
+  return m ? `<@${m[1]}>` : `\`${userKey}\``;
 }
 
 export async function handleBans(interaction, ctx) {
   const actorRankStr = resolveActorRank({ kind: 'discord', member: interaction.member, id: interaction.user.id }, ctx);
   if (RANK_ORDER[actorRankStr] < RANK_ORDER['leadership']) {
-    return ephemeral('You need the Leadership role for this.');
+    return needLeadership(ctx);
   }
   const sub = interaction.options.getSubcommand();
   const tenantId = interaction.guild.id;
@@ -154,7 +228,11 @@ export async function handleBans(interaction, ctx) {
   if (sub === 'list') {
     const rows = await listBans(tenantId);
     if (!rows.length) return ephemeral('No bans.');
-    return ephemeral(rows.map((b) => `\u2022 \`${b.userKey}\` \u2014 ${b.reason || '(no reason)'} (by ${b.bannedBy || '?'})`).join('\n'));
+    const lines = rows.map((b) => {
+      const when = b.created_at ? ` \u2014 <t:${Math.floor(new Date(b.created_at).getTime() / 1000)}:d>` : '';
+      return `\u2022 ${formatUserKey(b.user_key)} \u2014 ${b.reason || '(no reason)'} (by ${formatUserKey(b.banned_by)})${when}`;
+    });
+    return listEphemeral(lines, { header: `**${rows.length}** ban${rows.length === 1 ? '' : 's'}:` });
   }
 
   if (sub === 'add') {
@@ -207,16 +285,17 @@ export async function handleMemory(interaction, ctx) {
 
   if (sub === 'list') {
     // Listing exposes every user's private memories — leadership only.
-    if (!isLeadershipOrHigher) return ephemeral('Only the leadership role can list memories.');
+    if (!isLeadershipOrHigher) return needLeadership(ctx);
     const rows = await listMemory(tenantId);
-    if (!rows.length) return ephemeral('No memory.');
-    return ephemeral(rows.slice(0, 25).map((m) => `[#${m.id} ${m.scope}${m.user_key ? ` /${m.user_key}` : ''}] ${m.content}`).join('\n'));
+    if (!rows.length) return ephemeral('No memories saved yet. Add one with `/wren memory add`.');
+    const lines = rows.map((m) => `[#${m.id} ${m.scope}${m.user_key ? ` ${formatUserKey(m.user_key)}` : ''}] ${m.content}`);
+    return listEphemeral(lines, { header: `**${rows.length}** memor${rows.length === 1 ? 'y' : 'ies'}:` });
   }
 
   if (sub === 'add') {
     const scope = interaction.options.getString('scope');
     const content = interaction.options.getString('content');
-    if (scope === 'server' && !isLeadershipOrHigher) return ephemeral('Only the leadership role can add server-scoped memory.');
+    if (scope === 'server' && !isLeadershipOrHigher) return needLeadership(ctx);
     const userKey = scope === 'user' ? `discord:${interaction.user.id}` : null;
     const { addMemory } = await import('../tenant/store.js');
     await addMemory({ tenantId, scope, userKey, content, addedBy: `discord:${interaction.user.id}` });
@@ -224,7 +303,7 @@ export async function handleMemory(interaction, ctx) {
   }
 
   if (sub === 'remove') {
-    if (!isLeadershipOrHigher) return ephemeral('Only the leadership role can remove memories.');
+    if (!isLeadershipOrHigher) return needLeadership(ctx);
     const id = interaction.options.getInteger('id');
     await removeMemory(tenantId, id);
     return ephemeral(`Removed memory #${id}.`);
@@ -236,31 +315,36 @@ export async function handleMemory(interaction, ctx) {
 export async function handleIngest(interaction, ctx) {
   const actorRankStr = resolveActorRank({ kind: 'discord', member: interaction.member, id: interaction.user.id }, ctx);
   if (RANK_ORDER[actorRankStr] < RANK_ORDER['leadership']) {
-    return ephemeral('Only the leadership role can run ingestion.');
+    return needLeadership(ctx);
   }
   const sub = interaction.options.getSubcommand();
 
   if (sub === 'run') {
     const kind = interaction.options.getString('kind') || 'all';
-    
+
     const initialEmbed = new EmbedBuilder()
       .setColor(0x0bb0d1)
-      .setDescription('Starting ingestion...\n\n*This may take a while depending on the amount of users ingesting or the amount of sources.*');
-      
+      .setDescription('Starting ingestion…\n\n*This may take a few minutes depending on how many sources are configured and how much content they contain.*');
+
     await interaction.reply({ embeds: [initialEmbed], ephemeral: true });
     try {
       const result = await ingestTenant(ctx, interaction.client, { kinds: [kind] });
       await interaction.editReply({ embeds: [new EmbedBuilder().setColor(0x0bb0d1).setDescription(`✅ Ingestion done. Processed ${result.chunks} chunks from ${result.sources ?? 0} sources.`)] });
     } catch (err) {
-      await interaction.editReply({ embeds: [new EmbedBuilder().setColor(0xff3333).setDescription(`❌ Ingestion failed: ${err.message}`)] });
+      console.error('[ingest] run failed:', err);
+      await interaction.editReply({ embeds: [new EmbedBuilder().setColor(0xff3333).setDescription('❌ Ingestion failed. Check that your sources are reachable (`/wren sources list`) and try again — if it keeps failing, contact support.')] });
     }
     return null;
   }
 
   if (sub === 'status') {
     const sources = await listSources(interaction.guild.id);
-    const lines = sources.map((s) => `${s.lastIngestedAt ? '\u2705' : '\u23f3'} \`${s.kind}\` ${s.ref}${s.lastIngestedAt ? ` (last: ${s.lastIngestedAt.toISOString?.() ?? s.lastIngestedAt})` : ''}`);
-    return ephemeral(lines.length ? lines.join('\n') : 'No sources configured.');
+    if (!sources.length) return ephemeral('No sources configured. Add one with `/wren sources add`.');
+    const lines = sources.map((s) => {
+      const last = s.lastIngestedAt ? ` (last indexed <t:${Math.floor(new Date(s.lastIngestedAt).getTime() / 1000)}:R>)` : ' (never indexed)';
+      return `${s.lastIngestedAt ? '\u2705' : '\u23f3'} ${describeSource(s.kind, s.ref, s.label)}${last}`;
+    });
+    return listEphemeral(lines);
   }
 
   return ephemeral(`Unknown subcommand: ${sub}`);
@@ -269,7 +353,7 @@ export async function handleIngest(interaction, ctx) {
 import { Polar } from '@polar-sh/sdk';
 
 export async function handleUpgrade(interaction) {
-  if (!(await checkManageGuild(interaction))) return ephemeral('You need ManageGuild permission for this.');
+  if (!(await checkManageGuild(interaction))) return ephemeral('You need the **Manage Server** permission for this.');
   const { ctx } = await loadCtx(interaction);
   if (!ctx) return ephemeral('Server not set up.');
   const plan = interaction.options.getString('plan');
@@ -307,7 +391,12 @@ export async function handleUsage(interaction) {
   const used = ctx.tenant.monthlyMessageCount || 0;
   const limits = { free: 10, core: 1000, pro: 5000 };
   const limit = limits[tier] || 10;
-  return ephemeral(`You are currently on the **${tier.toUpperCase()}** plan.\nUsage this month: **${used} / ${limit}** messages.`);
+  const resetAt = ctx.tenant.billingCycleReset ? Math.floor(new Date(ctx.tenant.billingCycleReset).getTime() / 1000) : null;
+  return ephemeral(
+    `This server is on the **${tier.toUpperCase()}** plan.\n` +
+    `Messages used this cycle: **${used} / ${limit}**` +
+    (resetAt ? `\nUsage resets <t:${resetAt}:R> (<t:${resetAt}:D>).` : ''),
+  );
 }
 
 export async function handleManage(interaction) {
@@ -392,7 +481,7 @@ export async function dispatchGarminCommand(interaction) {
   const sub = interaction.options.getSubcommand();
 
   const readOnly = new Set([
-    'config:view', 'policy:view', 'sources:list',
+    'config:view', 'sources:list',
     'bans:list', 'memory:list', 'ingest:status',
     ':usage'
   ]);
@@ -421,7 +510,6 @@ export async function dispatchGarminCommand(interaction) {
       switch (group) {
         case 'config': reply = await handleConfig(interaction, ctx); break;
         case 'sources': reply = await handleSources(interaction, ctx); break;
-        case 'policy': reply = await handlePolicy(interaction, ctx); break;
         case 'bans': reply = await handleBans(interaction, ctx); break;
         case 'memory': reply = await handleMemory(interaction, ctx); break;
         case 'ingest': reply = await handleIngest(interaction, ctx); break;
@@ -438,32 +526,58 @@ export async function dispatchGarminCommand(interaction) {
 }
 
 function panelPayload(panel, ephemeralFlag = true) {
-  return { embeds: panel.embeds, components: panel.components, ephemeral: ephemeralFlag };
+  // content: '' clears any lingering "Saved …" confirmation from a previous
+  // edit when the user navigates elsewhere in the panel.
+  return { content: '', embeds: panel.embeds, components: panel.components, ephemeral: ephemeralFlag };
 }
 
 export async function handleMcp(interaction) {
   const { ctx } = await loadCtx(interaction);
   if (!ctx) return ephemeral('Server not set up.');
-  
+
+  // If a token already exists, don't rotate it on a bare command run — that
+  // would silently break the user's working agent setup. Ask first.
+  const existing = await query(
+    'SELECT 1 FROM user_mcp_tokens WHERE tenant_id = $1 AND discord_id = $2',
+    [interaction.guild.id, interaction.user.id],
+  );
+  if (existing.rows.length > 0) {
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`wren_mcp_regen:${interaction.guild.id}`)
+        .setLabel('Regenerate token')
+        .setStyle(ButtonStyle.Danger),
+    );
+    return {
+      embeds: [new EmbedBuilder()
+        .setColor(0x0bb0d1)
+        .setTitle('Wren MCP Access')
+        .setDescription('You already have an MCP token for this server.\n\n⚠️ Regenerating creates a new token and **immediately invalidates the old one** — any agent using it will stop working until you update its config.')],
+      components: [row],
+      ephemeral: true,
+    };
+  }
+
+  return issueMcpToken(ctx, interaction.guild.id, interaction.user.id);
+}
+
+export async function issueMcpToken(ctx, tenantId, discordId) {
   const rawToken = crypto.randomBytes(32).toString('base64url');
   const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
-  
-  const tenantId = interaction.guild.id;
-  const discordId = interaction.user.id;
-  
+
   await query(`
-    INSERT INTO user_mcp_tokens (tenant_id, discord_id, token_hash) 
+    INSERT INTO user_mcp_tokens (tenant_id, discord_id, token_hash)
     VALUES ($1, $2, $3)
-    ON CONFLICT (tenant_id, discord_id) 
+    ON CONFLICT (tenant_id, discord_id)
     DO UPDATE SET token_hash = $3, created_at = NOW(), last_used_at = NULL
   `, [tenantId, discordId, tokenHash]);
-  
+
   const embed = new EmbedBuilder()
     .setTitle('Wren MCP Access')
     .setColor(0x0bb0d1)
     .setDescription(`You have generated an MCP API key for this server (\`${ctx.tenant.displayName}\`). This gives your AI agents the same access you have in Discord!`)
     .addFields(
-      { name: 'Your MCP Token', value: `\`\`\`${rawToken}\`\`\`\n*Keep this secret. If you run this command again, the old token will be invalidated.*`, inline: false },
+      { name: 'Your MCP Token', value: `\`\`\`${rawToken}\`\`\`\n*Keep this secret. Regenerating a token invalidates the previous one.*`, inline: false },
       { name: 'Installation (Claude Desktop)', value: `1. Open your Claude Desktop config file (\`claude_desktop_config.json\`).\n2. Add the Wren MCP server:\n\`\`\`json\n"mcpServers": {\n  "wren-mcp": {\n    "command": "npx",\n    "args": [\n      "-y",\n      "mcp-proxy",\n      "--headers", "Authorization", "Bearer ${rawToken}",\n      "https://wrenapi.atriasafety.org/api/mcp/sse"\n    ]\n  }\n}\n\`\`\``, inline: false }
     );
     
@@ -474,12 +588,29 @@ export async function handleComponentInteraction(interaction) {
   const customId = interaction.customId || '';
   const [route, tenantId, fieldKey] = customId.split(':');
 
+  // The tenant id is carried in the component customId, but the permission
+  // check below runs against interaction.member (the guild the click actually
+  // came from). Refuse any component whose embedded tenant id isn't this guild,
+  // so a forged customId can't write another tenant's config/secrets using the
+  // clicker's rank in their own server.
+  if (!interaction.guild?.id || tenantId !== interaction.guild.id) {
+    return interaction.reply(ephemeral('This configuration control is not valid for this server.'));
+  }
+
   const ctx = await resolveTenantByGuildId(tenantId);
   if (!ctx) return interaction.reply(ephemeral('Server not set up.'));
 
+  // MCP token regeneration is not leadership-gated (any member can hold a
+  // token scoped to their own rank), so handle it before the rank check.
+  // The confirm prompt is an ephemeral message, so only its owner can click.
+  if (route === 'wren_mcp_regen') {
+    const payload = await issueMcpToken(ctx, tenantId, interaction.user.id);
+    return interaction.update({ ...payload, components: [] });
+  }
+
   const actorRankStr = resolveActorRank({ kind: 'discord', member: interaction.member, id: interaction.user?.id || 'unknown' }, ctx);
   if (RANK_ORDER[actorRankStr] < RANK_ORDER['leadership']) {
-    const err = ephemeral('You need the Leadership role for this.');
+    const err = needLeadership(ctx);
     if (interaction.replied || interaction.deferred) return interaction.followUp(err);
     return interaction.reply(err);
   }
@@ -505,17 +636,27 @@ export async function handleComponentInteraction(interaction) {
     return interaction.showModal(modal);
   }
 
-  if (route === 'wren_cfg_value') {
-    const rawValue = interaction.values;
-    if (!rawValue || rawValue.length === 0) return interaction.reply(ephemeral('No value selected.'));
+  // Applies an edit (or clear) and re-renders the field's category panel with
+  // a confirmation line, shared by the value-select, clear, and modal routes.
+  async function applyAndRerender(rawValue) {
     const result = await applyFieldEdit(tenantId, fieldKey, rawValue);
     if (!result.ok) {
-      return interaction.reply(ephemeral(`Error: ${result.error}`));
+      return interaction.reply(errorEphemeral(result.error));
     }
     const category = CONFIG_CATEGORY_FOR_FIELD[fieldKey];
     const panel = category ? await buildCategoryPanel(tenantId, category) : await buildMainPanel(tenantId);
     if (!panel) return;
     return interaction.update({ ...panelPayload(panel), content: result.message });
+  }
+
+  if (route === 'wren_cfg_value') {
+    const rawValue = interaction.values;
+    if (!rawValue || rawValue.length === 0) return interaction.reply(ephemeral('No value selected.'));
+    return applyAndRerender(rawValue);
+  }
+
+  if (route === 'wren_cfg_clear') {
+    return applyAndRerender(null);
   }
 
   if (route === 'wren_cfg_back') {
@@ -525,18 +666,13 @@ export async function handleComponentInteraction(interaction) {
   }
 
   if (route === 'wren_cfg_modal') {
+    // An empty submission is a deliberate clear, so only a missing component
+    // counts as "nothing submitted".
     const rawValue = extractModalValue(interaction);
     if (rawValue == null) {
       return interaction.reply(ephemeral('No value submitted.'));
     }
-    const result = await applyFieldEdit(tenantId, fieldKey, rawValue);
-    if (!result.ok) {
-      return interaction.reply(ephemeral(`Error: ${result.error}`));
-    }
-    const category = CONFIG_CATEGORY_FOR_FIELD[fieldKey];
-    const panel = category ? await buildCategoryPanel(tenantId, category) : await buildMainPanel(tenantId);
-    if (!panel) return;
-    return interaction.update({ ...panelPayload(panel), content: result.message });
+    return applyAndRerender(rawValue);
   }
 
   console.warn('[panel] unknown route:', route, customId);

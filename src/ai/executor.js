@@ -163,7 +163,7 @@ export async function executeTool(tenantCtx, name, args, actor) {
         if (actor?.kind !== 'discord') {
           return { success: false, error: 'log_punishment requires a Discord moderator.' };
         }
-        const r = await pow.logPunishment(tenantCtx, args.username, actor.member.id, args.type, args.reason);
+        const r = await pow.logPunishment(tenantCtx, args.username, actor.member.id, args.type, args.reason, args.moderator_roblox_username);
         result = { success: true, player: r.player, punishmentType: r.type, reason: r.reason };
         break;
       }

@@ -5,6 +5,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const ssrfMock = vi.hoisted(() => ({ assertPublicHttpUrlCached: vi.fn(async (u) => new URL(u)) }));
 vi.mock('../ai/ssrf.js', () => ({
   assertPublicHttpUrlCached: (...a) => ssrfMock.assertPublicHttpUrlCached(...a),
+  // prc.js passes this as the fetch dispatcher; the mock just needs to expose
+  // the binding so the named import resolves.
+  ssrfAgent: undefined,
 }));
 
 // prc.js keeps a module-level username cache; reimport fresh for each test so

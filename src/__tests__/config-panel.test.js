@@ -60,6 +60,7 @@ describe('config panel components', () => {
     const { handleComponentInteraction } = await import('../slash/handlers.js');
     const interaction = {
       customId: 'wren_cfg_modal:123456789012345678:displayName',
+      guild: { id: '123456789012345678' },
       member: { permissions: { has: () => true } },
       components: [{ components: [{ customId: 'value', value: 'New name' }] }],
       update: vi.fn(),
@@ -78,10 +79,29 @@ describe('config panel components', () => {
     });
   });
 
+  it('rejects a component whose embedded tenant id is not the interaction guild', async () => {
+    const { handleComponentInteraction } = await import('../slash/handlers.js');
+    const interaction = {
+      customId: 'wren_cfg_modal:999999999999999999:erlcServerKey',
+      guild: { id: '123456789012345678' }, // different from the customId tenant id
+      member: { permissions: { has: () => true } },
+      components: [{ components: [{ customId: 'value', value: 'super-secret-key' }] }],
+      update: vi.fn(),
+      reply: vi.fn(),
+    };
+
+    await handleComponentInteraction(interaction);
+
+    expect(mocks.applyFieldEdit).not.toHaveBeenCalled();
+    expect(interaction.update).not.toHaveBeenCalled();
+    expect(interaction.reply).toHaveBeenCalled();
+  });
+
   it('routes channel and role fields to message-level picker panels', async () => {
     const { handleComponentInteraction } = await import('../slash/handlers.js');
     const interaction = {
       customId: 'wren_cfg_field:123456789012345678',
+      guild: { id: '123456789012345678' },
       values: ['statusChannelId'],
       member: { permissions: { has: () => true } },
       showModal: vi.fn(),
@@ -94,6 +114,7 @@ describe('config panel components', () => {
     expect(mocks.buildValueSelectPanel).toHaveBeenCalledWith('123456789012345678', 'statusChannelId');
     expect(interaction.showModal).not.toHaveBeenCalled();
     expect(interaction.update).toHaveBeenCalledWith({
+      content: '',
       embeds: ['picker'],
       components: ['rows'],
       ephemeral: true,

@@ -38,6 +38,7 @@ const DEFAULT_POLICY = {
   summarize_chat: 'user',
   check_punishments: 'user',
   search_web: 'user',
+  read_webpage: 'user',
 };
 
 export function getDefaultPolicy() {
@@ -110,7 +111,8 @@ export async function setTenantSecret(tenantId, field, plain, encKey) {
   if (!['erlc_server_key', 'pow_token'].includes(field)) {
     throw new Error(`unknown secret field: ${field}`);
   }
-  const blob = encryptSecret(plain, encKey);
+  // null/empty clears the stored secret entirely.
+  const blob = plain == null || plain === '' ? null : encryptSecret(plain, encKey);
   const col = field === 'erlc_server_key' ? 'erlc_server_key_enc' : 'pow_token_enc';
   await query(`UPDATE tenants SET ${col} = $1, updated_at = NOW() WHERE tenant_id = $2`, [blob, tenantId]);
 }
@@ -309,6 +311,27 @@ export async function removeMemory(tenantId, id, userKey = null) {
   }
 }
 
+// ---------- staff links (verified Discord -> Roblox mapping for POW) ----------
+
+export async function getStaffLink({ tenantId, discordId }) {
+  const r = await query(
+    `SELECT roblox_user_id, roblox_username FROM tenant_staff_links WHERE tenant_id = $1 AND discord_id = $2`,
+    [tenantId, discordId],
+  );
+  if (!r.rows[0]) return null;
+  return { robloxUserId: r.rows[0].roblox_user_id, robloxUsername: r.rows[0].roblox_username };
+}
+
+export async function setStaffLink({ tenantId, discordId, robloxUserId, robloxUsername }) {
+  await query(
+    `INSERT INTO tenant_staff_links (tenant_id, discord_id, roblox_user_id, roblox_username)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (tenant_id, discord_id) DO UPDATE SET
+       roblox_user_id = EXCLUDED.roblox_user_id, roblox_username = EXCLUDED.roblox_username, verified_at = NOW()`,
+    [tenantId, discordId, String(robloxUserId), robloxUsername],
+  );
+}
+
 // ---------- processed events (idempotency) ----------
 
 export async function tryClaimEvent({ tenantId, eventId, ttlSeconds }) {
@@ -431,16 +454,41 @@ export async function revokeApiToken({ tenantId, tokenHash }) {
   );
 }
 
-export async function incrementMessageUsage(tenantId) {
+// `limit` caps how far monthly_message_count is allowed to climb once a tenant
+// is already over their plan's limit — without it, a blocked user re-sending
+// messages keeps incrementing the counter forever (harmless to the block
+// itself, since it's a simple `used > limit` check either way, but the
+// counter grows unbounded for no reason). Capping at limit+1 preserves the
+// exact same blocking behavior: once over, stays over, just no longer grows.
+export async function incrementMessageUsage(tenantId, limit) {
   const r = await query(
-    `UPDATE tenants SET 
-       monthly_message_count = CASE WHEN NOW() > billing_cycle_reset THEN 1 ELSE monthly_message_count + 1 END,
+    `UPDATE tenants SET
+       monthly_message_count = CASE
+         WHEN NOW() > billing_cycle_reset THEN 1
+         WHEN monthly_message_count > $2 THEN monthly_message_count
+         ELSE monthly_message_count + 1
+       END,
        monthly_voice_time_seconds = CASE WHEN NOW() > billing_cycle_reset THEN 0 ELSE monthly_voice_time_seconds END,
        billing_cycle_reset = CASE WHEN NOW() > billing_cycle_reset THEN NOW() + interval '1 month' ELSE billing_cycle_reset END
      WHERE tenant_id = $1 RETURNING monthly_message_count`,
-    [tenantId]
+    [tenantId, limit]
   );
   return r.rows[0]?.monthly_message_count || 0;
+}
+
+// Fresh read of the tenant's voice usage this cycle, straight from the DB
+// (not the 60s-cached tenant context). If the billing cycle has already
+// rolled over, the effective usage is 0. Used by the voice quota gate so
+// rapid back-to-back sessions can't overshoot the limit while the cache and
+// tenant context are stale.
+export async function getVoiceUsageSeconds(tenantId) {
+  const r = await query(
+    `SELECT CASE WHEN NOW() > billing_cycle_reset THEN 0
+                 ELSE monthly_voice_time_seconds END AS secs
+     FROM tenants WHERE tenant_id = $1`,
+    [tenantId],
+  );
+  return r.rows[0]?.secs ?? 0;
 }
 
 export async function incrementVoiceTime(tenantId, seconds) {
@@ -468,9 +516,9 @@ export async function updateSubscription(tenantId, tier, polarSubId = null, owne
   );
 }
 
+// Thin positional-args wrapper around audit() — kept as a separate name for
+// its existing call sites, but delegates so there's one INSERT path (target
+// column, JSON handling) instead of two that could drift apart.
 export async function logAudit(tenantId, actor, action, metadata = {}) {
-  await query(
-    'INSERT INTO audit_log (tenant_id, actor, action, metadata) VALUES ($1, $2, $3, $4)',
-    [tenantId, actor, action, metadata]
-  );
+  return audit({ tenantId, actor, action, metadata });
 }

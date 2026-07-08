@@ -4,11 +4,13 @@ Wren uses a simple role-based system to control who can use which tools. When so
 
 ## Setting Up Roles
 
-Before Wren can enforce permissions, you need to tell it which Discord roles in your server correspond to **leadership**, **admin**, and **mod**. Open the configuration panel with `/wren config view`, go to **Channels**, and set:
+Before Wren can enforce permissions, you need to tell it which Discord roles in your server correspond to **leadership**, **admin**, and **mod**. Open the configuration panel with `/wren config view`, go to **Channels & Roles**, and set:
 
 * **Leadership role** — Set this to the role you give everyone on your highest leadership team. Anyone with this role can use secure commands like managing memory, ingest, and managing bans.
-* **Admin role** — Set this to the role you give everyone on your admin team. Anyone with this role can do everything mods can, plus more sensitive actions like banning players. Wren also treats every role **above** the admin role in your server's role hierarchy as admin automatically.
+* **Admin role** — Set this to the role you give everyone on your admin team. Anyone with this role can do everything mods can, plus more sensitive actions like banning players.
 * **Mod role** — Set this to the role you give everyone on your moderation team. Anyone with this role can use everyday moderation tools like kicking players, teleporting, sending private messages, and logging punishments.
+
+For all three of these, Wren also treats every role positioned **above** the configured role in your server's role hierarchy as holding that same tier automatically — a role your server ranks above "Leadership", for instance, gets leadership access without being separately mapped.
 
 You do not need to set up any permission policies manually. Wren comes with sensible defaults the moment you run `/wren setup`.
 
@@ -16,7 +18,7 @@ You do not need to set up any permission policies manually. Wren comes with sens
 
 When someone talks to Wren and asks it to do something, Wren figures out their permission level by checking their Discord roles in this order:
 
-1. **Owner** — bypasses all permission checks.
+1. **Owner** — bypasses all permission checks. This tier is the server owner **and anyone with the Discord "Manage Server" (Manage Guild) permission** — Wren treats Manage Server holders as Owner-level, above your configured Leadership, Admin, and Mod roles. Grant Manage Server carefully.
 2. **Leadership role** — access to memory management, ingestion controls, and managing bans.
 3. **Admin role** (or Administrator permission) — access to sensitive moderation tools, like banning players.
 4. **Mod role** — access to standard moderation tools like kicks, teleports, and private messages.
@@ -53,7 +55,6 @@ If someone has the Mod role, Wren will allow them to:
 * **Get a player profile** — a comprehensive report on a specific player, including their inventory, location, vehicles, team, and recent activity
 * **Get active vehicles** — list all spawned vehicles in the server
 * **Purge messages** from a Discord channel
-* **Save server-wide memories** (facts everyone can see)
 
 ### Admin Role
 
@@ -79,7 +80,7 @@ These mass-action tools are restricted to people with the Discord **Manage Guild
 
 ## Overriding Defaults
 
-If the default permission levels do not fit your server, you can change them. Use `/wren policy view` to see the current policy, and ask a developer to adjust individual tool policies in the database. Each tool can be set to any level: `user`, `mod`, `admin`, `leadership`, or `owner`.
+If the default permission levels do not fit your server, you can change them. Open `/wren config view` and pick the **Policy** category to see which rank each tool requires, and ask a developer to adjust individual tool policies in the database. Each tool can be set to any level: `user`, `mod`, `admin`, `leadership`, or `owner`.
 
 ---
 

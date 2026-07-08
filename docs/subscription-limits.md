@@ -8,16 +8,18 @@ This guide explains how limits work, how to check your usage, and what happens w
 
 ## Checking Your Usage
 
-Server Owners and Admins can check the server's current usage and subscription status at any time by typing:
+Anyone can check the server's current usage and subscription status at any time by typing:
 ```
-/wren billing status
+/wren usage
 ```
 
 This will output:
-1. Your current Plan Tier (Free, Core, or Pro).
-2. The number of messages you have used this month.
-3. Your total monthly message limit.
-4. When your billing cycle resets.
+1. The server's current Plan Tier (Free, Core, or Pro).
+2. The number of messages the server has used this cycle.
+3. The server's total monthly message limit.
+4. When the billing cycle resets.
+
+For subscription management (billing portal, cancelling, payment details), use `/wren manage`.
 
 ---
 
@@ -30,7 +32,7 @@ Your monthly message limit applies to the number of times Wren has to generate a
 - Replying to a user in a Voice Channel.
 
 **This DOES NOT include:**
-- Running slash commands (like `/wren config` or `/wren sources list`).
+- Running slash commands (like `/wren config view` or `/wren sources list`).
 - Background ingestion (when Wren reads your server documentation).
 - Moderation actions (like automatically punishing a raider).
 
@@ -56,7 +58,7 @@ If your server reaches its monthly message cap or voice chat limit, Wren will te
 When a user tries to talk to Wren, the bot will politely inform them that the server has reached its AI limits for the month. 
 
 To restore service, the Server Owner can either:
-1. Wait for the billing cycle to reset (shown in `/wren billing status`).
-2. Upgrade to a higher tier using `/wren billing upgrade`.
+1. Wait for the billing cycle to reset (shown in `/wren usage`).
+2. Upgrade to a higher tier using `/wren upgrade`.
 
 *Note: Upgrading is prorated. If you upgrade mid-month, you will only be charged for the remainder of the month, and your new limits will be applied immediately.*

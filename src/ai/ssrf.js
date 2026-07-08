@@ -1,5 +1,6 @@
 import dns from 'dns';
 import net from 'net';
+import { Agent } from 'undici';
 
 const BLOCKED_HOSTNAMES = new Set(['localhost', 'metadata.google.internal']);
 
@@ -107,6 +108,15 @@ function stripIPv6Brackets(hostname) {
     : hostname;
 }
 
+// A trailing DNS root-zone dot ("localhost.") is semantically identical to
+// the same name without it — the resolver treats them the same — but a naive
+// string comparison against BLOCKED_HOSTNAMES doesn't, so "localhost." would
+// skip the fast-path denylist. Stripped once here so every hostname-based
+// check (denylist, cache key) sees the normalized form.
+function normalizeHostname(hostname) {
+  return hostname.replace(/\.+$/, '');
+}
+
 /**
  * Resolves and validates a URL before it is fetched server-side, blocking
  * requests to loopback/link-local/private/cloud-metadata addresses to
@@ -123,7 +133,7 @@ export async function assertPublicHttpUrl(urlStr) {
   if (!['http:', 'https:'].includes(url.protocol)) {
     throw new Error('Only http/https URLs are allowed');
   }
-  const rawHostname = url.hostname.toLowerCase();
+  const rawHostname = normalizeHostname(url.hostname.toLowerCase());
   if (BLOCKED_HOSTNAMES.has(rawHostname)) {
     throw new Error('URL host is not allowed');
   }
@@ -159,7 +169,7 @@ export async function assertPublicHttpUrlCached(urlStr) {
   } catch {
     throw new Error('Invalid URL');
   }
-  const key = url.hostname.toLowerCase();
+  const key = normalizeHostname(url.hostname.toLowerCase());
   const cached = hostCheckCache.get(key);
   if (cached && cached.expiresAt > Date.now()) {
     if (!cached.ok) throw new Error('URL resolves to a private/internal address');
@@ -175,6 +185,33 @@ export async function assertPublicHttpUrlCached(urlStr) {
   }
 }
 
+// DNS-rebinding defence. assertPublicHttpUrl resolves + validates a hostname,
+// but a plain fetch() then does its OWN, second DNS resolution to open the
+// socket — an attacker-controlled resolver can answer public on the first
+// lookup and 169.254.169.254 (or any internal IP) on the second (a TOCTOU
+// rebind). This lookup runs at connect time and re-validates every address the
+// resolver actually returns, so the IP the socket connects to is the same one
+// that passed validation. IP-literal hosts never reach here (net.isIP short-
+// circuits in assertPublicHttpUrl and undici skips lookup for literals).
+function validatingLookup(hostname, options, callback) {
+  dns.lookup(hostname, { ...options, all: true }, (err, addresses) => {
+    if (err) return callback(err);
+    const list = Array.isArray(addresses) ? addresses : [addresses];
+    for (const a of list) {
+      if (isPrivateIp(a.address)) {
+        return callback(new Error('URL resolves to a private/internal address'));
+      }
+    }
+    if (options && options.all) return callback(null, list);
+    return callback(null, list[0].address, list[0].family);
+  });
+}
+
+// Shared dispatcher that pins outbound SSRF-guarded fetches to the
+// connect-time-validated address. Exported so integration fetches (PRC/POW)
+// can opt into the same protection.
+export const ssrfAgent = new Agent({ connect: { lookup: validatingLookup } });
+
 /**
  * Fetches a URL while re-validating every redirect hop against
  * assertPublicHttpUrl, so an attacker can't bypass the SSRF guard by
@@ -184,7 +221,7 @@ export async function safeFetch(urlStr, { maxRedirects = 3, ...fetchOpts } = {})
   let current = urlStr;
   for (let hop = 0; hop <= maxRedirects; hop++) {
     const url = await assertPublicHttpUrl(current);
-    const resp = await fetch(url, { ...fetchOpts, redirect: 'manual' });
+    const resp = await fetch(url, { ...fetchOpts, dispatcher: ssrfAgent, redirect: 'manual' });
     if ([301, 302, 303, 307, 308].includes(resp.status)) {
       const location = resp.headers.get('location');
       if (!location) return resp;

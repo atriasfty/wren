@@ -31,6 +31,7 @@ describe('ingameBridge - pollModcallsFor', () => {
     pollModcallsFor = mod.pollModcallsFor;
     playerSessions = mod.playerSessions;
     playerSessions.clear();
+    mod.lastPollTs.clear();
 
     tenantCtx = {
       tenantId: 'guild-123',
@@ -118,7 +119,7 @@ describe('ingameBridge - pollModcallsFor', () => {
     });
   });
 
-  it('continues processing subsequent modcalls if runAssistantPipeline throws an error on one', async () => {
+  it('continues processing subsequent modcalls if runAssistantPipeline throws an error on one, and notifies the failed player', async () => {
     mocks.getModcalls.mockResolvedValue([
       { callerName: 'Player1', message: ':pm wren first question', timestamp: 100 },
       { callerName: 'Player2', message: ':pm wren second question', timestamp: 101 },
@@ -131,13 +132,61 @@ describe('ingameBridge - pollModcallsFor', () => {
     await pollModcallsFor(tenantCtx);
 
     expect(mocks.runAssistantPipeline).toHaveBeenCalledTimes(2);
-    expect(mocks.executeTool).toHaveBeenCalledTimes(1);
+    expect(mocks.executeTool).toHaveBeenCalledTimes(2);
+    expect(mocks.executeTool).toHaveBeenCalledWith(
+      tenantCtx,
+      'send_pm',
+      { username: 'Player1', message: 'Sorry, something went wrong processing your request. Please try again.' },
+      { kind: 'system' }
+    );
     expect(mocks.executeTool).toHaveBeenCalledWith(
       tenantCtx,
       'send_pm',
       { username: 'Player2', message: 'Hello back' },
       { kind: 'system' }
     );
+  });
+
+  it('retries a failed modcall on the next sweep instead of silently dropping it forever', async () => {
+    mocks.getModcalls.mockResolvedValueOnce([
+      { callerName: 'Player1', message: ':pm wren first question', timestamp: 100 },
+    ]);
+    mocks.runAssistantPipeline.mockRejectedValueOnce(new Error('transient failure'));
+
+    await pollModcallsFor(tenantCtx);
+
+    // The cursor must not have advanced past the failed modcall's timestamp.
+    mocks.getModcalls.mockResolvedValueOnce([
+      { callerName: 'Player1', message: ':pm wren first question', timestamp: 100 },
+    ]);
+    mocks.runAssistantPipeline.mockResolvedValueOnce({ text: 'answer on retry' });
+
+    await pollModcallsFor(tenantCtx);
+
+    expect(mocks.getModcalls.mock.calls[1][1].sinceTs).toBeLessThan(100);
+    expect(mocks.runAssistantPipeline).toHaveBeenCalledTimes(2);
+    expect(mocks.executeTool).toHaveBeenCalledWith(
+      tenantCtx,
+      'send_pm',
+      { username: 'Player1', message: 'answer on retry' },
+      { kind: 'system' }
+    );
+  });
+
+  it('does not let an earlier failure block a later, independent modcall in the same sweep', async () => {
+    mocks.getModcalls.mockResolvedValue([
+      { callerName: 'Player1', message: ':pm wren first question', timestamp: 100 },
+      { callerName: 'Player2', message: ':pm wren second question', timestamp: 101 },
+    ]);
+    mocks.runAssistantPipeline
+      .mockRejectedValueOnce(new Error('LLM rate limit error'))
+      .mockResolvedValueOnce({ text: 'Hello back' });
+
+    await pollModcallsFor(tenantCtx);
+
+    // Both were attempted in this sweep even though the first failed.
+    expect(mocks.runAssistantPipeline).toHaveBeenNthCalledWith(1, tenantCtx, expect.objectContaining({ question: 'first question' }));
+    expect(mocks.runAssistantPipeline).toHaveBeenNthCalledWith(2, tenantCtx, expect.objectContaining({ question: 'second question' }));
   });
 
   it('handles empty timestamps or missing timestamp fields in modcall list safely', async () => {

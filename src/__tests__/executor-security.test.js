@@ -39,6 +39,7 @@ vi.mock('../integrations/brave.js', () => ({
 
 vi.mock('../ai/ssrf.js', () => ({
   safeFetch: (...a) => mocks.safeFetch(...a),
+  ssrfAgent: undefined,
 }));
 
 vi.mock('../discord/client.js', () => ({
@@ -225,6 +226,21 @@ describe('executeTool security boundaries', () => {
       const result = await executeTool(ctx, 'read_webpage', { urls: ['http://10.0.0.1/', 'https://example.com/'] }, memberActor());
       expect(result.results[0].error).toMatch(/private\/internal/);
       expect(result.results[1].content).toContain('ok');
+    });
+
+    it('allows read_webpage to a plain user under the default policy', async () => {
+      mocks.safeFetch.mockResolvedValue({ ok: true, text: async () => '<p>hi</p>' });
+      const ctx = ctxWithPolicy(getDefaultPolicy());
+      const result = await executeTool(ctx, 'read_webpage', { urls: ['https://example.com/'] }, memberActor());
+      expect(result.success).toBe(true);
+    });
+
+    it('is now actually gated: denies read_webpage when tenant policy requires leadership', async () => {
+      const ctx = ctxWithPolicy({ read_webpage: 'leadership' });
+      const result = await executeTool(ctx, 'read_webpage', { urls: ['https://example.com/'] }, memberActor());
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/Permission denied/);
+      expect(mocks.safeFetch).not.toHaveBeenCalled();
     });
   });
 

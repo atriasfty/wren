@@ -1,4 +1,4 @@
-import { assertPublicHttpUrlCached } from '../ai/ssrf.js';
+import { assertPublicHttpUrlCached, ssrfAgent } from '../ai/ssrf.js';
 
 function baseUrl(tenantCtx) {
   return tenantCtx.tenant.prcBaseUrl || process.env.PRC_BASE_URL || 'https://api.erlc.gg/v1';
@@ -8,7 +8,8 @@ function baseUrl(tenantCtx) {
 // before sending the tenant's server key to it (SSRF guard).
 async function guardedFetch(urlStr, opts) {
   await assertPublicHttpUrlCached(urlStr);
-  return fetch(urlStr, opts);
+  // Pin the socket to a connect-time-validated address (DNS-rebind defence).
+  return fetch(urlStr, { ...opts, dispatcher: ssrfAgent });
 }
 
 function serverKey(tenantCtx) {

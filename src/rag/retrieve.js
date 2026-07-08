@@ -1,14 +1,14 @@
 import { embedText } from './embed.js';
 import { readVectorStore } from './store.js';
 
-function cosine(a, b) {
-  let dot = 0, ma = 0, mb = 0;
+// Vectors are normalized to length 1 by `@xenova/transformers`,
+// so cosine similarity is exactly equal to the dot product.
+function dotProduct(a, b) {
+  let dot = 0;
   for (let i = 0; i < a.length; i++) {
     dot += a[i] * b[i];
-    ma += a[i] * a[i];
-    mb += b[i] * b[i];
   }
-  return dot / (Math.sqrt(ma) * Math.sqrt(mb) + 1e-12);
+  return dot;
 }
 
 export async function retrieveSources(tenantCtx, question, topK = 8, { minSimilarity = 0.05 } = {}) {
@@ -21,7 +21,7 @@ export async function retrieveSources(tenantCtx, question, topK = 8, { minSimila
   const scored = store.chunks
     .map((c) => {
       const w = sourceWeight.get(`${c.sourceKind}:${c.sourceRef}`) ?? 1.0;
-      return { chunk: c, score: cosine(q, c.embedding) * w };
+      return { chunk: c, score: dotProduct(q, c.embedding) * w };
     })
     .filter((s) => s.score > minSimilarity)
     .sort((a, b) => b.score - a.score)

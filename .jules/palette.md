@@ -1,0 +1,3 @@
+## 2024-10-25 - Explicit Focus States for Tailwind Interactive Elements
+**Learning:** In this application's Tailwind UI configuration, standard interactive elements (like summary tags, range inputs, and custom buttons) do not automatically inherit visible focus rings, which causes keyboard navigation to be visually untrackable.
+**Action:** Always explicitly include `focus-visible` utility classes (e.g., `focus-visible:ring-2`, `focus-visible:ring-primary`) on all interactive frontend elements, and explicitly bind form controls to their labels via `for` attributes to guarantee robust keyboard accessibility.

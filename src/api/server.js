@@ -227,6 +227,7 @@ export async function createApiServer(client) {
     const { question, channelContext = null, imageUrls = [] } = req.body || {};
     if (!question || typeof question !== 'string') return res.status(400).json({ error: 'question required' });
     if (question.length > 4000) return res.status(400).json({ error: 'question too long (max 4000 chars)' });
+    if (imageUrls != null && !Array.isArray(imageUrls)) return res.status(400).json({ error: 'imageUrls must be an array of URLs' });
     try {
       const result = await runAssistantPipeline(req.tenantCtx, {
         question,

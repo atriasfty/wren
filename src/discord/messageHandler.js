@@ -110,7 +110,11 @@ export function attachMessageHandler(client) {
 
     let tenantCtx = await resolveTenantByGuildId(message.guild.id);
     if (!tenantCtx && isDirectlyMentioned(message, client.user.id)) {
-      return message.reply('⚠️ This server is not configured with Wren yet. An admin must run `/wren setup` first.');
+      // A failed reply (e.g. missing SendMessages in this channel) must never
+      // escape this listener — index.js exits the process on any unhandled
+      // rejection, so an unguarded reply lets any user crash the whole bot.
+      try { await message.reply('⚠️ This server is not configured with Wren yet. An admin must run `/wren setup` first.'); } catch {}
+      return;
     } else if (!tenantCtx) {
       return;
     }
@@ -181,15 +185,19 @@ export function attachMessageHandler(client) {
       } catch {}
     }
 
-    // Check global pause
+    // Check global pause. The `return` must not live inside the try with the
+    // reply: if the reply throws (e.g. missing permissions), the catch would
+    // swallow it and processing would continue — bypassing the pause.
+    let globallyPaused = false;
     try {
       const stateRes = await query("SELECT value FROM global_state WHERE key = 'paused'");
-      if (stateRes.rows[0]?.value?.paused) {
-        await message.reply('Wren is currently undergoing maintenance and is paused globally. Please try again later.');
-        return;
-      }
+      globallyPaused = !!stateRes.rows[0]?.value?.paused;
     } catch (e) {
       console.error('[message] Global pause check error:', e);
+    }
+    if (globallyPaused) {
+      try { await message.reply('Wren is currently undergoing maintenance and is paused globally. Please try again later.'); } catch {}
+      return;
     }
 
     // Check global ban
@@ -241,7 +249,12 @@ export function attachMessageHandler(client) {
     }
 
     const question = replyContext + stripMention(message.content, client.user.id);
-    if (!question || question.trim() === '') return;
+    if (!question || question.trim() === '') {
+      // A bare mention with no text is usually someone poking the bot for the
+      // first time — silence here reads as "broken". Point them at how to ask.
+      try { await message.reply('Hi! Ask me something — e.g. `@Wren who’s online?` or `@Wren what are the server rules?`'); } catch {}
+      return;
+    }
 
     // Drop duplicate requests from the same user while one is in progress.
     const userId = message.author.id;

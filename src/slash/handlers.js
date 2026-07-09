@@ -103,8 +103,10 @@ export async function handleSetup(interaction) {
     ownerDiscordId: interaction.guild.ownerId,
     encKey: cfg.tenantSecretEncKey,
   });
+  // Overridable so a redeploy on a different host doesn't ship a wrong IP.
+  const egressIp = process.env.WREN_EGRESS_IP || '152.53.21.47';
   return {
-    embeds: [new EmbedBuilder().setColor(0x0bb0d1).setDescription("✅ **Wren is now configured for this server!**\n\n⚠️ **IMPORTANT**: You must whitelist Wren's IP (`152.53.21.47`) in your ERLC server dashboard (https://api.erlc.gg/server-owners), otherwise Wren won't be able to connect or perform any actions.\n\nYou can now use `/wren config view` to set up your channels, API keys, and options.\nBe sure to check out the setup guide at **https://wren.atriasafety.org** to learn how to add knowledge sources.")],
+    embeds: [new EmbedBuilder().setColor(0x0bb0d1).setDescription(`✅ **Wren is now configured for this server!**\n\n⚠️ **IMPORTANT**: You must whitelist Wren's IP (\`${egressIp}\`) in your ERLC server dashboard (https://api.erlc.gg/server-owners), otherwise Wren won't be able to connect or perform any actions.\n\nYou can now use \`/wren config view\` to set up your channels, API keys, and options.\nBe sure to check out the setup guide at **https://wren.atriasafety.org** to learn how to add knowledge sources.`)],
     ephemeral: false
   };
 }
@@ -327,12 +329,28 @@ export async function handleIngest(interaction, ctx) {
       .setDescription('Starting ingestion…\n\n*This may take a few minutes depending on how many sources are configured and how much content they contain.*');
 
     await interaction.reply({ embeds: [initialEmbed], ephemeral: true });
+
+    // Interaction tokens die after 15 minutes and big ingestions can exceed
+    // that — if editReply fails, fall back to posting in the channel so the
+    // outcome is never silently lost.
+    async function reportOutcome(embed) {
+      try {
+        await interaction.editReply({ embeds: [embed] });
+      } catch {
+        await interaction.channel?.send({
+          content: `<@${interaction.user.id}>`,
+          embeds: [embed],
+          allowedMentions: { users: [interaction.user.id] },
+        }).catch((err) => console.error('[ingest] failed to report outcome:', err.message));
+      }
+    }
+
     try {
       const result = await ingestTenant(ctx, interaction.client, { kinds: [kind] });
-      await interaction.editReply({ embeds: [new EmbedBuilder().setColor(0x0bb0d1).setDescription(`✅ Ingestion done. Processed ${result.chunks} chunks from ${result.sources ?? 0} sources.`)] });
+      await reportOutcome(new EmbedBuilder().setColor(0x0bb0d1).setDescription(`✅ Ingestion done. Processed ${result.chunks} chunks from ${result.sources ?? 0} sources.`));
     } catch (err) {
       console.error('[ingest] run failed:', err);
-      await interaction.editReply({ embeds: [new EmbedBuilder().setColor(0xff3333).setDescription('❌ Ingestion failed. Check that your sources are reachable (`/wren sources list`) and try again — if it keeps failing, contact support.')] });
+      await reportOutcome(new EmbedBuilder().setColor(0xff3333).setDescription('❌ Ingestion failed. Check that your sources are reachable (`/wren sources list`) and try again — if it keeps failing, contact support.'));
     }
     return null;
   }
@@ -373,8 +391,9 @@ export async function handleUpgrade(interaction) {
       metadata: { tenantId: interaction.guild.id, ownerId: interaction.user.id },
       customerMetadata: { discordId: interaction.user.id }
     };
+    const smallServerDiscountId = process.env.POLAR_SMALL_SERVER_DISCOUNT_ID || '5549ff1d-7616-45e7-ad0b-ba68937274a0';
     if (isSmallServer) {
-      checkoutBody.discountId = '5549ff1d-7616-45e7-ad0b-ba68937274a0';
+      checkoutBody.discountId = smallServerDiscountId;
     }
     const checkout = await polar.checkouts.create(checkoutBody);
     return ephemeral(`Here is your checkout link for the **${plan.toUpperCase()}** plan${isSmallServer ? ' (with your 25% discount applied!)' : ''}:\n${checkout.url}`);
@@ -388,13 +407,19 @@ export async function handleUsage(interaction) {
   const { ctx } = await loadCtx(interaction);
   if (!ctx) return ephemeral('Server not set up.');
   const tier = ctx.tenant.subscriptionTier || 'free';
-  const used = ctx.tenant.monthlyMessageCount || 0;
   const limits = { free: 10, core: 1000, pro: 5000 };
   const limit = limits[tier] || 10;
+  // The counter is allowed to reach limit+1 internally (see
+  // incrementMessageUsage) — clamp for display so users never see "11 / 10".
+  const used = Math.min(ctx.tenant.monthlyMessageCount || 0, limit);
+  const voiceLimits = { free: 2, core: 30, pro: 120 };
+  const voiceLimitMins = voiceLimits[tier] || 2;
+  const voiceUsedMins = Math.min(Math.round((ctx.tenant.monthlyVoiceTimeSeconds || 0) / 60), voiceLimitMins);
   const resetAt = ctx.tenant.billingCycleReset ? Math.floor(new Date(ctx.tenant.billingCycleReset).getTime() / 1000) : null;
   return ephemeral(
     `This server is on the **${tier.toUpperCase()}** plan.\n` +
-    `Messages used this cycle: **${used} / ${limit}**` +
+    `Messages used this cycle: **${used} / ${limit}**\n` +
+    `Voice minutes used this cycle: **${voiceUsedMins} / ${voiceLimitMins}**` +
     (resetAt ? `\nUsage resets <t:${resetAt}:R> (<t:${resetAt}:D>).` : ''),
   );
 }
@@ -476,7 +501,7 @@ export async function handleManage(interaction) {
   return { embeds: [new EmbedBuilder().setColor(0x0bb0d1).setDescription(message)], components, ephemeral: true };
 }
 
-export async function dispatchGarminCommand(interaction) {
+export async function dispatchWrenCommand(interaction) {
   const group = interaction.options.getSubcommandGroup();
   const sub = interaction.options.getSubcommand();
 

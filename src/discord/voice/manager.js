@@ -205,6 +205,10 @@ async function joinChannel(interaction) {
     return voiceReply(`Joined <#${channel.id}>. Wren is now listening — say **"Hey Wren"** to activate.`);
   } catch (err) {
     console.error('[voice] Join failed:', err);
+    // The connection is created before the wake-word model loads — if anything
+    // after joinVoiceChannel throws, tear it down so the bot doesn't sit in the
+    // channel, deaf, while the user is told the join failed.
+    try { teardownGuildVoice(channel.guild.id); } catch {}
     return voiceReply('Failed to join the voice channel. Please try again in a moment — if it keeps failing, contact support.');
   }
 }
@@ -428,6 +432,20 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
     
     if (voiceSecs >= maxVoiceSecs) {
       console.log(`[voice] User ${userId} hit wake word, but tenant ${guildId} is out of voice minutes.`);
+      // Silence here looks like a broken bot — tell the channel what's going
+      // on, at most once per 10 minutes so repeated wake words don't spam.
+      const now = Date.now();
+      if (!state.quotaNoticeAt || now - state.quotaNoticeAt > 10 * 60 * 1000) {
+        state.quotaNoticeAt = now;
+        try {
+          const chatChannel = state.guild.channels.cache.get(state.channelId);
+          await chatChannel?.send(
+            `⚠️ I heard the wake word, but this server has used all **${Math.round(maxVoiceSecs / 60)}** voice minutes included in its **${tier.toUpperCase()}** plan this cycle. A server manager can run \`/wren upgrade\` to raise the limit, or \`/wren usage\` to see when it resets.`
+          );
+        } catch (err) {
+          console.warn('[voice] Failed to send voice-quota notice:', err.message);
+        }
+      }
       return;
     }
 
@@ -744,6 +762,11 @@ export async function handleVoiceStateUpdate(oldState, newState) {
       state.owwModelLoading = true;
       try {
         state.owwModel = await createWakeWordModel();
+      } catch (err) {
+        // Must not propagate: this runs inside the voiceStateUpdate listener,
+        // and index.js exits the process on any unhandled rejection. A failed
+        // load leaves owwModel null; the next voiceStateUpdate retries.
+        console.error(`[voice] Failed to reload wake word model for ${guildId}:`, err);
       } finally {
         state.owwModelLoading = false;
       }

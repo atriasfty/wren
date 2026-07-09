@@ -30,6 +30,7 @@ vi.mock('../config.js', () => ({
 
 vi.mock('../tenant/store.js', () => ({
   incrementMessageUsage: vi.fn().mockResolvedValue(1),
+  decrementMessageUsage: vi.fn().mockResolvedValue(undefined),
   addMemory: vi.fn(),
 }));
 

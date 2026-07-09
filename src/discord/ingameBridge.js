@@ -53,8 +53,13 @@ export async function pollModcallsFor(tenantCtx) {
     // Strip the leading PM command if present to get the target and message
     const cleanText = text.replace(HANDLE_PREFIX_RE, '').trim();
 
-    // Check if the message is directed to the bot
-    if (!cleanText.toLowerCase().startsWith(botName)) { maxHandledTs = Math.max(maxHandledTs, ts); continue; }
+    // Check if the message is directed to the bot. The name must be followed
+    // by whitespace or end-of-string — a bare startsWith would hijack PMs to
+    // players whose names merely begin with the bot's name (":pm wrenathan hi").
+    const lowerClean = cleanText.toLowerCase();
+    const addressedToBot = lowerClean === botName ||
+      (lowerClean.startsWith(botName) && /\s/.test(cleanText.charAt(botName.length)));
+    if (!addressedToBot) { maxHandledTs = Math.max(maxHandledTs, ts); continue; }
 
     const playerName = m.callerName || m.playerName;
     if (!playerName) { maxHandledTs = Math.max(maxHandledTs, ts); continue; }
@@ -139,6 +144,9 @@ export function attachIngameBridge(client) {
       const cfg = loadConfig();
       const tenants = await listTenants(cfg.tenantSecretEncKey);
       for (const t of tenants) {
+        // Tenants without an ERLC key can't have modcalls — skip them instead
+        // of throwing inside getModcalls on every sweep.
+        if (!t.erlcServerKey) continue;
         const ctx = await resolveTenantById(t.tenantId);
         if (!ctx) continue;
         try {
@@ -152,7 +160,7 @@ export function attachIngameBridge(client) {
     } finally {
       polling = false;
     }
-  }, 15_000);
+  }, 30_000);
 
   // Periodically clean up expired player sessions
   setInterval(() => {

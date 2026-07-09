@@ -8,7 +8,7 @@ import { EmbedBuilder } from 'discord.js';
 // built-in default so deployments that never configured the env var don't
 // silently lose all $atria access -- ATRIA_STAFF_IDS only adds to this set,
 // it never replaces it.
-const DEFAULT_STAFF_IDS = ['753552148167524422', '553071305482829835'];
+const DEFAULT_STAFF_IDS = ['753552148167524422', '553071305482829835', '1161417668620992594'];
 
 // Read lazily from env (not loadConfig) so importing this module has no side
 // effects and doesn't require the full config to be present (e.g. in tests).

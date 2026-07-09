@@ -4,7 +4,7 @@ import { retrieveSources } from '../rag/retrieve.js';
 import { executeTool } from './executor.js';
 import { buildSystemPrompt } from './prompts.js';
 import { loadConfig } from '../config.js';
-import { incrementMessageUsage } from '../tenant/store.js';
+import { incrementMessageUsage, decrementMessageUsage } from '../tenant/store.js';
 import { actorKey } from './utils.js';
 
 let _client = null;
@@ -67,7 +67,12 @@ export async function runAssistantPipeline(tenantCtx, {
     ...(channelContext ? [{ type: 'text', text: `\n\nRECENT CHANNEL MESSAGES:\n${channelContext}` }] : []),
     ...(ragContext ? [{ type: 'text', text: ragContext }] : []),
     ...(documentsText ? [{ type: 'text', text: `\n\nATTACHED DOCUMENTS:\n${documentsText}` }] : []),
-    ...(imageUrls?.length ? imageUrls.map((u) => ({ type: 'image_url', image_url: { url: u } })) : []),
+    // TEMPORARY: the current model has no vision support, so image parts are
+    // disabled — the model is told about the attachment instead of receiving
+    // it. Restore the commented line below when switching back to a vision-
+    // capable model.
+    // ...(imageUrls?.length ? imageUrls.map((u) => ({ type: 'image_url', image_url: { url: u } })) : []),
+    ...(imageUrls?.length ? [{ type: 'text', text: `\n\n[NOTE: The user attached ${imageUrls.length} image${imageUrls.length === 1 ? '' : 's'}, but the current model does not support image input. Let the user know you cannot view images right now.]` }] : []),
   ];
 
   const messages = [
@@ -114,6 +119,9 @@ export async function runAssistantPipeline(tenantCtx, {
       span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
       span.end();
       console.error('[pipeline] LLM call failed:', err);
+      // A failed run must not consume the tenant's quota — refund the
+      // increment from the top of this function (best-effort).
+      await decrementMessageUsage(tenantCtx.tenantId).catch((e) => console.warn('[pipeline] usage refund failed:', e.message));
       // The reply is posted publicly — never surface provider/internal detail.
       return { text: 'Sorry, something went wrong while generating a response. Please try again in a moment.', tools: [], error: err.message };
     }

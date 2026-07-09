@@ -21,7 +21,7 @@ function rejectTarget(username) {
   if (!username) return null;
   const t = username.toLowerCase().trim();
   if (BANNED_TARGETS.has(t)) return 'Mass actions are not allowed. Specify a single player.';
-  if (t === 'garmin' || t === 'wren' || t === 'bot') return 'Cannot target the bot.';
+  if (t === 'garmin' || t === 'wren' || t === 'bot') return `Refusing to target "${username}" — that name is reserved to stop the bot from being targeted. If a real player genuinely has this exact name, a staff member must action them manually in-game.`;
   if (t.length < 2) return 'Target username too short.';
   if (/^\d+$/.test(username)) return 'That looks like a Discord ID, not a Roblox username.';
   return null;
@@ -306,7 +306,7 @@ export async function executeTool(tenantCtx, name, args, actor) {
         const logs = await prc.getCommandLogs(tenantCtx);
         const term = args.username?.toLowerCase();
         const filtered = term ? logs.filter((l) => l.playerName.toLowerCase().includes(term)) : logs;
-        const sorted = filtered.sort((a, b) => b.timestamp - a.timestamp).slice(0, args.limit || 10);
+        const sorted = filtered.sort((a, b) => b.timestamp - a.timestamp).slice(0, clampPositiveInt(args.limit, 10, 100));
         result = {
           success: true,
           logs: sorted.map((l) => ({ player: l.playerName, command: l.command, timestamp: new Date(l.timestamp * 1000).toISOString() })),

@@ -460,6 +460,11 @@ export async function revokeApiToken({ tenantId, tokenHash }) {
 // itself, since it's a simple `used > limit` check either way, but the
 // counter grows unbounded for no reason). Capping at limit+1 preserves the
 // exact same blocking behavior: once over, stays over, just no longer grows.
+// On cycle rollover, tenants without a Polar subscription drop back to free:
+// a paid tier with no polar_subscription_id only exists via a manual
+// `$atria billing upgrade <tier> <duration>`, whose expiry IS
+// billing_cycle_reset. Polar-managed tenants keep their tier — downgrades for
+// those come from the subscription.canceled webhook.
 export async function incrementMessageUsage(tenantId, limit) {
   const r = await query(
     `UPDATE tenants SET
@@ -469,11 +474,23 @@ export async function incrementMessageUsage(tenantId, limit) {
          ELSE monthly_message_count + 1
        END,
        monthly_voice_time_seconds = CASE WHEN NOW() > billing_cycle_reset THEN 0 ELSE monthly_voice_time_seconds END,
+       subscription_tier = CASE WHEN NOW() > billing_cycle_reset AND polar_subscription_id IS NULL THEN 'free' ELSE subscription_tier END,
        billing_cycle_reset = CASE WHEN NOW() > billing_cycle_reset THEN NOW() + interval '1 month' ELSE billing_cycle_reset END
      WHERE tenant_id = $1 RETURNING monthly_message_count`,
     [tenantId, limit]
   );
   return r.rows[0]?.monthly_message_count || 0;
+}
+
+// Refunds one message from the cycle counter. Used when a pipeline run fails
+// before producing a real answer — an LLM/provider outage must not eat the
+// tenant's quota (at free tier's 10 messages, a bad evening wipes the month).
+export async function decrementMessageUsage(tenantId) {
+  await query(
+    `UPDATE tenants SET monthly_message_count = GREATEST(monthly_message_count - 1, 0)
+     WHERE tenant_id = $1`,
+    [tenantId],
+  );
 }
 
 // Fresh read of the tenant's voice usage this cycle, straight from the DB
@@ -493,9 +510,10 @@ export async function getVoiceUsageSeconds(tenantId) {
 
 export async function incrementVoiceTime(tenantId, seconds) {
   const r = await query(
-    `UPDATE tenants SET 
+    `UPDATE tenants SET
        monthly_voice_time_seconds = CASE WHEN NOW() > billing_cycle_reset THEN $2 ELSE monthly_voice_time_seconds + $2 END,
        monthly_message_count = CASE WHEN NOW() > billing_cycle_reset THEN 0 ELSE monthly_message_count END,
+       subscription_tier = CASE WHEN NOW() > billing_cycle_reset AND polar_subscription_id IS NULL THEN 'free' ELSE subscription_tier END,
        billing_cycle_reset = CASE WHEN NOW() > billing_cycle_reset THEN NOW() + interval '1 month' ELSE billing_cycle_reset END
      WHERE tenant_id = $1 RETURNING monthly_voice_time_seconds`,
     [tenantId, seconds]

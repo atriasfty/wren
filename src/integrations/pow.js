@@ -1,4 +1,4 @@
-import { getRobloxUserId } from './prc.js';
+import { getRobloxUserId, getRobloxUserIdExact } from './prc.js';
 import { getStaffLink, setStaffLink } from '../tenant/store.js';
 import { assertPublicHttpUrlCached, ssrfAgent } from '../ai/ssrf.js';
 
@@ -31,12 +31,18 @@ export async function getPunishments(tenantCtx, username) {
   const res = await guardedFetch(`${baseUrl(tenantCtx)}/punishments?userId=${userInfo.userId}`, {
     headers: { 'Authorization': `Bearer ${token(tenantCtx)}` },
   });
-  if (res.ok) {
-    // GET /punishments returns a bare array of Punishment records, not a wrapper object.
-    const json = await res.json();
-    for (const p of Array.isArray(json) ? json : []) {
-      results.punishments.push(p);
-    }
+  // A non-OK response must throw, not read as "no punishments" — a broken/
+  // expired POW token would otherwise make check_punishments confidently
+  // report a clean record for a player who may have one.
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    console.warn(`[pow] /punishments failed for Roblox ID ${userInfo.userId}: HTTP ${res.status} ${text.slice(0, 200)}`);
+    throw new Error(`POW punishment lookup error ${res.status}: ${text.slice(0, 200)}`);
+  }
+  // GET /punishments returns a bare array of Punishment records, not a wrapper object.
+  const json = await res.json();
+  for (const p of Array.isArray(json) ? json : []) {
+    results.punishments.push(p);
   }
   return results;
 }
@@ -49,30 +55,42 @@ export async function getPunishments(tenantCtx, username) {
 // moderator is only ever asked for their Roblox username the first time.
 async function resolveModeratorId(tenantCtx, moderatorDiscordId, moderatorRobloxUsername) {
   const cached = await getStaffLink({ tenantId: tenantCtx.tenant.tenantId, discordId: moderatorDiscordId });
-  if (cached) return cached.robloxUserId;
+  if (cached) {
+    console.log(`[pow] moderator ${moderatorDiscordId} resolved from cache -> Roblox ${cached.robloxUserId}`);
+    return cached.robloxUserId;
+  }
 
   if (!moderatorRobloxUsername) {
+    console.log(`[pow] moderator ${moderatorDiscordId} has no cached link and gave no username; asking`);
     throw new Error(`I need to verify you as staff before logging this. What's your Roblox username?`);
   }
 
-  const robloxUser = await getRobloxUserId(tenantCtx, moderatorRobloxUsername);
-  if (!robloxUser) throw new Error(`Could not find a Roblox user named "${moderatorRobloxUsername}".`);
+  const robloxUser = await getRobloxUserIdExact(moderatorRobloxUsername);
+  if (!robloxUser) {
+    console.warn(`[pow] moderator ${moderatorDiscordId} gave username "${moderatorRobloxUsername}" which did not resolve on Roblox (see [roblox] log line above for why)`);
+    throw new Error(`Could not find a Roblox user named "${moderatorRobloxUsername}". If that's definitely your username, try again — it may have been a temporary Roblox API hiccup.`);
+  }
+  console.log(`[pow] moderator ${moderatorDiscordId} gave username "${moderatorRobloxUsername}" -> Roblox ID ${robloxUser.userId}; checking POW staff directory`);
 
   const res = await guardedFetch(`${baseUrl(tenantCtx)}/members/lookup?robloxId=${robloxUser.userId}`, {
     headers: { 'Authorization': `Bearer ${token(tenantCtx)}` },
   });
   if (res.status === 404) {
+    console.warn(`[pow] Roblox ID ${robloxUser.userId} (${robloxUser.username}) not found in POW staff directory for tenant ${tenantCtx.tenant.tenantId}`);
     throw new Error(`"${robloxUser.username}" isn't listed as staff on this server's POW workspace, so I can't verify you.`);
   }
   if (!res.ok) {
     const text = await res.text().catch(() => '');
+    console.warn(`[pow] /members/lookup failed for Roblox ID ${robloxUser.userId}: HTTP ${res.status} ${text.slice(0, 200)}`);
     throw new Error(`POW staff lookup error ${res.status}: ${text.slice(0, 200)}`);
   }
   const member = await res.json();
   if (!member.discordId) {
+    console.warn(`[pow] POW staff record for Roblox ID ${robloxUser.userId} (${robloxUser.username}) has no linked discordId`);
     throw new Error(`"${robloxUser.username}"'s POW staff account isn't linked to a Discord account yet. Link it in the POW dashboard first.`);
   }
   if (String(member.discordId) !== String(moderatorDiscordId)) {
+    console.warn(`[pow] POW staff record for Roblox ID ${robloxUser.userId} (${robloxUser.username}) is linked to Discord ${member.discordId}, not the requesting moderator ${moderatorDiscordId}`);
     throw new Error(`"${robloxUser.username}" belongs to a different staff member's POW account, not yours.`);
   }
 
@@ -82,6 +100,7 @@ async function resolveModeratorId(tenantCtx, moderatorDiscordId, moderatorRoblox
     robloxUserId: robloxUser.userId,
     robloxUsername: robloxUser.username,
   });
+  console.log(`[pow] verified and cached moderator ${moderatorDiscordId} -> Roblox ${robloxUser.userId} (${robloxUser.username})`);
   return String(robloxUser.userId);
 }
 

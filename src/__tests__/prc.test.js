@@ -48,9 +48,8 @@ describe('getOnlinePlayers', () => {
     }]);
   });
 
-  it('returns [] and never calls the API when the tenant has no server key', async () => {
-    const players = await prc.getOnlinePlayers({ tenantId: 'g', tenant: {} });
-    expect(players).toEqual([]);
+  it('throws (and never calls the API) when the tenant has no server key, so a missing key cannot read as "0 players online"', async () => {
+    await expect(prc.getOnlinePlayers({ tenantId: 'g', tenant: {} })).rejects.toThrow(/no ERLC server key/i);
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
@@ -71,8 +70,7 @@ describe('getOnlinePlayers', () => {
   it('never sends the server key when the base URL fails the SSRF guard', async () => {
     ssrfMock.assertPublicHttpUrlCached.mockRejectedValueOnce(new Error('URL resolves to a private/internal address'));
     globalThis.fetch.mockResolvedValue(jsonResponse({ Players: [] }));
-    const players = await prc.getOnlinePlayers(tenant());
-    expect(players).toEqual([]); // getOnlinePlayers swallows errors
+    await expect(prc.getOnlinePlayers(tenant())).rejects.toThrow(/private\/internal/);
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });

@@ -43,6 +43,55 @@ async function executeCommand(tenantCtx, command) {
 const ROBLOX_USER_CACHE = new Map();
 const CACHE_TTL = 3600 * 1000; // 1 hour
 
+// Expired entries are only replaced on re-lookup, never evicted, so the map
+// grows with every unique (tenant, name) ever queried. Wipe it fully every
+// 30 days. setInterval's delay caps at ~24.8 days (2^31-1 ms), so a daily
+// sweep checks elapsed time instead of one long timer.
+const CACHE_CLEAR_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000;
+let cacheLastClearedAt = Date.now();
+setInterval(() => {
+  if (Date.now() - cacheLastClearedAt >= CACHE_CLEAR_INTERVAL_MS) {
+    cacheLastClearedAt = Date.now();
+    ROBLOX_USER_CACHE.clear();
+    console.log('[roblox] cleared username cache (30-day sweep)');
+  }
+}, 24 * 60 * 60 * 1000).unref?.();
+
+// Direct global Roblox username -> userId lookup, no in-game fuzzy matching.
+// A non-2xx response (rate limit, transient outage) is logged and distinguished
+// from "no such user" — callers get null either way, but the failure is visible
+// in server logs instead of silently reading as an invalid username.
+async function lookupRobloxUsernameExact(clean) {
+  let res;
+  try {
+    res = await fetch('https://users.roblox.com/v1/usernames/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({ usernames: [clean], excludeBannedUsers: false }),
+    });
+  } catch (err) {
+    console.warn(`[roblox] username lookup network error for "${clean}": ${err.message}`);
+    return null;
+  }
+  if (!res.ok) {
+    console.warn(`[roblox] username lookup failed for "${clean}": HTTP ${res.status}`);
+    return null;
+  }
+  const data = await res.json();
+  if (data.data && data.data.length) {
+    return { userId: data.data[0].id, username: data.data[0].name };
+  }
+  return null;
+}
+
+// Resolves a Roblox username with no in-game context — for verifying a person's
+// own account (e.g. a moderator), not for finding a target player in-server.
+export async function getRobloxUserIdExact(username) {
+  const clean = (username || '').trim();
+  if (clean.length < 3 || clean.length > 20) return null;
+  return lookupRobloxUsernameExact(clean);
+}
+
 export async function getRobloxUserId(tenantCtx, username) {
   const clean = (username || '').trim();
   if (!clean) return null;
@@ -57,7 +106,16 @@ export async function getRobloxUserId(tenantCtx, username) {
   }
 
   if (clean.length >= 4) {
-    const online = await getOnlinePlayers(tenantCtx);
+    // The fuzzy in-game match is best-effort: if the PRC lookup fails (broken
+    // key, API outage), fall through to the global Roblox lookup below rather
+    // than failing — offline-profile lookups must keep working for tenants
+    // without a working ERLC key.
+    let online = [];
+    try {
+      online = await getOnlinePlayers(tenantCtx);
+    } catch (err) {
+      console.warn(`[roblox] online-player lookup failed for tenant ${tenantCtx?.tenantId ?? '?'} (falling back to global lookup): ${err.message}`);
+    }
     let match = online.find((p) => p.username.toLowerCase() === lower);
     if (!match) match = online.find((p) => p.username.toLowerCase().startsWith(lower));
     if (!match && clean.length >= 5) {
@@ -70,41 +128,30 @@ export async function getRobloxUserId(tenantCtx, username) {
     }
   }
   if (clean.length < 3 || clean.length > 20) return null;
-  const res = await fetch('https://users.roblox.com/v1/usernames/users', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-    body: JSON.stringify({ usernames: [clean], excludeBannedUsers: false }),
-  });
-  if (!res.ok) return null;
-  const data = await res.json();
-  if (data.data && data.data.length) {
-    const result = { userId: data.data[0].id, username: data.data[0].name };
-    // Exact Roblox API resolutions are global — usernames are a global namespace.
-    ROBLOX_USER_CACHE.set(lower, { data: result, expires: Date.now() + CACHE_TTL });
-    return result;
-  }
-  return null;
+  const result = await lookupRobloxUsernameExact(clean);
+  if (result) ROBLOX_USER_CACHE.set(lower, { data: result, expires: Date.now() + CACHE_TTL });
+  return result;
 }
 
+// Throws on API/key errors instead of returning [] — an empty list means "the
+// server is genuinely empty". Swallowing errors here made a missing/broken
+// ERLC key read as "0 players online" ("Player X is not online", empty
+// briefings) instead of surfacing the real configuration problem to the user.
 export async function getOnlinePlayers(tenantCtx) {
-  try {
-    const data = await getServerInfo(tenantCtx, ['Players']);
-    if (!data.Players) return [];
-    return data.Players.map((player) => {
-      const [username, idStr] = player.Player.split(':');
-      return {
-        username,
-        userId: parseInt(idStr, 10),
-        permission: player.Permission,
-        team: player.Team,
-        callsign: player.Callsign,
-        location: player.Location,
-        wantedStars: player.WantedStars,
-      };
-    });
-  } catch (err) {
-    return [];
-  }
+  const data = await getServerInfo(tenantCtx, ['Players']);
+  if (!data.Players) return [];
+  return data.Players.map((player) => {
+    const [username, idStr] = player.Player.split(':');
+    return {
+      username,
+      userId: parseInt(idStr, 10),
+      permission: player.Permission,
+      team: player.Team,
+      callsign: player.Callsign,
+      location: player.Location,
+      wantedStars: player.WantedStars,
+    };
+  });
 }
 
 export async function findPlayer(tenantCtx, partialName) {
@@ -142,50 +189,48 @@ export async function getServerStaff(tenantCtx) {
   return data.Staff || {};
 }
 
+// Like getOnlinePlayers, the log getters throw on API/key errors so tools
+// report the real problem instead of pretending the logs are empty. Callers
+// that want per-section best-effort behavior (get_player_profile) wrap each
+// call themselves.
 export async function getCommandLogs(tenantCtx, { limit } = {}) {
-  try {
-    const data = await getServerInfo(tenantCtx, ['CommandLogs']);
-    if (!data.CommandLogs) return [];
-    const logs = data.CommandLogs.map((l) => ({
-      playerName: l.Player.split(':')[0],
-      command: l.Command,
-      timestamp: l.Timestamp,
-    }));
-    return typeof limit === 'number' ? logs.slice(0, limit) : logs;
-  } catch (err) {
-    return [];
-  }
+  const data = await getServerInfo(tenantCtx, ['CommandLogs']);
+  if (!data.CommandLogs) return [];
+  const logs = data.CommandLogs.map((l) => ({
+    playerName: l.Player.split(':')[0],
+    command: l.Command,
+    timestamp: l.Timestamp,
+  }));
+  return typeof limit === 'number' ? logs.slice(0, limit) : logs;
 }
 
 export async function getJoinLogs(tenantCtx, { limit } = {}) {
-  try {
-    const data = await getServerInfo(tenantCtx, ['JoinLogs']);
-    if (!data.JoinLogs) return [];
-    const logs = data.JoinLogs.map((l) => ({
-      join: l.Join,
-      playerName: l.Player.split(':')[0],
-      timestamp: l.Timestamp,
-    }));
-    return typeof limit === 'number' ? logs.slice(0, limit) : logs;
-  } catch (err) {
-    return [];
-  }
+  const data = await getServerInfo(tenantCtx, ['JoinLogs']);
+  if (!data.JoinLogs) return [];
+  const logs = data.JoinLogs.map((l) => ({
+    join: l.Join,
+    playerName: l.Player.split(':')[0],
+    timestamp: l.Timestamp,
+  }));
+  return typeof limit === 'number' ? logs.slice(0, limit) : logs;
 }
 
 export async function getKillLogs(tenantCtx, { limit } = {}) {
-  try {
-    const data = await getServerInfo(tenantCtx, ['KillLogs']);
-    if (!data.KillLogs) return [];
-    const logs = data.KillLogs.map((l) => ({
-      killerName: l.Killer.split(':')[0],
-      killedName: l.Killed.split(':')[0],
-      timestamp: l.Timestamp,
-    }));
-    return typeof limit === 'number' ? logs.slice(0, limit) : logs;
-  } catch (err) {
-    return [];
-  }
+  const data = await getServerInfo(tenantCtx, ['KillLogs']);
+  if (!data.KillLogs) return [];
+  const logs = data.KillLogs.map((l) => ({
+    killerName: l.Killer.split(':')[0],
+    killedName: l.Killed.split(':')[0],
+    timestamp: l.Timestamp,
+  }));
+  return typeof limit === 'number' ? logs.slice(0, limit) : logs;
 }
+
+// getModcalls is hit every 30s per tenant by the in-game bridge (which skips
+// tenants without an ERLC key), so transient failures are warned at most once
+// per tenant per 10 minutes to keep logs readable.
+const MODCALL_WARN_INTERVAL_MS = 10 * 60 * 1000;
+const modcallLastWarnAt = new Map();
 
 // The in-game bridge listens for `:pm <bot> <question>` messages. The ModCalls
 // endpoint carries no message text, so the actual PM text comes from the
@@ -212,7 +257,16 @@ export async function getModcalls(tenantCtx, { sinceTs, limit } = {}) {
     }
     if (typeof limit === 'number') out = out.slice(0, limit);
     return out;
-  } catch {
+  } catch (err) {
+    // The 15s poll loop must keep running across transient failures, but a
+    // permanently broken key would otherwise kill the in-game bridge with no
+    // trace — log it so the failure is at least visible in server logs.
+    const tenantId = tenantCtx?.tenantId ?? '?';
+    const lastWarn = modcallLastWarnAt.get(tenantId) || 0;
+    if (Date.now() - lastWarn > MODCALL_WARN_INTERVAL_MS) {
+      modcallLastWarnAt.set(tenantId, Date.now());
+      console.warn(`[prc] getModcalls failed for tenant ${tenantId}: ${err.message}`);
+    }
     return [];
   }
 }

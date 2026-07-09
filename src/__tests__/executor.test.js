@@ -92,7 +92,9 @@ describe('executeTool', () => {
 
     it('blocks targeting the bot itself', async () => {
       const result = await executeTool(tenantCtx, 'kill_player', { username: 'wren' }, actor);
-      expect(result).toEqual({ success: false, error: 'Cannot target the bot.' });
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/reserved to stop the bot from being targeted/);
+      expect(mocks.killPlayer).not.toHaveBeenCalled();
     });
 
     it('blocks target usernames that are too short', async () => {

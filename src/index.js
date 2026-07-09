@@ -22,7 +22,7 @@ import { listTenants } from './tenant/store.js';
 import { createClient } from './discord/client.js';
 import { attachMessageHandler } from './discord/messageHandler.js';
 import { attachIngameBridge } from './discord/ingameBridge.js';
-import { dispatchGarminCommand, handleComponentInteraction, handleSourcesAutocomplete } from './slash/handlers.js';
+import { dispatchWrenCommand, handleComponentInteraction, handleSourcesAutocomplete } from './slash/handlers.js';
 import { syncAllGuilds } from './slash/register.js';
 import { startApiServer } from './api/server.js';
 import { pruneExpiredEvents } from './tenant/store.js';
@@ -57,7 +57,13 @@ async function main() {
 
   attachMessageHandler(client);
   attachIngameBridge(client);
-  client.on('voiceStateUpdate', handleVoiceStateUpdate);
+  // Belt-and-braces: a rejection escaping this listener would hit the fatal
+  // unhandledRejection handler below and take down the whole bot.
+  client.on('voiceStateUpdate', (oldState, newState) => {
+    Promise.resolve(handleVoiceStateUpdate(oldState, newState)).catch((err) => {
+      console.error('[voice] voiceStateUpdate handler failed:', err);
+    });
+  });
 
   client.on('interactionCreate', async (interaction) => {
     if (interaction.isAutocomplete()) {
@@ -74,7 +80,7 @@ async function main() {
     if (interaction.isChatInputCommand()) {
       if (interaction.commandName !== 'wren') return;
       try {
-        const reply = await dispatchGarminCommand(interaction);
+        const reply = await dispatchWrenCommand(interaction);
         if (reply) {
           if (interaction.deferred || interaction.replied) {
             await interaction.editReply(reply).catch(() => {});
@@ -86,7 +92,13 @@ async function main() {
         }
       } catch (err) {
         console.error('[slash] dispatch failed:', err);
-        try { await interaction.reply({ content: publicInteractionError(), ephemeral: true }); } catch {}
+        // Handlers that defer (upgrade, manage, voice join, ingest run) and then
+        // throw would leave an eternal "thinking…" spinner if we only reply().
+        try {
+          const content = { content: publicInteractionError(), ephemeral: true };
+          if (interaction.deferred || interaction.replied) await interaction.editReply(content);
+          else await interaction.reply(content);
+        } catch {}
       }
       return;
     }

@@ -77,6 +77,26 @@
             box-shadow: 0 6px 16px rgba(0, 0, 0, 0.6), 0 0 0 4px rgba(25, 93, 230, 0.2);
         }
 
+        input[type=range]:focus-visible::-webkit-slider-thumb {
+            box-shadow: 0 0 0 2px #030406, 0 0 0 4px #195de6;
+        }
+
+        input[type=range]::-moz-range-thumb {
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: #ffffff;
+            border: none;
+        }
+
+        input[type=range]:focus-visible::-moz-range-thumb {
+            box-shadow: 0 0 0 2px #030406, 0 0 0 4px #195de6;
+        }
+
+        input[type=range]:focus-visible {
+            outline: none;
+        }
+
         input[type=range]::-webkit-slider-runnable-track {
             width: 100%;
             height: 4px;
@@ -232,7 +252,7 @@
                             class="text-xs font-mono text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20">0.09</span>
                     </div>
                     <div class="slider-container relative h-6">
-                        <input id="thresholdSlider" class="w-full relative z-2" max="0.99" min="0.01" step="0.01"
+                        <input id="thresholdSlider" aria-label="Confidence Threshold" class="w-full relative z-2" max="0.99" min="0.01" step="0.01"
                             type="range" value="0.09" />
                         <div id="sliderFill"
                             class="absolute left-0 top-1/2 -translate-y-1/2 h-[4px] bg-primary rounded-l-full"
@@ -241,7 +261,7 @@
                 </div>
 
                 <button id="toggleBtn"
-                    class="group relative w-full h-16 bg-primary hover:bg-primary-dark active:scale-[0.98] transition-all duration-300 rounded-2xl flex items-center justify-center overflow-hidden shadow-[0_20px_40px_-10px_rgba(25,93,230,0.3)]">
+                    class="group relative w-full h-16 bg-primary hover:bg-primary-dark active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-[#030406] transition-all duration-300 rounded-2xl flex items-center justify-center overflow-hidden shadow-[0_20px_40px_-10px_rgba(25,93,230,0.3)]">
                     <div
                         class="absolute inset-0 bg-gradient-to-b from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                     </div>
@@ -270,7 +290,7 @@
             <div class="w-full">
                 <details class="group rounded-[2rem] bg-black/40 border border-white/5 overflow-hidden">
                     <summary
-                        class="flex cursor-pointer items-center justify-between p-5 text-slate-500 hover:text-white transition-colors select-none list-none text-[10px] font-bold uppercase tracking-widest border-b border-white/5 bg-white/[0.02]">
+                        class="flex cursor-pointer items-center justify-between p-5 text-slate-500 hover:text-white focus-visible:outline-none focus-visible:bg-white/[0.05] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/20 transition-colors select-none list-none text-[10px] font-bold uppercase tracking-widest border-b border-white/5 bg-white/[0.02]">
                         <div class="flex items-center gap-2">
                             <svg class="size-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                                 <path d="M8 9l3 3-3 3m5 0h3" stroke-linecap="round" stroke-linejoin="round" />

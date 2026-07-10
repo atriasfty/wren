@@ -1,3 +1,7 @@
 ## 2025-02-18 - Avoid O(N) database queries and O(N) API calls before determining relevance
 **Learning:** Found a major architectural bottleneck where the Discord message event handler executed an O(N) database query (`enforceBan`) for every single message received by a server, and an O(replies) Discord API message fetch to determine the author of replied messages before it even determined if the message was relevant (mentions the bot, or in a source channel).
 **Action:** Always check the fastest and cheapest preconditions (like `directlyMentioned`, `isSourceChannel`, or using cached objects / checking `mentions.repliedUser`) first. Delay expensive database queries and API calls until you are confident the data needs to be acted upon.
+
+## 2025-02-18 - Optimize cosine similarity using dot product for normalized vectors
+**Learning:** The `@xenova/transformers` embedding pipeline is explicitly configured with `normalize: true` in `src/rag/embed.js`, meaning it outputs unit vectors (magnitude of 1). Therefore, cosine similarity calculations in `src/rag/retrieve.js` do not need to recompute vector magnitudes and perform division. A simple dot product yields the exact same similarity score but avoids unnecessary iteration and expensive floating-point math (square roots) within a hot loop.
+**Action:** When working with vector search, check if the embedding model outputs normalized vectors. If so, reduce cosine similarity to a dot product.

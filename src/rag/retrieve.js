@@ -2,13 +2,15 @@ import { embedText } from './embed.js';
 import { readVectorStore } from './store.js';
 
 function cosine(a, b) {
-  let dot = 0, ma = 0, mb = 0;
+  // Optimization: Embeddings generated with `@xenova/transformers` use `normalize: true`,
+  // meaning `a` and `b` are always unit vectors (magnitude of 1).
+  // Thus, the cosine similarity is exactly equal to the dot product.
+  // We can skip calculating magnitudes (`ma`, `mb`) and division to improve performance.
+  let dot = 0;
   for (let i = 0; i < a.length; i++) {
     dot += a[i] * b[i];
-    ma += a[i] * a[i];
-    mb += b[i] * b[i];
   }
-  return dot / (Math.sqrt(ma) * Math.sqrt(mb) + 1e-12);
+  return dot;
 }
 
 export async function retrieveSources(tenantCtx, question, topK = 8, { minSimilarity = 0.05 } = {}) {

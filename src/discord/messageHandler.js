@@ -5,6 +5,7 @@ import { ingestDiscordMessage, removeDiscordMessageChunks } from '../rag/ingest.
 import { query } from '../db/pool.js';
 import { handleAtriaCommands } from './atriaCommands.js';
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { safeFetch } from '../ai/ssrf.js';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const pdfParse = require('pdf-parse');
@@ -285,20 +286,26 @@ export function attachMessageHandler(client) {
 
       if (isRawText) {
         try {
-          const res = await fetch(a.url, { signal: AbortSignal.timeout(15_000) });
+          const res = await safeFetch(a.url, { signal: AbortSignal.timeout(15_000) });
           const txt = await res.text();
           documentsText += `\n\n--- Attachment: ${a.name} ---\n${txt}`;
         } catch (e) {
+          // [BUG-FIX] Swallowed error: append error so LLM is aware
+          // [SECURITY-FIX] SSRF: fetch through safeFetch
           console.error('[message] Failed to read txt attachment:', e);
+          documentsText += `\n\n--- Attachment: ${a.name} ---\n[Error reading file: ${e.message}]`;
         }
       } else if (a.contentType === 'application/pdf' || a.name?.endsWith('.pdf')) {
         try {
-          const res = await fetch(a.url, { signal: AbortSignal.timeout(15_000) });
+          const res = await safeFetch(a.url, { signal: AbortSignal.timeout(15_000) });
           const buffer = await res.arrayBuffer();
           const pdfData = await pdfParse(Buffer.from(buffer));
           documentsText += `\n\n--- Attachment: ${a.name} ---\n${pdfData.text}`;
         } catch (e) {
+          // [BUG-FIX] Swallowed error: append error so LLM is aware
+          // [SECURITY-FIX] SSRF: fetch through safeFetch
           console.error('[message] Failed to read pdf attachment:', e);
+          documentsText += `\n\n--- Attachment: ${a.name} ---\n[Error reading file: ${e.message}]`;
         }
       }
     }

@@ -160,17 +160,22 @@ export function attachMessageHandler(client) {
        if (!isSourceChannel && !directlyMentioned && !isReplyToBot) return;
     }
 
+    // [SECURITY-FIX] Logic & Error Handling: evaluate fast preconditions before expensive DB checks
+    const requiresIngestion = isSourceChannel;
+    const requiresReply = directlyMentioned || isReplyToBot;
+    if (!requiresIngestion && !requiresReply) return;
+
     // Now do the expensive DB checks
     const actor = { kind: 'discord', member: message.member, id: message.author.id };
     const isUserBanned = await enforceBan(tenantCtx, actor);
 
-    if (isSourceChannel && !isUserBanned) {
+    if (requiresIngestion && !isUserBanned) {
       ingestDiscordMessage(tenantCtx, message).catch((err) => {
         console.error('[messageCreate] Auto-ingestion failed:', err.message);
       });
     }
 
-    if (!directlyMentioned && !isReplyToBot) return;
+    if (!requiresReply) return;
 
     if (isUserBanned) {
       try { await message.reply('You are blocked from using this bot.'); } catch {}

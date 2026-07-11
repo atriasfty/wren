@@ -126,6 +126,17 @@ describe('REST API', () => {
     });
   });
 
+  describe('malformed JSON', () => {
+    it('catches SyntaxError and returns 400 without crashing', async () => {
+      const res = await request(app)
+        .post('/v1/chat')
+        .set('Content-Type', 'application/json')
+        .send('{ "question": "hi", bad json }');
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('Malformed JSON payload');
+    });
+  });
+
   describe('/v1/chat validation', () => {
     it('requires a question', async () => {
       const res = await request(app)

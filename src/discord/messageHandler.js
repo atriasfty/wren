@@ -343,19 +343,24 @@ export function attachMessageHandler(client) {
   });
 
   client.on('messageUpdate', async (oldMessage, newMessage) => {
-    try {
-      if (newMessage.partial) newMessage = await newMessage.fetch();
-    } catch { return; }
-    if (!newMessage.guild) return;
-    if (newMessage.author?.bot) return;
+    if (!newMessage.guildId) return;
 
-    const tenantCtx = await resolveTenantByGuildId(newMessage.guild.id);
+    const tenantCtx = await resolveTenantByGuildId(newMessage.guildId);
     if (!tenantCtx) return;
 
+    // Optimization: Check if the channel is a source channel BEFORE fetching the full message
+    // fetching is expensive and messageUpdate events are frequent (e.g. link embeds rendering).
     const isSourceChannel = tenantCtx.sources.some(
-      (s) => s.enabled && s.kind === 'discord_channel' && s.ref === newMessage.channel.id
+      (s) => s.enabled && s.kind === 'discord_channel' && s.ref === newMessage.channelId
     );
+
     if (isSourceChannel) {
+      try {
+        if (newMessage.partial) newMessage = await newMessage.fetch();
+      } catch { return; }
+
+      if (newMessage.author?.bot) return;
+
       const actor = { kind: 'discord', member: newMessage.member, id: newMessage.author?.id };
       if (await enforceBan(tenantCtx, actor)) return;
       ingestDiscordMessage(tenantCtx, newMessage).catch((err) => {

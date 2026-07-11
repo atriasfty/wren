@@ -1,0 +1,3 @@
+## 2026-07-11 - Focus States and Label Associations in Tailwind
+**Learning:** When styling custom UI components (like a custom range slider or <summary>) with Tailwind, default browser focus states are often removed or masked. Adding explicit focus-visible:ring classes is required to maintain keyboard accessibility. Additionally, form elements must always use the for attribute on their <label> elements rather than just relying on visual proximity.
+**Action:** Always use the focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary utility pattern on interactive elements in this app to ensure they are keyboard navigable and accessible.

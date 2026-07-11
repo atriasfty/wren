@@ -52,6 +52,12 @@ globalThis.fetch = function patchedFetch(url, options) {
   if (!isFileUrl) return originalFetch(url, options);
   return (async () => {
     const filePath = fileURLToPath(url);
+    const allowedDir = path.resolve(process.cwd()) + path.sep;
+    // [SECURITY-FIX] Path traversal: validate file:// paths
+    const absolutePath = path.resolve(filePath);
+    if (!absolutePath.startsWith(allowedDir)) {
+      throw new Error(`File access denied: ${filePath}`);
+    }
     const data = await fs.readFile(filePath);
     return new globalThis.Response(data);
   })();

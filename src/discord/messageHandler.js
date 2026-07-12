@@ -343,19 +343,26 @@ export function attachMessageHandler(client) {
   });
 
   client.on('messageUpdate', async (oldMessage, newMessage) => {
-    try {
-      if (newMessage.partial) newMessage = await newMessage.fetch();
-    } catch { return; }
-    if (!newMessage.guild) return;
-    if (newMessage.author?.bot) return;
+    // ⚡ Bolt: Fast precondition checks before expensive API calls.
+    // guildId and channelId are available on partial messages in discord.js v14.
+    const guildId = newMessage.guildId;
+    const channelId = newMessage.channelId;
+    if (!guildId || !channelId) return;
 
-    const tenantCtx = await resolveTenantByGuildId(newMessage.guild.id);
+    const tenantCtx = await resolveTenantByGuildId(guildId);
     if (!tenantCtx) return;
 
     const isSourceChannel = tenantCtx.sources.some(
-      (s) => s.enabled && s.kind === 'discord_channel' && s.ref === newMessage.channel.id
+      (s) => s.enabled && s.kind === 'discord_channel' && s.ref === channelId
     );
+
     if (isSourceChannel) {
+      try {
+        if (newMessage.partial) newMessage = await newMessage.fetch();
+      } catch { return; }
+
+      if (newMessage.author?.bot) return;
+
       const actor = { kind: 'discord', member: newMessage.member, id: newMessage.author?.id };
       if (await enforceBan(tenantCtx, actor)) return;
       ingestDiscordMessage(tenantCtx, newMessage).catch((err) => {

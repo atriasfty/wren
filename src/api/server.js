@@ -46,6 +46,15 @@ export async function createApiServer(client) {
     verify: (req, res, buf) => { req.rawBody = buf; }
   }));
 
+  // [SECURITY-FIX] Logic & Error Handling: Catch SyntaxError from malformed JSON to prevent exposing stack traces
+  app.use((err, req, res, next) => {
+    if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+      return res.status(400).send({ error: 'Bad Request' });
+    }
+    next(err);
+  });
+
+  app.disable('x-powered-by');
   app.use((req, res, next) => {
     // [SECURITY-FIX] Configuration & Headers: add missing security headers
     res.setHeader('Content-Security-Policy', "default-src 'self'");
@@ -54,7 +63,6 @@ export async function createApiServer(client) {
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('Permissions-Policy', 'geolocation=(), camera=(), microphone=()');
-    res.setHeader('X-Powered-By', 'wren');
     next();
   });
 

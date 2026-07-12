@@ -46,6 +46,14 @@ export async function createApiServer(client) {
     verify: (req, res, buf) => { req.rawBody = buf; }
   }));
 
+  app.use((err, req, res, next) => {
+    // [SECURITY-FIX] Error Handling: prevent HTML stack traces on malformed JSON
+    if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+      return res.status(400).json({ error: 'Malformed JSON payload' });
+    }
+    next(err);
+  });
+
   app.use((req, res, next) => {
     // [SECURITY-FIX] Configuration & Headers: add missing security headers
     res.setHeader('Content-Security-Policy', "default-src 'self'");

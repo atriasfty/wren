@@ -1,0 +1,3 @@
+## 2026-07-12 - Enhance Keyboard Nav for Custom Inputs
+**Learning:** When using custom Tailwind CSS utility classes on standard inputs (`<input type="range">`), they often lack default, clear keyboard focus states, compromising accessibility.
+**Action:** Always add explicit `focus-visible` ring utilities (e.g., `focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2`) to ensure interactive elements are identifiable for users relying on keyboard navigation. Furthermore, always explicitly associate labels with their corresponding inputs using `for="inputId"`, and include `cursor-pointer` on labels to reinforce interactivity.

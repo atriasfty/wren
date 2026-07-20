@@ -417,6 +417,18 @@ export async function audit({ tenantId, actor, action, target = null, metadata =
   );
 }
 
+// Count of personality-change reviews (see personalityReview.js) run for this
+// tenant in the trailing 12h — the first 3 in that window are free; the 4th+
+// requires explicit confirmation before it spends the tenant's message quota.
+export async function countRecentPersonalityReviews(tenantId) {
+  const r = await query(
+    `SELECT count(*)::int AS n FROM audit_log
+     WHERE tenant_id = $1 AND action = 'personality_review' AND created_at > NOW() - INTERVAL '12 hours'`,
+    [tenantId],
+  );
+  return r.rows[0]?.n || 0;
+}
+
 // ---------- API tokens ----------
 
 export async function issueApiToken({ tenantId, tokenHash, label = null, scopes = ['chat'] }) {

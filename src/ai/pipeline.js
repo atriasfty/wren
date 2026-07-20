@@ -8,7 +8,7 @@ import { incrementMessageUsage, decrementMessageUsage } from '../tenant/store.js
 import { actorKey } from './utils.js';
 
 let _client = null;
-function client() {
+export function client() {
   if (!_client) {
     const cfg = loadConfig();
     _client = new OpenAI({

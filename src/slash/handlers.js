@@ -17,6 +17,10 @@ import {
   removeBan,
   listMemory,
   removeMemory,
+  incrementMessageUsage,
+  decrementMessageUsage,
+  countRecentPersonalityReviews,
+  audit,
 } from '../tenant/store.js';
 import { loadConfig } from '../config.js';
 import { ingestTenant } from '../rag/ingest.js';
@@ -29,6 +33,7 @@ import {
   CONFIG_FIELDS,
 } from './configPanel.js';
 import { handleVoice } from '../discord/voice/manager.js';
+import { reviewPersonalityText } from '../ai/personalityReview.js';
 
 const CONFIG_CATEGORY_FOR_FIELD = Object.fromEntries(
   Object.entries(CONFIG_FIELDS).map(([k, f]) => [k, f.category])
@@ -609,6 +614,60 @@ export async function issueMcpToken(ctx, tenantId, discordId) {
   return { embeds: [embed], ephemeral: true };
 }
 
+// Behaviour fields whose free text feeds straight into Wren's system prompt
+// and therefore goes through the AI moderation reviewer before being saved.
+const REVIEWED_FIELDS = new Set(['coreInfo', 'responseStyle']);
+
+// Personality-change confirmations awaiting a leadership member's approve/deny
+// click once a tenant has exhausted its free reviews for the trailing 12h
+// window (see countRecentPersonalityReviews). Short-lived and in-memory —
+// losing these on a restart just means the submitter has to resubmit.
+const pendingPersonalityReviews = new Map();
+
+function prunePendingReviews() {
+  const now = Date.now();
+  for (const [token, pending] of pendingPersonalityReviews) {
+    if (pending.expiresAt < now) pendingPersonalityReviews.delete(token);
+  }
+}
+
+// Runs the moderation reviewer for a coreInfo/responseStyle submission,
+// applies the edit if approved, records the outcome to audit_log (which also
+// drives the 12h free-review counter), and returns a message describing the
+// result for posting in the channel.
+async function runPersonalityReview({ tenantId, tenantCtx, fieldKey, rawValue, requesterId, chargeQuota }) {
+  const field = CONFIG_FIELDS[fieldKey];
+
+  if (chargeQuota) {
+    const tier = tenantCtx.tenant.subscriptionTier || 'free';
+    const limit = { free: 10, core: 1000, pro: 5000 }[tier] || 10;
+    const used = await incrementMessageUsage(tenantId, limit);
+    if (used > limit) {
+      return { outcome: 'quota_exceeded', message: `⚠️ This server has used all its included messages this month, so this change can't be reviewed right now. A server manager can run \`/wren upgrade\` to raise the limit.` };
+    }
+  }
+
+  const result = await reviewPersonalityText({ fieldLabel: field.label, value: rawValue });
+
+  if (chargeQuota && result.errored) {
+    await decrementMessageUsage(tenantId).catch((e) => console.warn('[personalityReview] usage refund failed:', e.message));
+  }
+
+  await audit({
+    tenantId,
+    actor: requesterId,
+    action: 'personality_review',
+    target: fieldKey,
+    metadata: { approved: result.approved, reason: result.reason, quotaCharged: chargeQuota && !result.errored },
+  });
+
+  if (result.approved) {
+    await applyFieldEdit(tenantId, fieldKey, rawValue);
+    return { outcome: 'approved', message: `✅ <@${requesterId}> updated **${field.label}**.` };
+  }
+  return { outcome: 'denied', message: `❌ <@${requesterId}>'s change to **${field.label}** was rejected: ${result.reason}` };
+}
+
 export async function handleComponentInteraction(interaction) {
   const customId = interaction.customId || '';
   const [route, tenantId, fieldKey] = customId.split(':');
@@ -697,7 +756,70 @@ export async function handleComponentInteraction(interaction) {
     if (rawValue == null) {
       return interaction.reply(ephemeral('No value submitted.'));
     }
-    return applyAndRerender(rawValue);
+
+    const isClear = !rawValue.trim();
+    if (!REVIEWED_FIELDS.has(fieldKey) || isClear) {
+      return applyAndRerender(rawValue);
+    }
+
+    const field = CONFIG_FIELDS[fieldKey];
+    const channel = interaction.channel;
+    if (!channel) return interaction.reply(errorEphemeral('Could not access this channel to run the review.'));
+
+    await interaction.deferUpdate();
+    const publicMessage = await channel.send(`⏳ <@${interaction.user.id}> is updating **${field.label}** — reviewing…`);
+
+    const recentCount = await countRecentPersonalityReviews(tenantId);
+    if (recentCount < 3) {
+      const result = await runPersonalityReview({
+        tenantId, tenantCtx: ctx, fieldKey, rawValue, requesterId: interaction.user.id, chargeQuota: false,
+      });
+      await publicMessage.edit({ content: result.message });
+      const panel = await buildCategoryPanel(tenantId, CONFIG_CATEGORY_FOR_FIELD[fieldKey]);
+      if (panel) await interaction.editReply({ ...panelPayload(panel), content: result.outcome === 'approved' ? 'Saved.' : result.message });
+      return;
+    }
+
+    prunePendingReviews();
+    const token = crypto.randomBytes(6).toString('hex');
+    pendingPersonalityReviews.set(token, {
+      tenantId, fieldKey, rawValue, requesterId: interaction.user.id, expiresAt: Date.now() + 5 * 60 * 1000,
+    });
+
+    const approve = new ButtonBuilder().setCustomId(`wren_cfg_modreview:${tenantId}:${token}:approve`).setLabel('Approve').setStyle(ButtonStyle.Success);
+    const deny = new ButtonBuilder().setCustomId(`wren_cfg_modreview:${tenantId}:${token}:deny`).setLabel('Deny').setStyle(ButtonStyle.Danger);
+    await publicMessage.edit({
+      content: `⚠️ <@${interaction.user.id}> wants to update **${field.label}**. This server has already used its free reviews in the last 12 hours — reviewing this one will use **1 message** from the server's monthly quota. A leadership member must approve or deny.`,
+      components: [new ActionRowBuilder().addComponents(approve, deny)],
+    });
+
+    return interaction.editReply({ content: '⚠️ Waiting for a leadership member to confirm — this change would use part of your server’s message quota. See the message below.' });
+  }
+
+  if (route === 'wren_cfg_modreview') {
+    const parts = customId.split(':');
+    const token = parts[2];
+    const action = parts[3];
+    prunePendingReviews();
+    const pending = pendingPersonalityReviews.get(token);
+    if (!pending || pending.tenantId !== tenantId) {
+      return interaction.reply(ephemeral('This confirmation has expired or was already used. Please resubmit the change.'));
+    }
+    pendingPersonalityReviews.delete(token);
+
+    const field = CONFIG_FIELDS[pending.fieldKey];
+    if (action === 'deny') {
+      return interaction.update({
+        content: `❌ <@${pending.requesterId}>'s change to **${field.label}** was cancelled — <@${interaction.user.id}> denied the quota confirmation.`,
+        components: [],
+      });
+    }
+
+    await interaction.update({ content: `⏳ <@${interaction.user.id}> approved — reviewing…`, components: [] });
+    const result = await runPersonalityReview({
+      tenantId, tenantCtx: ctx, fieldKey: pending.fieldKey, rawValue: pending.rawValue, requesterId: pending.requesterId, chargeQuota: true,
+    });
+    return interaction.editReply({ content: result.message });
   }
 
   console.warn('[panel] unknown route:', route, customId);

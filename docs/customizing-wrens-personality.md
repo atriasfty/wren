@@ -41,3 +41,15 @@ Use this field to provide:
 
 - **Do not put your server rules in Core Info.** Core Info is loaded into memory for every single message, taking up valuable token limits. Put your rules in **Sources** (`/wren sources add`) so Wren can search for them only when needed.
 - **Wren will sometimes ignore your style.** If a user asks a highly technical or serious question, Wren may drop the "Pirate" persona to ensure the information is conveyed accurately. Safety and accuracy are prioritized over personality.
+
+## Moderation Review
+
+Every non-empty change to **Core Info** or **Response Style** is automatically reviewed by AI before it's saved. Wren cannot be made to:
+
+- Role-play as, speak as, or imitate any real person — living, dead, or historical. (Generic fictional archetypes like "a pirate" or "a formal support agent" are fine — this only blocks impersonating real, identifiable people.)
+- Role-play as or center its personality on a specific protected category (age, race, gender, skin color, ethnic background, etc).
+- Adopt a personality that is sexual, offensive, hateful, or otherwise harmful.
+
+When you submit a change, a message appears in the channel showing whether it was **✅ approved** or **❌ denied** (with a reason). Clearing a field (submitting it empty) skips review entirely.
+
+The first 3 personality reviews in a rolling 12-hour window are free. After that, further changes in the same window need a **Leadership** member to confirm before they're reviewed, since each one uses a message from your server's monthly quota.

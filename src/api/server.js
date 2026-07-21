@@ -41,10 +41,19 @@ export async function createApiServer(client) {
   setEncryptionKey(cfg.tenantSecretEncKey);
 
   const app = express();
+  app.disable('x-powered-by'); // [SECURITY-FIX] Configuration: remove Express default x-powered-by header
   app.use(express.json({ 
     limit: '256kb',
     verify: (req, res, buf) => { req.rawBody = buf; }
   }));
+
+  // [SECURITY-FIX] Error Handling: Catch malformed JSON payloads safely
+  app.use((err, req, res, next) => {
+    if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+      return res.status(400).json({ error: 'Malformed JSON payload' });
+    }
+    next(err);
+  });
 
   app.use((req, res, next) => {
     // [SECURITY-FIX] Configuration & Headers: add missing security headers

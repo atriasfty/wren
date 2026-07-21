@@ -1,0 +1,4 @@
+## 2026-07-21 - [API Server Error Handling]
+**Vulnerability:** Express default error handler leaks HTML stack traces on malformed JSON body. `express.json()` causes a SyntaxError for invalid json bodies, which must be explicitly caught before next routes. Express apps also emit an identifying `x-powered-by` header by default.
+**Learning:** `SyntaxError` from `express.json()` needs a 4-arity middleware `(err, req, res, next)` placed immediately *after* the `express.json()` declaration to catch the 400 error safely without bubbling up. Also, the app must explicitly call `app.disable('x-powered-by')` at initialization.
+**Prevention:** Always add a JSON SyntaxError handling middleware following `express.json()` in API projects, and ensure `app.disable('x-powered-by')` is called globally during Express setup.

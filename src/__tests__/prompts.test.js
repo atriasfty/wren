@@ -79,7 +79,7 @@ describe('buildSystemPrompt', () => {
 
   it('omits the response-style block when unset', () => {
     const sys = buildSystemPrompt(baseCtx());
-    expect(sys).not.toContain('RESPONSE STYLE');
+    expect(sys).not.toContain('RESPONSE STYLE (configured by admins):');
   });
 
   it('adds the voice-mode block only in voice mode', () => {

@@ -1,0 +1,3 @@
+## 2026-07-21 - Fix label association and keyboard accessibility on Threshold Slider in index.html
+**Learning:** Found custom HTML standard inputs (like `<input type="range">`) styled with Tailwind CSS, but they lacked `focus-visible` utility classes, making keyboard navigation difficult to see, and labels missing `cursor-pointer` to reinforce interactivity.
+**Action:** Always verify form controls have their `for` attribute explicitly linking to the control, apply `cursor-pointer` to labels, and include `focus-visible` utility classes (e.g., `focus-visible:ring-2 focus-visible:ring-offset-2`) for all custom-styled interactive elements to ensure clear keyboard accessibility.

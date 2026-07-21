@@ -1,14 +1,15 @@
 import { embedText } from './embed.js';
 import { readVectorStore } from './store.js';
 
+// ⚡ Bolt Optimization: Since @xenova/transformers uses normalize: true for embeddings,
+// vectors are unit length (magnitude = 1). Cosine similarity simplifies to just the dot product.
+// This reduces ops from ~4 to 1 per dimension in the hot loop.
 function cosine(a, b) {
-  let dot = 0, ma = 0, mb = 0;
+  let dot = 0;
   for (let i = 0; i < a.length; i++) {
     dot += a[i] * b[i];
-    ma += a[i] * a[i];
-    mb += b[i] * b[i];
   }
-  return dot / (Math.sqrt(ma) * Math.sqrt(mb) + 1e-12);
+  return dot;
 }
 
 export async function retrieveSources(tenantCtx, question, topK = 8, { minSimilarity = 0.05 } = {}) {

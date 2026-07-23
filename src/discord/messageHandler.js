@@ -343,25 +343,30 @@ export function attachMessageHandler(client) {
   });
 
   client.on('messageUpdate', async (oldMessage, newMessage) => {
-    try {
-      if (newMessage.partial) newMessage = await newMessage.fetch();
-    } catch { return; }
-    if (!newMessage.guild) return;
-    if (newMessage.author?.bot) return;
+    if (!newMessage.guildId || !newMessage.channelId) return;
 
-    const tenantCtx = await resolveTenantByGuildId(newMessage.guild.id);
+    // Fast path: avoid DB/API lookups if we don't need them
+    const tenantCtx = await resolveTenantByGuildId(newMessage.guildId);
     if (!tenantCtx) return;
 
     const isSourceChannel = tenantCtx.sources.some(
-      (s) => s.enabled && s.kind === 'discord_channel' && s.ref === newMessage.channel.id
+      (s) => s.enabled && s.kind === 'discord_channel' && s.ref === newMessage.channelId
     );
-    if (isSourceChannel) {
-      const actor = { kind: 'discord', member: newMessage.member, id: newMessage.author?.id };
-      if (await enforceBan(tenantCtx, actor)) return;
-      ingestDiscordMessage(tenantCtx, newMessage).catch((err) => {
-        console.error('[messageUpdate] Auto-ingestion failed:', err.message);
-      });
-    }
+    if (!isSourceChannel) return;
+
+    // Optimization: message.fetch() is expensive. Only fetch if we've
+    // confirmed it's in a source channel and we need the full content to ingest.
+    try {
+      if (newMessage.partial) newMessage = await newMessage.fetch();
+    } catch { return; }
+
+    if (newMessage.author?.bot) return;
+
+    const actor = { kind: 'discord', member: newMessage.member, id: newMessage.author?.id };
+    if (await enforceBan(tenantCtx, actor)) return;
+    ingestDiscordMessage(tenantCtx, newMessage).catch((err) => {
+      console.error('[messageUpdate] Auto-ingestion failed:', err.message);
+    });
   });
 
   client.on('messageDelete', async (message) => {

@@ -1,6 +1,7 @@
 import { resolveTenantByGuildId } from '../tenant/resolve.js';
 import { runAssistantPipeline } from '../ai/pipeline.js';
 import { enforceBan } from './guards.js';
+import { safeFetch } from '../ai/ssrf.js';
 import { ingestDiscordMessage, removeDiscordMessageChunks } from '../rag/ingest.js';
 import { query } from '../db/pool.js';
 import { handleAtriaCommands } from './atriaCommands.js';
@@ -285,7 +286,8 @@ export function attachMessageHandler(client) {
 
       if (isRawText) {
         try {
-          const res = await fetch(a.url, { signal: AbortSignal.timeout(15_000) });
+          // [SECURITY-FIX] SSRF: validate attachment URL before fetching
+          const res = await safeFetch(a.url, { signal: AbortSignal.timeout(15_000) });
           const txt = await res.text();
           documentsText += `\n\n--- Attachment: ${a.name} ---\n${txt}`;
         } catch (e) {
@@ -293,7 +295,8 @@ export function attachMessageHandler(client) {
         }
       } else if (a.contentType === 'application/pdf' || a.name?.endsWith('.pdf')) {
         try {
-          const res = await fetch(a.url, { signal: AbortSignal.timeout(15_000) });
+          // [SECURITY-FIX] SSRF: validate attachment URL before fetching
+          const res = await safeFetch(a.url, { signal: AbortSignal.timeout(15_000) });
           const buffer = await res.arrayBuffer();
           const pdfData = await pdfParse(Buffer.from(buffer));
           documentsText += `\n\n--- Attachment: ${a.name} ---\n${pdfData.text}`;

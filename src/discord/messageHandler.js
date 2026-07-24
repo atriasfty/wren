@@ -343,25 +343,32 @@ export function attachMessageHandler(client) {
   });
 
   client.on('messageUpdate', async (oldMessage, newMessage) => {
+    // ⚡ Bolt Optimization: guildId and channelId are available even on PartialMessage objects.
+    // Check preconditions first to avoid O(N) network calls via newMessage.fetch() for irrelevant channels.
+    // Expected impact: Drastically reduces Discord API calls for message edits in non-monitored channels.
+    const guildId = newMessage.guildId;
+    const channelId = newMessage.channelId;
+    if (!guildId || !channelId) return;
+
+    const tenantCtx = await resolveTenantByGuildId(guildId);
+    if (!tenantCtx) return;
+
+    const isSourceChannel = tenantCtx.sources.some(
+      (s) => s.enabled && s.kind === 'discord_channel' && s.ref === channelId
+    );
+    if (!isSourceChannel) return;
+
     try {
       if (newMessage.partial) newMessage = await newMessage.fetch();
     } catch { return; }
     if (!newMessage.guild) return;
     if (newMessage.author?.bot) return;
 
-    const tenantCtx = await resolveTenantByGuildId(newMessage.guild.id);
-    if (!tenantCtx) return;
-
-    const isSourceChannel = tenantCtx.sources.some(
-      (s) => s.enabled && s.kind === 'discord_channel' && s.ref === newMessage.channel.id
-    );
-    if (isSourceChannel) {
-      const actor = { kind: 'discord', member: newMessage.member, id: newMessage.author?.id };
-      if (await enforceBan(tenantCtx, actor)) return;
-      ingestDiscordMessage(tenantCtx, newMessage).catch((err) => {
-        console.error('[messageUpdate] Auto-ingestion failed:', err.message);
-      });
-    }
+    const actor = { kind: 'discord', member: newMessage.member, id: newMessage.author?.id };
+    if (await enforceBan(tenantCtx, actor)) return;
+    ingestDiscordMessage(tenantCtx, newMessage).catch((err) => {
+      console.error('[messageUpdate] Auto-ingestion failed:', err.message);
+    });
   });
 
   client.on('messageDelete', async (message) => {

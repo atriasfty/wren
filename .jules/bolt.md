@@ -1,3 +1,6 @@
 ## 2025-02-18 - Avoid O(N) database queries and O(N) API calls before determining relevance
 **Learning:** Found a major architectural bottleneck where the Discord message event handler executed an O(N) database query (`enforceBan`) for every single message received by a server, and an O(replies) Discord API message fetch to determine the author of replied messages before it even determined if the message was relevant (mentions the bot, or in a source channel).
 **Action:** Always check the fastest and cheapest preconditions (like `directlyMentioned`, `isSourceChannel`, or using cached objects / checking `mentions.repliedUser`) first. Delay expensive database queries and API calls until you are confident the data needs to be acted upon.
+## 2024-05-24 - Discord.js messageUpdate Precondition Optimization
+**Learning:** In discord.js, properties like `guildId` and `channelId` are available directly on `PartialMessage` objects emitted in events like `messageUpdate`. There is no need to call the expensive `await newMessage.fetch()` to obtain these IDs.
+**Action:** Always evaluate these lightweight properties first to short-circuit processing before calling `.fetch()`, potentially saving an O(N) network call for every message update in irrelevant channels.

@@ -1,0 +1,4 @@
+## 2024-07-24 - Express JSON Error Handling Stack Trace Leakage
+**Vulnerability:** Malformed JSON bodies sent to Express API endpoints resulted in a SyntaxError that would generate Express's default HTML error page, thereby exposing internal stack traces.
+**Learning:** Express's built-in `express.json()` middleware throws a `SyntaxError` (status 400) when parsing invalid JSON. Without a dedicated custom error handler immediately following it, this error bubbles up and can lead to information disclosure via default stack traces.
+**Prevention:** Always place a 4-argument custom error handler (`(err, req, res, next)`) immediately after body-parsing middlewares. Check for `err instanceof SyntaxError && err.status === 400 && 'body' in err` and respond with a generic 400 JSON response. Be sure to call `next(err)` for non-matching errors so normal application routing continues.

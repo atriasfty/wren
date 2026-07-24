@@ -43,6 +43,7 @@
     "wavefile": "^11.0.0"
   },
   "devDependencies": {
+
     "@eslint/js": "^10.0.1",
     "eslint": "^10.6.0",
     "fast-check": "^4.8.0",

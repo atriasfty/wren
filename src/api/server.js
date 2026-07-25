@@ -41,10 +41,21 @@ export async function createApiServer(client) {
   setEncryptionKey(cfg.tenantSecretEncKey);
 
   const app = express();
+  // [SECURITY-FIX] Configuration & Headers: globally disable X-Powered-By
+  app.disable('x-powered-by');
+
   app.use(express.json({ 
     limit: '256kb',
     verify: (req, res, buf) => { req.rawBody = buf; }
   }));
+
+  // [SECURITY-FIX] Logic & Error Handling: catch malformed JSON SyntaxError to prevent stack trace leaks
+  app.use((err, req, res, next) => {
+    if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+      return res.status(400).json({ error: 'Bad Request' });
+    }
+    next(err);
+  });
 
   app.use((req, res, next) => {
     // [SECURITY-FIX] Configuration & Headers: add missing security headers
@@ -54,7 +65,6 @@ export async function createApiServer(client) {
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('Permissions-Policy', 'geolocation=(), camera=(), microphone=()');
-    res.setHeader('X-Powered-By', 'wren');
     next();
   });
 
@@ -251,6 +261,12 @@ export async function createApiServer(client) {
       sourcesCount: req.tenantCtx.sources.length,
       policyCount: Object.keys(req.tenantCtx.policy).length,
     });
+  });
+
+  // [SECURITY-FIX] Logic & Error Handling: Unhandled rejections and uncaught exceptions caught at the boundary
+  app.use((err, req, res, next) => {
+    console.error('[server error]', err);
+    res.status(500).json({ error: 'Internal server error' });
   });
 
   return app;

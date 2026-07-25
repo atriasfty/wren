@@ -1,5 +1,7 @@
 const TOTAL_TIMEOUT_MS = 4000;
 
+import { safeFetch } from '../ai/ssrf.js';
+
 // Bloxlink's public Server API (blox.link/dashboard/developer) is guild-scoped:
 // the bot must be in the given Discord server, and lookups only resolve accounts
 // linked within that server. https://api.bloxlink.org is not a valid alternate
@@ -12,7 +14,8 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = TOTAL_TIMEOUT_MS)
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { ...options, signal: controller.signal });
+    // [SECURITY-FIX] SSRF: Validate outbound URL with safeFetch instead of global fetch
+    const res = await safeFetch(url, { ...options, signal: controller.signal });
     clearTimeout(id);
     return res;
   } catch (err) {

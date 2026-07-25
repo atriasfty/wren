@@ -41,10 +41,20 @@ export async function createApiServer(client) {
   setEncryptionKey(cfg.tenantSecretEncKey);
 
   const app = express();
+  app.disable('x-powered-by');
+
   app.use(express.json({ 
     limit: '256kb',
     verify: (req, res, buf) => { req.rawBody = buf; }
   }));
+
+  // [SECURITY-FIX] Error Handling: Catch malformed JSON instead of exposing HTML stack traces
+  app.use((err, req, res, next) => {
+    if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+      return res.status(400).json({ error: 'Malformed JSON payload' });
+    }
+    next(err);
+  });
 
   app.use((req, res, next) => {
     // [SECURITY-FIX] Configuration & Headers: add missing security headers
@@ -251,6 +261,12 @@ export async function createApiServer(client) {
       sourcesCount: req.tenantCtx.sources.length,
       policyCount: Object.keys(req.tenantCtx.policy).length,
     });
+  });
+
+  // [SECURITY-FIX] Error Handling: Global catch-all handler to prevent generic error leaks
+  app.use((err, req, res, next) => {
+    console.error('[api] Unhandled error:', err);
+    res.status(500).json({ error: 'Internal server error' });
   });
 
   return app;

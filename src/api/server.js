@@ -46,6 +46,14 @@ export async function createApiServer(client) {
     verify: (req, res, buf) => { req.rawBody = buf; }
   }));
 
+  // [SECURITY-FIX] Logic & Error Handling: handle syntax error from JSON payload gracefully
+  app.use((err, req, res, next) => {
+    if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+      return res.status(400).json({ error: 'Malformed JSON payload' });
+    }
+    next(err);
+  });
+
   app.use((req, res, next) => {
     // [SECURITY-FIX] Configuration & Headers: add missing security headers
     res.setHeader('Content-Security-Policy', "default-src 'self'");
@@ -251,6 +259,12 @@ export async function createApiServer(client) {
       sourcesCount: req.tenantCtx.sources.length,
       policyCount: Object.keys(req.tenantCtx.policy).length,
     });
+  });
+
+  // [SECURITY-FIX] Logic & Error Handling: add global error boundary handler
+  app.use((err, req, res, next) => {
+    console.error('[api] unhandled exception:', err);
+    res.status(500).json({ error: 'Internal server error' });
   });
 
   return app;

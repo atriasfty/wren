@@ -8,6 +8,7 @@ import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'disc
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const pdfParse = require('pdf-parse');
+import { safeFetch } from '../ai/ssrf.js';
 
 const MAX_RESPONSE_LEN = 1900;
 
@@ -285,7 +286,8 @@ export function attachMessageHandler(client) {
 
       if (isRawText) {
         try {
-          const res = await fetch(a.url, { signal: AbortSignal.timeout(15_000) });
+          // [SECURITY-FIX] SSRF: prevent fetches of internal addresses from attachment downloads
+          const res = await safeFetch(a.url, { signal: AbortSignal.timeout(15_000) });
           const txt = await res.text();
           documentsText += `\n\n--- Attachment: ${a.name} ---\n${txt}`;
         } catch (e) {
@@ -293,7 +295,8 @@ export function attachMessageHandler(client) {
         }
       } else if (a.contentType === 'application/pdf' || a.name?.endsWith('.pdf')) {
         try {
-          const res = await fetch(a.url, { signal: AbortSignal.timeout(15_000) });
+          // [SECURITY-FIX] SSRF: prevent fetches of internal addresses from attachment downloads
+          const res = await safeFetch(a.url, { signal: AbortSignal.timeout(15_000) });
           const buffer = await res.arrayBuffer();
           const pdfData = await pdfParse(Buffer.from(buffer));
           documentsText += `\n\n--- Attachment: ${a.name} ---\n${pdfData.text}`;

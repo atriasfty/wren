@@ -343,25 +343,33 @@ export function attachMessageHandler(client) {
   });
 
   client.on('messageUpdate', async (oldMessage, newMessage) => {
-    try {
-      if (newMessage.partial) newMessage = await newMessage.fetch();
-    } catch { return; }
-    if (!newMessage.guild) return;
-    if (newMessage.author?.bot) return;
+    // ⚡ Bolt: Fast precondition check before fetching partial messages
+    // In discord.js, guildId and channelId are available on partials
+    const guildId = newMessage.guildId;
+    const channelId = newMessage.channelId;
+    if (!guildId || !channelId) return;
 
-    const tenantCtx = await resolveTenantByGuildId(newMessage.guild.id);
+    const tenantCtx = await resolveTenantByGuildId(guildId);
     if (!tenantCtx) return;
 
     const isSourceChannel = tenantCtx.sources.some(
-      (s) => s.enabled && s.kind === 'discord_channel' && s.ref === newMessage.channel.id
+      (s) => s.enabled && s.kind === 'discord_channel' && s.ref === channelId
     );
-    if (isSourceChannel) {
-      const actor = { kind: 'discord', member: newMessage.member, id: newMessage.author?.id };
-      if (await enforceBan(tenantCtx, actor)) return;
-      ingestDiscordMessage(tenantCtx, newMessage).catch((err) => {
-        console.error('[messageUpdate] Auto-ingestion failed:', err.message);
-      });
-    }
+
+    // Only fetch the full message if we actually need to process it (currently only source channels)
+    if (!isSourceChannel) return;
+
+    try {
+      if (newMessage.partial) newMessage = await newMessage.fetch();
+    } catch { return; }
+
+    if (newMessage.author?.bot) return;
+
+    const actor = { kind: 'discord', member: newMessage.member, id: newMessage.author?.id };
+    if (await enforceBan(tenantCtx, actor)) return;
+    ingestDiscordMessage(tenantCtx, newMessage).catch((err) => {
+      console.error('[messageUpdate] Auto-ingestion failed:', err.message);
+    });
   });
 
   client.on('messageDelete', async (message) => {

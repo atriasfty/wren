@@ -1,0 +1,3 @@
+## 2024-07-26 - Keyboard Focus Accessibility for Custom Inputs
+**Learning:** When styling interactive frontend elements with Tailwind in this codebase (including custom standard inputs like `<input type="range">`), explicitly include `focus-visible` utility classes (e.g., `focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background-dark`) to ensure keyboard accessibility and visibility against the dark theme. Ensure form controls are properly associated with their labels via `for` attributes, and include `cursor-pointer` on labels to reinforce interactivity.
+**Action:** Always test input fields and buttons with keyboard navigation (Tab key) in dark mode to ensure they have distinct, visible focus indicators.

@@ -226,13 +226,13 @@
                 class="flex flex-col gap-6 bg-surface-glass backdrop-blur-xl rounded-[2.5rem] p-8 border border-white/5 shadow-2xl">
                 <div class="flex flex-col gap-5 px-2">
                     <div class="flex justify-between items-end">
-                        <label class="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Confidence
+                        <label for="thresholdSlider" class="text-[11px] font-bold text-slate-500 uppercase tracking-widest cursor-pointer">Confidence
                             Threshold</label>
                         <span id="thresholdVal"
                             class="text-xs font-mono text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20">0.09</span>
                     </div>
                     <div class="slider-container relative h-6">
-                        <input id="thresholdSlider" class="w-full relative z-2" max="0.99" min="0.01" step="0.01"
+                        <input id="thresholdSlider" class="w-full relative z-2 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background-dark focus-visible:outline-none" max="0.99" min="0.01" step="0.01"
                             type="range" value="0.09" />
                         <div id="sliderFill"
                             class="absolute left-0 top-1/2 -translate-y-1/2 h-[4px] bg-primary rounded-l-full"

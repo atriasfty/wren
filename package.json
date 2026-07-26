@@ -26,7 +26,7 @@
     "@polar-sh/sdk": "^0.48.1",
     "@xenova/transformers": "^2.17.2",
     "cheerio": "^1.0.0-rc.12",
-    "discord.js": "^14.14.1",
+    "discord.js": "^14.27.0",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "ffmpeg-static": "^5.3.0",

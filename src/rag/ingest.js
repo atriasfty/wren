@@ -28,7 +28,8 @@ function withStoreLock(tenantId, fn) {
   // Swallow rejections on this side chain — the caller of withStoreLock still
   // receives them via `next`; without the catch this floating promise would
   // trigger the process-level unhandledRejection handler.
-  next.catch(() => {}).then(() => {
+  // [BUG-FIX] logic & error handling: log the swallowed side-chain error
+  next.catch((err) => { console.error('[storeLock] side-chain error:', err.message); }).then(() => {
     if (storeLocks.get(tenantId) === next) storeLocks.delete(tenantId);
   });
   return next;

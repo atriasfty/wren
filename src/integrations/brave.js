@@ -1,3 +1,5 @@
+import { safeFetch } from '../ai/ssrf.js';
+
 const BRAVE_URL = 'https://api.search.brave.com/res/v1/web/search';
 
 export async function webSearch(query, { count = 5 } = {}) {
@@ -13,7 +15,8 @@ export async function webSearch(query, { count = 5 } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10_000);
   try {
-    const res = await fetch(url, {
+    // [SECURITY-FIX] SSRF: use safeFetch for outbound integration calls
+    const res = await safeFetch(url, {
       headers: {
         'X-Subscription-Token': key,
         'Accept': 'application/json',

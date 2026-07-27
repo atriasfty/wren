@@ -1,3 +1,5 @@
+import { safeFetch } from '../ai/ssrf.js';
+
 const TOTAL_TIMEOUT_MS = 4000;
 
 // Bloxlink's public Server API (blox.link/dashboard/developer) is guild-scoped:
@@ -12,7 +14,8 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = TOTAL_TIMEOUT_MS)
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { ...options, signal: controller.signal });
+    // [SECURITY-FIX] SSRF: use safeFetch for outbound integration calls
+    const res = await safeFetch(url, { ...options, signal: controller.signal });
     clearTimeout(id);
     return res;
   } catch (err) {

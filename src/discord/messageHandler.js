@@ -2,6 +2,7 @@ import { resolveTenantByGuildId } from '../tenant/resolve.js';
 import { runAssistantPipeline } from '../ai/pipeline.js';
 import { enforceBan } from './guards.js';
 import { ingestDiscordMessage, removeDiscordMessageChunks } from '../rag/ingest.js';
+import { ssrfAgent } from '../ai/ssrf.js';
 import { query } from '../db/pool.js';
 import { handleAtriaCommands } from './atriaCommands.js';
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
@@ -285,7 +286,8 @@ export function attachMessageHandler(client) {
 
       if (isRawText) {
         try {
-          const res = await fetch(a.url, { signal: AbortSignal.timeout(15_000) });
+          // [SECURITY-FIX] SSRF: pin dispatcher to internal safeAgent
+          const res = await fetch(a.url, { dispatcher: ssrfAgent, signal: AbortSignal.timeout(15_000) });
           const txt = await res.text();
           documentsText += `\n\n--- Attachment: ${a.name} ---\n${txt}`;
         } catch (e) {
@@ -293,7 +295,8 @@ export function attachMessageHandler(client) {
         }
       } else if (a.contentType === 'application/pdf' || a.name?.endsWith('.pdf')) {
         try {
-          const res = await fetch(a.url, { signal: AbortSignal.timeout(15_000) });
+          // [SECURITY-FIX] SSRF: pin dispatcher to internal safeAgent
+          const res = await fetch(a.url, { dispatcher: ssrfAgent, signal: AbortSignal.timeout(15_000) });
           const buffer = await res.arrayBuffer();
           const pdfData = await pdfParse(Buffer.from(buffer));
           documentsText += `\n\n--- Attachment: ${a.name} ---\n${pdfData.text}`;

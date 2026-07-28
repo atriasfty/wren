@@ -303,6 +303,25 @@ export async function handleAtriaCommands(message) {
         await query("INSERT INTO global_state (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2", [`bypass:${message.author.id}`, JSON.stringify(value)]);
         await message.reply(`Bypass granted for server **${targetServerId}** for 15 minutes. You can now use \`/wren config\` in that server.`);
       };
+    } else if (command === 'personality') {
+      const subcmd = args[1]?.toLowerCase();
+
+      if (subcmd === 'bypass') {
+        const targetServerId = args[2];
+        if (!targetServerId) {
+          await message.reply('Usage: `$atria personality bypass <server_id>`');
+          return true;
+        }
+        execute = async () => {
+          const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+          const value = { expiresAt, grantedBy: message.author.id };
+          await query("INSERT INTO global_state (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2", [`personality_bypass:${targetServerId}`, JSON.stringify(value)]);
+          await message.reply(`Personality moderation bypass granted for server **${targetServerId}**. The next personality change submitted there within 10 minutes skips the AI content reviewer entirely (single use, then it's gone). This is logged to the server's audit log.`);
+        };
+      } else {
+        await message.reply('Invalid personality subcommand. Use "bypass <server_id>".');
+        return true;
+      }
     } else if (command === 'apitoken') {
       const serverId = args[1] || message.guild?.id;
       const label = args.slice(2).join(' ') || null;

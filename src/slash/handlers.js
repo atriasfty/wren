@@ -631,12 +631,41 @@ function prunePendingReviews() {
   }
 }
 
+// Atomically claims a pending $atria personality-bypass grant for this tenant,
+// if one exists and hasn't expired. DELETE...RETURNING makes the claim
+// single-use even under concurrent submissions - two requests racing for the
+// same row can't both consume it.
+async function claimPersonalityBypass(tenantId) {
+  const res = await query('DELETE FROM global_state WHERE key = $1 RETURNING value', [`personality_bypass:${tenantId}`]);
+  if (res.rowCount === 0) return null;
+  const val = res.rows[0].value;
+  if (!val?.expiresAt || new Date(val.expiresAt) <= new Date()) return null;
+  return val;
+}
+
 // Runs the moderation reviewer for a coreInfo/responseStyle submission,
 // applies the edit if approved, records the outcome to audit_log (which also
 // drives the 12h free-review counter), and returns a message describing the
 // result for posting in the channel.
 async function runPersonalityReview({ tenantId, tenantCtx, fieldKey, rawValue, requesterId, chargeQuota }) {
   const field = CONFIG_FIELDS[fieldKey];
+
+  const bypass = await claimPersonalityBypass(tenantId).catch(() => null);
+  if (bypass) {
+    await applyFieldEdit(tenantId, fieldKey, rawValue);
+    // Distinct action name (not 'personality_review') so a bypassed edit
+    // never gets silently absorbed into normal review history - anyone
+    // auditing this tenant sees exactly which staff member granted the
+    // bypass and which change went in unreviewed.
+    await audit({
+      tenantId,
+      actor: requesterId,
+      action: 'personality_review_bypassed',
+      target: fieldKey,
+      metadata: { grantedBy: bypass.grantedBy, value: rawValue },
+    });
+    return { outcome: 'approved', message: `✅ <@${requesterId}> updated **${field.label}** (moderation bypassed via \`$atria personality bypass\`, granted by <@${bypass.grantedBy}>).` };
+  }
 
   if (chargeQuota) {
     const tier = tenantCtx.tenant.subscriptionTier || 'free';

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   decrementMessageUsage: vi.fn(),
   countRecentPersonalityReviews: vi.fn(),
   audit: vi.fn(),
+  query: vi.fn(),
 }));
 
 vi.mock('../slash/configPanel.js', async (importOriginal) => {
@@ -35,6 +36,10 @@ vi.mock('../ai/policy.js', () => ({
 
 vi.mock('../ai/personalityReview.js', () => ({
   reviewPersonalityText: mocks.reviewPersonalityText,
+}));
+
+vi.mock('../db/pool.js', () => ({
+  query: mocks.query,
 }));
 
 vi.mock('../tenant/store.js', () => ({
@@ -89,6 +94,7 @@ describe('personality change moderation review', () => {
     mocks.buildCategoryPanel.mockResolvedValue({ embeds: ['behaviour'], components: ['rows'] });
     mocks.countRecentPersonalityReviews.mockResolvedValue(0);
     mocks.incrementMessageUsage.mockResolvedValue(1);
+    mocks.query.mockResolvedValue({ rowCount: 0, rows: [] }); // no bypass grant pending, by default
   });
 
   it('skips review entirely when the submission clears the field', async () => {
@@ -132,6 +138,48 @@ describe('personality change moderation review', () => {
     expect(mocks.applyFieldEdit).not.toHaveBeenCalled();
     expect(publicMessage.edit).toHaveBeenCalledWith({ content: expect.stringContaining('❌') });
     expect(publicMessage.edit.mock.calls[0][0].content).toContain('Impersonates a real person.');
+  });
+
+  it('skips the reviewer and applies the edit when a staff $atria personality bypass is pending', async () => {
+    mocks.query.mockResolvedValueOnce({
+      rowCount: 1,
+      rows: [{ value: { expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(), grantedBy: 'staff-1' } }],
+    });
+    const { handleComponentInteraction } = await import('../slash/handlers.js');
+    const publicMessage = makePublicMessage();
+    const interaction = makeModalInteraction('responseStyle', 'Talk like a famous politician.', publicMessage);
+
+    await handleComponentInteraction(interaction);
+
+    expect(mocks.query).toHaveBeenCalledWith(
+      'DELETE FROM global_state WHERE key = $1 RETURNING value',
+      ['personality_bypass:123456789012345678'],
+    );
+    expect(mocks.reviewPersonalityText).not.toHaveBeenCalled();
+    expect(mocks.applyFieldEdit).toHaveBeenCalledWith(TENANT_ID, 'responseStyle', 'Talk like a famous politician.');
+    expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: TENANT_ID,
+      action: 'personality_review_bypassed',
+      target: 'responseStyle',
+      metadata: expect.objectContaining({ grantedBy: 'staff-1' }),
+    }));
+    expect(publicMessage.edit).toHaveBeenCalledWith({ content: expect.stringContaining('bypassed') });
+  });
+
+  it('ignores an expired bypass grant and runs the reviewer normally', async () => {
+    mocks.query.mockResolvedValueOnce({
+      rowCount: 1,
+      rows: [{ value: { expiresAt: new Date(Date.now() - 1000).toISOString(), grantedBy: 'staff-1' } }],
+    });
+    mocks.reviewPersonalityText.mockResolvedValue({ approved: true, reason: 'fine', errored: false });
+    const { handleComponentInteraction } = await import('../slash/handlers.js');
+    const publicMessage = makePublicMessage();
+    const interaction = makeModalInteraction('responseStyle', 'Be a sarcastic pirate.', publicMessage);
+
+    await handleComponentInteraction(interaction);
+
+    expect(mocks.reviewPersonalityText).toHaveBeenCalled();
+    expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({ action: 'personality_review' }));
   });
 
   it('gates the 4th change in 12h behind a leadership approve/deny before spending quota', async () => {

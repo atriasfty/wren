@@ -414,6 +414,41 @@ describe('Atria Commands', () => {
     });
   });
 
+  describe('personality bypass command', () => {
+    it('fails on unknown subcommand', async () => {
+      await runCommand('$atria personality foo');
+      expect(message.reply).toHaveBeenCalledWith('Invalid personality subcommand. Use "bypass <server_id>".');
+    });
+
+    it('requires a server ID', async () => {
+      await runCommand('$atria personality bypass');
+      expect(message.reply).toHaveBeenCalledWith('Usage: `$atria personality bypass <server_id>`');
+    });
+
+    it('grants a 10-minute single-use bypass keyed to the target server', async () => {
+      await runCommand('$atria personality bypass guild123');
+      await confirmCommand();
+
+      expect(query).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO global_state'),
+        ['personality_bypass:guild123', expect.any(String)]
+      );
+      const stored = JSON.parse(query.mock.calls.find((c) => c[0].includes('INSERT INTO global_state'))[1][1]);
+      expect(stored.grantedBy).toBe(STAFF_ID);
+      const msUntilExpiry = new Date(stored.expiresAt).getTime() - Date.now();
+      expect(msUntilExpiry).toBeGreaterThan(9 * 60 * 1000);
+      expect(msUntilExpiry).toBeLessThanOrEqual(10 * 60 * 1000);
+      expect(message.reply.mock.calls[1][0]).toContain('single use');
+    });
+
+    it('is staff-gated like every other $atria command', async () => {
+      message.author.id = NON_STAFF_ID;
+      const handled = await runCommand('$atria personality bypass guild123');
+      expect(handled).toBe(false);
+      expect(query).not.toHaveBeenCalled();
+    });
+  });
+
   describe('broadcast command', () => {
     it('requires message', async () => {
       await runCommand('$atria broadcast');

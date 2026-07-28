@@ -46,6 +46,14 @@ export async function createApiServer(client) {
     verify: (req, res, buf) => { req.rawBody = buf; }
   }));
 
+  // [SECURITY-FIX] Logic & Error Handling: handle syntax error in JSON parser
+  app.use((err, req, res, _next) => {
+    if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+      return res.status(400).json({ error: 'Bad Request: Malformed JSON' });
+    }
+    _next(err);
+  });
+
   app.use((req, res, next) => {
     // [SECURITY-FIX] Configuration & Headers: add missing security headers
     res.setHeader('Content-Security-Policy', "default-src 'self'");

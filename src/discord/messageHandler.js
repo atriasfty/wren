@@ -224,7 +224,8 @@ export function attachMessageHandler(client) {
           .addFields(
             { name: 'Documentation', value: 'https://wren.atriasafety.org' },
             { name: 'Terms of Service', value: 'https://atriasfty.org/wren-tos' },
-            { name: 'Privacy Policy', value: 'https://atriasfty.org/wren-privacy' }
+            { name: 'Privacy Policy', value: 'https://atriasfty.org/wren-privacy' },
+            { name: 'Important Notice', value: 'Wren is an artificial intelligence system with access to the internet. Responses may therefore be inaccurate or incomplete, and users are advised to independently verify any information provided before relying upon it.' }
           );
         
         const row = new ActionRowBuilder().addComponents(

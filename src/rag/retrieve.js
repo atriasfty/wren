@@ -1,14 +1,14 @@
 import { embedText } from './embed.js';
 import { readVectorStore } from './store.js';
 
+// Vectors are generated with normalize: true, so they are already unit length.
+// We can use a fast dot product instead of full cosine similarity.
 function cosine(a, b) {
-  let dot = 0, ma = 0, mb = 0;
+  let dot = 0;
   for (let i = 0; i < a.length; i++) {
     dot += a[i] * b[i];
-    ma += a[i] * a[i];
-    mb += b[i] * b[i];
   }
-  return dot / (Math.sqrt(ma) * Math.sqrt(mb) + 1e-12);
+  return dot;
 }
 
 export async function retrieveSources(tenantCtx, question, topK = 8, { minSimilarity = 0.05 } = {}) {

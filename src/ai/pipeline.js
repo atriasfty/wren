@@ -23,7 +23,7 @@ export function client() {
   return _client;
 }
 
-const MAX_TOOL_STEPS = 6;
+const MAX_TOOL_STEPS = 8;
 
 function normaliseWhitespace(text) {
   return text.replace(/\s+/g, ' ').trim();
@@ -159,6 +159,25 @@ export async function runAssistantPipeline(tenantCtx, {
     }
 
     messages.push(...toolResults);
+  }
+
+  if (!finalText) {
+    // Ran out of tool steps mid-research. Force one more call with no tool
+    // access so the model summarizes whatever it already gathered instead of
+    // leaving the user with a dead-end reply.
+    try {
+      const resp = await client().chat.completions.create({
+        model: loadConfig().openRouterModel,
+        messages,
+        tools,
+        tool_choice: 'none',
+        temperature: 0.2,
+      });
+      const msg = resp.choices?.[0]?.message;
+      finalText = typeof msg?.content === 'string' ? msg.content : (msg?.content?.[0]?.text || '');
+    } catch (err) {
+      console.error('[pipeline] forced final reply failed:', err);
+    }
   }
 
   if (!finalText) {

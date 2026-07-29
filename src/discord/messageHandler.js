@@ -311,6 +311,24 @@ export function attachMessageHandler(client) {
       message.channel.sendTyping().catch(() => {});
     }, 9000);
 
+    // While the pipeline is working through tool calls, surface the model's
+    // own lead-in ("Let me look that up...") as a live-edited status message
+    // so the channel shows progress instead of just the typing indicator.
+    let statusMessage = null;
+    const onToolStep = async (leadIn) => {
+      const raw = leadIn && leadIn.trim() ? leadIn.trim() : 'Working on it\u2026';
+      const content = raw.length > MAX_RESPONSE_LEN ? `${raw.slice(0, MAX_RESPONSE_LEN)}\u2026` : raw;
+      try {
+        if (!statusMessage) {
+          statusMessage = await message.reply({ content, allowedMentions: { parse: [] } });
+        } else {
+          await statusMessage.edit({ content });
+        }
+      } catch (e) {
+        console.warn('[message] status update failed:', e.message);
+      }
+    };
+
     let result;
     try {
       result = await runAssistantPipeline(tenantCtx, {
@@ -320,11 +338,15 @@ export function attachMessageHandler(client) {
         documentsText,
         actor,
         channelId: message.channel.id,
+        onToolStep,
       });
       query('UPDATE tenants SET last_active_channel_id = $1 WHERE tenant_id = $2', [message.channel.id, message.guild.id]).catch(e => console.error('[message] Failed to update last active channel:', e));
     } catch (err) {
       console.error('[message] pipeline error:', err);
-      try { await message.reply(publicErrorMessage()); } catch {}
+      try {
+        if (statusMessage) await statusMessage.edit({ content: publicErrorMessage() });
+        else await message.reply(publicErrorMessage());
+      } catch {}
       return;
     } finally {
       clearInterval(typingInterval);
@@ -333,7 +355,11 @@ export function attachMessageHandler(client) {
 
     const chunks = splitForDiscord(result.text || '');
     try {
-      await message.reply({ content: chunks[0] || '\u2026', allowedMentions: { parse: [] } });
+      if (statusMessage) {
+        await statusMessage.edit({ content: chunks[0] || '\u2026' });
+      } else {
+        await message.reply({ content: chunks[0] || '\u2026', allowedMentions: { parse: [] } });
+      }
       for (let i = 1; i < chunks.length; i++) {
         await message.channel.send({ content: chunks[i], allowedMentions: { parse: [] } });
       }

@@ -39,6 +39,7 @@ export async function runAssistantPipeline(tenantCtx, {
   isInGame = false,
   history = [],
   mode = 'discord',
+  onToolStep = null,
 }) {
   const tier = tenantCtx.tenant.subscriptionTier || 'free';
   const limits = { free: 10, core: 1000, pro: 5000 };
@@ -141,6 +142,10 @@ export async function runAssistantPipeline(tenantCtx, {
     // Set content to null (not empty string) when tool_calls are present
     const assistantContent = msg.content == null || msg.content === '' ? null : msg.content;
     messages.push({ role: 'assistant', content: assistantContent, tool_calls: toolCalls });
+
+    if (onToolStep) {
+      try { await onToolStep(assistantContent); } catch (e) { console.warn('[pipeline] onToolStep failed:', e.message); }
+    }
 
     const toolResults = [];
     for (const tc of toolCalls) {

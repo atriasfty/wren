@@ -30,6 +30,7 @@ import { handleVoiceStateUpdate } from './discord/voice/manager.js';
 import { fetchChannelContext, splitForDiscord } from './discord/messageHandler.js';
 import { resolveTenantByGuildId } from './tenant/resolve.js';
 import { runAssistantPipeline } from './ai/pipeline.js';
+import { startNsfwFilterRefresh } from './ai/nsfwFilter.js';
 
 function publicInteractionError() {
   return 'Something went wrong while processing that request.';
@@ -177,6 +178,8 @@ async function main() {
 
   // Global commands persist — no need to re-register on an interval.
   setInterval(() => pruneExpiredEvents().catch(() => {}), 60 * 60 * 1000);
+
+  startNsfwFilterRefresh();
 
   await startApiServer(client);
 

@@ -1,6 +1,7 @@
 import dns from 'dns';
 import net from 'net';
 import { Agent } from 'undici';
+import { isNsfwHostname } from './nsfwFilter.js';
 
 const BLOCKED_HOSTNAMES = new Set(['localhost', 'metadata.google.internal']);
 
@@ -136,6 +137,9 @@ export async function assertPublicHttpUrl(urlStr) {
   const rawHostname = normalizeHostname(url.hostname.toLowerCase());
   if (BLOCKED_HOSTNAMES.has(rawHostname)) {
     throw new Error('URL host is not allowed');
+  }
+  if (isNsfwHostname(rawHostname)) {
+    throw new Error('URL is blocked by content policy');
   }
   const hostname = stripIPv6Brackets(rawHostname);
   if (net.isIP(hostname)) {

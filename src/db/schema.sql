@@ -230,3 +230,6 @@ INSERT INTO tenant_role_policy (tenant_id, tool, min_role)
 INSERT INTO tenant_role_policy (tenant_id, tool, min_role)
   SELECT tenant_id, 'read_webpage', 'user' FROM tenants
   ON CONFLICT DO NOTHING;
+INSERT INTO tenant_role_policy (tenant_id, tool, min_role)
+  SELECT tenant_id, 'search_web', 'user' FROM tenants
+  ON CONFLICT DO NOTHING;

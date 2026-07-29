@@ -169,13 +169,15 @@ export async function runAssistantPipeline(tenantCtx, {
   if (!finalText) {
     // Ran out of tool steps mid-research. Force one more call with no tool
     // access so the model summarizes whatever it already gathered instead of
-    // leaving the user with a dead-end reply.
+    // leaving the user with a dead-end reply. The `tools` array is omitted
+    // entirely rather than relying on tool_choice:'none' — some providers
+    // (seen with deepseek via OpenRouter) still emit a tool_calls-only,
+    // content-less message even when told not to call tools, so the only
+    // reliable way to force text is to not expose any tools at all.
     try {
       const resp = await client().chat.completions.create({
         model: loadConfig().openRouterModel,
         messages,
-        tools,
-        tool_choice: 'none',
         temperature: 0.2,
       });
       const msg = resp.choices?.[0]?.message;

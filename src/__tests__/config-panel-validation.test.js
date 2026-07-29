@@ -80,6 +80,25 @@ describe('applyFieldEdit: secret field validation', () => {
     expect(mocks.updateTenant).toHaveBeenCalledWith('guild-1', { status_channel_id: null }, expect.any(Buffer));
   });
 
+  it('clearing a longtext field writes empty string, not null (the column is NOT NULL)', async () => {
+    const result = await applyFieldEdit('guild-1', 'coreInfo', '   ');
+    expect(result.ok).toBe(true);
+    expect(result.message).toContain('Cleared');
+    expect(mocks.updateTenant).toHaveBeenCalledWith('guild-1', { core_info: '' }, expect.any(Buffer));
+  });
+
+  it('clearing response style writes empty string, not null', async () => {
+    const result = await applyFieldEdit('guild-1', 'responseStyle', '');
+    expect(result.ok).toBe(true);
+    expect(mocks.updateTenant).toHaveBeenCalledWith('guild-1', { response_style: '' }, expect.any(Buffer));
+  });
+
+  it('clearing a required text field (display name) also writes empty string, not null', async () => {
+    const result = await applyFieldEdit('guild-1', 'displayName', null);
+    expect(result.ok).toBe(true);
+    expect(mocks.updateTenant).toHaveBeenCalledWith('guild-1', { display_name: '' }, expect.any(Buffer));
+  });
+
   it('non-secret free-text fields still accept normal punctuation', async () => {
     const result = await applyFieldEdit('guild-1', 'displayName', "LA County Roleplay - Est. 2024");
     expect(result.ok).toBe(true);

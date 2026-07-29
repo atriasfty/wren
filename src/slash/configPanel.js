@@ -292,7 +292,11 @@ export async function applyFieldEdit(tenantId, fieldKey, rawValue) {
   const isClear = value == null || (isTextKind && typeof value === 'string' && !value.trim());
 
   if (isClear) {
-    value = null;
+    // `text`/`longtext` columns (display_name, core_info, response_style, …)
+    // are all NOT NULL — writing null there throws a DB constraint error, so
+    // clearing means "reset to empty string" for those, not null. Secrets and
+    // channel/role columns are nullable, so they keep clearing to null.
+    value = (field.kind === 'text' || field.kind === 'longtext') ? '' : null;
   } else if (field.kind === 'channel_multi') {
     value = Array.isArray(value) ? value.map(String).join(',') : String(value);
     if (!value.split(',').every(v => /^\d{17,20}$/.test(v))) return { ok: false, error: 'Invalid channel selection.' };

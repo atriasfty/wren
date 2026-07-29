@@ -6,6 +6,9 @@ import { ActionRowBuilder, ButtonBuilder } from 'discord.js';
 // TODO [SECURITY]: upgrade vitest — breaking change, requires manual review
 // TODO [SECURITY]: upgrade discord.js — breaking change, requires manual review
 // TODO [SECURITY]: upgrade @xenova/transformers — breaking change, requires manual review
+// TODO [SECURITY]: upgrade tar — breaking change, requires manual review
+// TODO [SECURITY]: upgrade protobufjs — breaking change, requires manual review
+// TODO [SECURITY]: upgrade @opentelemetry/sdk-node — breaking change, requires manual review
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

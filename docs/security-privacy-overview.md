@@ -6,12 +6,12 @@ This guide provides a plain-English overview of how we handle your data. For ful
 
 ---
 
-## Zero Data Retention (ZDR)
+## Data Processing Agreement (DPA)
 
 When Wren answers a question, it sends your message to our AI model providers via our routing partner, OpenRouter.
 
-**We have Zero Data Retention (ZDR) explicitly enabled on our account.**
-This means that neither OpenRouter nor the underlying AI companies (like OpenAI, Anthropic, or Meta) are allowed to store your messages or use them to train their models. Your data is processed in RAM to generate the response, and then immediately discarded by the AI provider.
+**We have a signed Data Processing Agreement (DPA) in place governing this processing.**
+Your prompts are never used to train AI models. AI providers may temporarily log prompts (e.g. for abuse monitoring or debugging on their end), subject to the terms of our DPA with them.
 
 ## What Do We Actually Store?
 

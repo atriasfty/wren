@@ -50,8 +50,8 @@ When you send a message to Wren in a Discord server, we process:
 |---|---|---|
 | **Your Discord User ID** | Identifies you for memory, bans, and role-based access control | Yes — our database |
 | **Your Discord username and display name / nickname** | Captured at the time of interaction for audit logs and memory context | Yes — our database (in memory and audit log entries) |
-| **Your message content** | Passed to the AI model to generate a response; logged for observability | **Yes** — transmitted to OpenRouter (Zero Data Retention enabled; not stored by them) and stored in PostHog (EU servers) for **30 days**; may also be stored indefinitely as conversation memory if a Server Owner has saved it via Wren's memory system |
-| **Recent channel messages** (up to 100 messages) | Provides conversational context to the AI | **Yes** — transmitted to OpenRouter (Zero Data Retention) and stored in PostHog (EU servers) for **30 days**; not otherwise persisted in our own database |
+| **Your message content** | Passed to the AI model to generate a response; logged for observability | **Yes** — transmitted to OpenRouter under a signed Data Processing Agreement (not used to train AI models; may be temporarily logged by AI providers) and stored in PostHog (EU servers) for **30 days**; may also be stored indefinitely as conversation memory if a Server Owner has saved it via Wren's memory system |
+| **Recent channel messages** (up to 100 messages) | Provides conversational context to the AI | **Yes** — transmitted to OpenRouter under a signed Data Processing Agreement (not used to train AI models; may be temporarily logged by AI providers) and stored in PostHog (EU servers) for **30 days**; not otherwise persisted in our own database |
 | **Images you attach** | Passed by URL to the AI model for vision analysis | No — URLs only; images are not stored by us |
 | **Your in-game username / handle** (ERLC integration, if enabled) | Identifies you in game server moderation tools | Yes — stored as plain text in our database; only if your server uses the ERLC integration |
 
@@ -118,8 +118,8 @@ Your data may be transmitted to the following third-party processors in order to
 
 | Service | Purpose | Data Transmitted | Privacy Policy |
 |---|---|---|---|
-| **OpenRouter.ai** | Routes requests to AI language models | Your message content, up to 100 recent channel messages, conversation history, system prompt. **Zero Data Retention (ZDR) is enabled on our account — OpenRouter does not store any of this data.** | [openrouter.ai/privacy](https://openrouter.ai/privacy) |
-| **AI Model Providers** (via OpenRouter) | Generates responses | Same as above — OpenRouter forwards this to the underlying model provider under ZDR agreements | Varies by model selected |
+| **OpenRouter.ai** | Routes requests to AI language models | Your message content, up to 100 recent channel messages, conversation history, system prompt. **We have a signed Data Processing Agreement with OpenRouter. No customer prompts are used to train AI models; prompts may be temporarily logged by AI providers.** | [openrouter.ai/privacy](https://openrouter.ai/privacy) |
+| **AI Model Providers** (via OpenRouter) | Generates responses | Same as above — OpenRouter forwards this to the underlying model provider under the terms of our Data Processing Agreement | Varies by model selected |
 | **Brave Search** | Web search tool available to Wren | Your query/question (truncated to 300 characters) | [api.search.brave.com/app/trust-center](https://api.search.brave.com/app/trust-center) |
 | **Polar.sh** | Subscription billing and payment processing | Discord User ID (as `externalCustomerId`), guild ID (in subscription metadata), subscription tier | [polar.sh/privacy](https://polar.sh/privacy) |
 | **PostgreSQL (self-hosted)** | Primary database | All data described in Section 4 above | N/A — operated by us |

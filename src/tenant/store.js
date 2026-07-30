@@ -89,6 +89,7 @@ export async function updateTenant(tenantId, patch, encKey) {
     'status_channel_id','erlc_log_channel_id','in_game_pm_log_id',
     'raid_alert_channel','raid_alert_role',
     'core_info','response_style','raid_auto_punish','extra_config',
+    'erlc_authorized',
   ];
   for (const [k, v] of Object.entries(patch)) {
     if (!allowed.includes(k)) continue;
@@ -141,6 +142,7 @@ function rowToTenant(row, encKey) {
     coreInfo: row.core_info,
     responseStyle: row.response_style,
     raidAutoPunish: row.raid_auto_punish,
+    erlcAuthorized: row.erlc_authorized,
     extraConfig: row.extra_config || {},
     subscriptionTier: row.subscription_tier || 'free',
     monthlyMessageCount: row.monthly_message_count || 0,

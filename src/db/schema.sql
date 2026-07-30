@@ -176,6 +176,10 @@ DO $$ BEGIN
   ALTER TABLE tenants ADD COLUMN ticket_autoresponder_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 EXCEPTION WHEN duplicate_column THEN NULL;
 END $$;
+DO $$ BEGIN
+  ALTER TABLE tenants ADD COLUMN erlc_authorized BOOLEAN NOT NULL DEFAULT FALSE;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
 
 CREATE TABLE IF NOT EXISTS user_agreements (
   discord_id TEXT PRIMARY KEY,

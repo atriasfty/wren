@@ -13,6 +13,7 @@ import {
 import { resolveTenantByGuildId, invalidateTenant } from '../tenant/resolve.js';
 import { updateTenant, setTenantSecret, getPolicy } from '../tenant/store.js';
 import { loadConfig } from '../config.js';
+import { buildAuthorizationLink } from '../integrations/prc.js';
 
 // Field descriptors. `kind` controls what input the modal uses.
 // `dbField` is the snake_case column on `tenants`. `label` is the embed label.
@@ -104,6 +105,68 @@ export async function buildMainPanel(tenantId) {
   return {
     embeds: [embed],
     components: [new ActionRowBuilder().addComponents(select)],
+  };
+}
+
+// Wren can't do anything useful without an ERLC server key, so /wren config
+// refuses to show the normal panel until one is set — this gate is what's
+// shown instead, with a button straight to the key's entry modal.
+export async function buildErlcKeyGatePanel(tenantId) {
+  const ctx = await resolveTenantByGuildId(tenantId);
+  if (!ctx) return null;
+
+  const embed = new EmbedBuilder()
+    .setTitle(`Wren configuration — ${ctx.tenant.displayName}`)
+    .setColor(0x0bb0d1)
+    .setDescription(
+      'Before anything else, Wren needs your **ERLC server key** so it can talk to your server.\n\n' +
+      '1. Grab your Server-Key from the PRC dashboard.\n' +
+      '2. Click **Set ERLC Key** below and paste it in.\n' +
+      '3. Wren will hand you an authorization link — open it and approve Wren to run commands on your server.',
+    );
+
+  const setKey = new ButtonBuilder()
+    .setCustomId(`wren_cfg_setkey:${tenantId}`)
+    .setLabel('Set ERLC Key')
+    .setStyle(ButtonStyle.Primary);
+
+  return {
+    embeds: [embed],
+    components: [new ActionRowBuilder().addComponents(setKey)],
+  };
+}
+
+// Shown on every /wren config open until the server owner clicks "I've
+// authorised" — there's no ERLC endpoint to actually verify authorization
+// status, so this is a nag, not a real gate. The link is only ever put in an
+// ephemeral message since it embeds part of the tenant's server key.
+export async function buildAuthorizePanel(tenantId) {
+  const ctx = await resolveTenantByGuildId(tenantId);
+  if (!ctx) return null;
+
+  const authLink = buildAuthorizationLink(ctx.tenant.erlcServerKey);
+
+  const embed = new EmbedBuilder()
+    .setTitle(`Authorize Wren — ${ctx.tenant.displayName}`)
+    .setColor(0x0bb0d1)
+    .setDescription(
+      authLink
+        ? `**Authorize first.** Open this link and approve Wren to run commands on your ERLC server, then come back here:\n${authLink}\n\n*This message is only visible to you — the link is tied to your server key.*`
+        : `Your saved ERLC server key doesn't look valid, so Wren can't build an authorization link from it. Re-save it under **Secrets**, then reopen \`/wren config\`.`,
+    );
+
+  const authorized = new ButtonBuilder()
+    .setCustomId(`wren_cfg_authok:${tenantId}`)
+    .setLabel("I've authorised")
+    .setStyle(ButtonStyle.Success);
+  const skip = new ButtonBuilder()
+    .setCustomId(`wren_cfg_authskip:${tenantId}`)
+    .setLabel('Skip')
+    .setStyle(ButtonStyle.Secondary);
+
+  return {
+    embeds: [embed],
+    components: [new ActionRowBuilder().addComponents(authorized, skip)],
   };
 }
 
@@ -318,10 +381,32 @@ export async function applyFieldEdit(tenantId, fieldKey, rawValue) {
 
   if (field.kind === 'secret') {
     await setTenantSecret(tenantId, fieldKey === 'erlcServerKey' ? 'erlc_server_key' : 'pow_token', value, cfg.tenantSecretEncKey);
+    if (fieldKey === 'erlcServerKey') {
+      // The internal server ID (and therefore the authorization link) is
+      // derived from the key itself, so a changed or cleared key invalidates
+      // any prior authorization — force the "authorize first" prompt to
+      // reappear on /wren config.
+      await updateTenant(tenantId, { erlc_authorized: false }, cfg.tenantSecretEncKey);
+    }
   } else {
     await updateTenant(tenantId, { [field.dbField]: value }, cfg.tenantSecretEncKey);
   }
 
   invalidateTenant(tenantId);
+
+  if (fieldKey === 'erlcServerKey' && !isClear) {
+    const authLink = buildAuthorizationLink(value);
+    if (!authLink) {
+      return {
+        ok: true,
+        message: `Saved **${field.label}**, but that doesn't look like a valid Server-Key (expected \`prefix-serverid\`) so I can't build your authorization link. Double check it against the PRC dashboard and re-save it.`,
+      };
+    }
+    return {
+      ok: true,
+      message: `Saved **${field.label}**. One more step — open this link and approve Wren to run commands on your server:\n${authLink}`,
+    };
+  }
+
   return { ok: true, message: isClear ? `Cleared **${field.label}**.` : `Saved **${field.label}**.` };
 }

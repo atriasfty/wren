@@ -12,6 +12,19 @@ async function guardedFetch(urlStr, opts) {
   return fetch(urlStr, { ...opts, dispatcher: ssrfAgent });
 }
 
+// See https://apidocs.erlc.gg/creating-authorization-links — an authorization
+// link is how a server owner grants Wren's app permission to run remote
+// commands. It needs the server's "internal server ID", which is embedded in
+// the Server-Key itself as everything after the key's first dash.
+const WREN_APP_ID = '198502039251149206';
+
+export function buildAuthorizationLink(rawServerKey) {
+  const dashIndex = rawServerKey.indexOf('-');
+  if (dashIndex === -1 || dashIndex === rawServerKey.length - 1) return null;
+  const internalServerId = rawServerKey.slice(dashIndex + 1);
+  return `https://api.erlc.gg/server-owners/server/${internalServerId}/authorize/${WREN_APP_ID}`;
+}
+
 function serverKey(tenantCtx) {
   if (!tenantCtx.tenant.erlcServerKey) {
     throw new Error('CRITICAL API KEY ERROR: Tenant has no ERLC server key configured. You must flag this to higher-ups/server owner immediately so they can set it in /wren config under Secrets.');
@@ -19,13 +32,33 @@ function serverKey(tenantCtx) {
   return tenantCtx.tenant.erlcServerKey;
 }
 
+// Public/large applications must send their own app-wide key on every request
+// (https://apidocs.erlc.gg/creating-public-applications), separate from the
+// tenant's per-server Server-Key. This is Wren's own credential, not a tenant
+// secret — a missing value is an operator misconfiguration, not something a
+// tenant can fix.
+function globalKey() {
+  const key = process.env.PRC_GLOBAL_KEY;
+  if (!key) {
+    throw new Error('CRITICAL CONFIG ERROR: PRC_GLOBAL_KEY is not set in the bot\'s environment. This is an operator-side problem, not something the server owner can fix.');
+  }
+  return key;
+}
+
+// Every ERLC request needs both headers together: Server-Key identifies which
+// tenant's server, Authorization identifies Wren's app to ERLC's platform.
+function prcHeaders(tenantCtx, extra = {}) {
+  return {
+    'Server-Key': serverKey(tenantCtx),
+    'Authorization': globalKey(),
+    ...extra,
+  };
+}
+
 async function executeCommand(tenantCtx, command) {
   const res = await guardedFetch(`${baseUrl(tenantCtx)}/server/command`, {
     method: 'POST',
-    headers: {
-      'Server-Key': serverKey(tenantCtx),
-      'Content-Type': 'application/json',
-    },
+    headers: prcHeaders(tenantCtx, { 'Content-Type': 'application/json' }),
     body: JSON.stringify({ command }),
   });
   if (!res.ok) {
@@ -171,7 +204,7 @@ export async function getServerInfo(tenantCtx, fields = null) {
     ? '?' + fields.map(f => `${f}=true`).join('&')
     : '?Players=true&Staff=true&JoinLogs=true&Queue=true&KillLogs=true&CommandLogs=true&ModCalls=true&EmergencyCalls=true&Vehicles=true';
   const res = await guardedFetch(`${baseUrl(tenantCtx)}/server${query}`, {
-    headers: { 'Server-Key': serverKey(tenantCtx) },
+    headers: prcHeaders(tenantCtx),
   });
   if (!res.ok) {
     let errmsg = `PRC API error ${res.status}: ${res.statusText}`;

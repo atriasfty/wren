@@ -24,14 +24,19 @@ function jsonResponse(body, status = 200) {
   return { ok: status < 400, status, statusText: 'OK', json: async () => body };
 }
 
+const originalGlobalKey = process.env.PRC_GLOBAL_KEY;
+
 beforeEach(async () => {
   vi.resetModules();
   prc = await import('../integrations/prc.js');
   globalThis.fetch = vi.fn();
+  process.env.PRC_GLOBAL_KEY = 'test-global-key';
 });
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  if (originalGlobalKey === undefined) delete process.env.PRC_GLOBAL_KEY;
+  else process.env.PRC_GLOBAL_KEY = originalGlobalKey;
 });
 
 describe('getOnlinePlayers', () => {
@@ -71,6 +76,20 @@ describe('getOnlinePlayers', () => {
     ssrfMock.assertPublicHttpUrlCached.mockRejectedValueOnce(new Error('URL resolves to a private/internal address'));
     globalThis.fetch.mockResolvedValue(jsonResponse({ Players: [] }));
     await expect(prc.getOnlinePlayers(tenant())).rejects.toThrow(/private\/internal/);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('sends the app-wide global key as the Authorization header alongside Server-Key', async () => {
+    globalThis.fetch.mockResolvedValue(jsonResponse({ Players: [] }));
+    await prc.getOnlinePlayers(tenant());
+    const [, opts] = globalThis.fetch.mock.calls[0];
+    expect(opts.headers['Authorization']).toBe('test-global-key');
+    expect(opts.headers['Server-Key']).toBeTruthy();
+  });
+
+  it('throws a clear operator-facing error when PRC_GLOBAL_KEY is not configured', async () => {
+    delete process.env.PRC_GLOBAL_KEY;
+    await expect(prc.getOnlinePlayers(tenant())).rejects.toThrow(/PRC_GLOBAL_KEY/);
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });
@@ -224,5 +243,20 @@ describe('moderation command construction', () => {
       return jsonResponse({ Players: [{ Player: 'Baddie:42', Permission: 'Normal' }] });
     });
     await expect(prc.killPlayer(tenant(), 'Baddie')).rejects.toThrow('Server has no players in it');
+  });
+});
+
+describe('buildAuthorizationLink', () => {
+  it('builds the link from the part of the server key after the first dash', () => {
+    const link = prc.buildAuthorizationLink('abc123-server-456');
+    expect(link).toBe('https://api.erlc.gg/server-owners/server/server-456/authorize/198502039251149206');
+  });
+
+  it('returns null when the key has no dash', () => {
+    expect(prc.buildAuthorizationLink('nodashhere')).toBeNull();
+  });
+
+  it('returns null when the key ends with a trailing dash', () => {
+    expect(prc.buildAuthorizationLink('abc123-')).toBeNull();
   });
 });

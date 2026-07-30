@@ -8,6 +8,7 @@ import {
 } from '../tenant/resolve.js';
 import {
   createTenant,
+  updateTenant,
   listSources,
   addSource,
   removeSource,
@@ -29,6 +30,8 @@ import {
   buildCategoryPanel,
   buildFieldModal,
   buildValueSelectPanel,
+  buildErlcKeyGatePanel,
+  buildAuthorizePanel,
   applyFieldEdit,
   CONFIG_FIELDS,
 } from './configPanel.js';
@@ -121,6 +124,18 @@ export async function handleSetup(interaction) {
 export async function handleConfig(interaction, ctx) {
   if (RANK_ORDER[resolveActorRank({ kind: 'discord', member: interaction.member, id: interaction.user.id }, ctx)] < RANK_ORDER['leadership']) {
     return needLeadership(ctx);
+  }
+
+  if (!ctx.tenant.erlcServerKey) {
+    const gate = await buildErlcKeyGatePanel(interaction.guild.id);
+    if (!gate) return ephemeral('Could not load configuration.');
+    return { ...gate, ephemeral: true };
+  }
+
+  if (!ctx.tenant.erlcAuthorized) {
+    const authPanel = await buildAuthorizePanel(interaction.guild.id);
+    if (!authPanel) return ephemeral('Could not load configuration.');
+    return { ...authPanel, ephemeral: true };
   }
 
   const panel = await buildMainPanel(interaction.guild.id);
@@ -735,6 +750,31 @@ export async function handleComponentInteraction(interaction) {
     const panel = await buildCategoryPanel(tenantId, category);
     if (!panel) return;
     return interaction.update(panelPayload(panel));
+  }
+
+  if (route === 'wren_cfg_setkey') {
+    const modal = await buildFieldModal(tenantId, 'erlcServerKey');
+    if (!modal) return interaction.reply(errorEphemeral('Could not load the key entry form.'));
+    return interaction.showModal(modal);
+  }
+
+  // Neither button actually verifies anything against ERLC — there's no API
+  // to check authorization status. "I've authorised" just takes the owner's
+  // word for it and stops nagging; "Skip" lets them through today but the
+  // reminder comes back next time they open /wren config.
+  if (route === 'wren_cfg_authok') {
+    const cfg = loadConfig();
+    await updateTenant(tenantId, { erlc_authorized: true }, cfg.tenantSecretEncKey);
+    invalidateTenant(tenantId);
+    const panel = await buildMainPanel(tenantId);
+    if (!panel) return;
+    return interaction.update({ ...panelPayload(panel), content: '✅ Thanks — this authorization link won’t be shown again.' });
+  }
+
+  if (route === 'wren_cfg_authskip') {
+    const panel = await buildMainPanel(tenantId);
+    if (!panel) return;
+    return interaction.update({ ...panelPayload(panel), content: 'Okay, skipped for now — you’ll be asked to authorize again next time you open `/wren config`.' });
   }
 
   if (route === 'wren_cfg_field') {

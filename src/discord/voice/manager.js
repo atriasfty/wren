@@ -52,6 +52,11 @@ globalThis.fetch = function patchedFetch(url, options) {
   if (!isFileUrl) return originalFetch(url, options);
   return (async () => {
     const filePath = fileURLToPath(url);
+    // [SECURITY-FIX] Path traversal: validate file:// URL paths against project root
+    const rootPath = process.cwd();
+    if (!filePath.startsWith(rootPath + path.sep)) {
+      throw new Error('Path traversal detected');
+    }
     const data = await fs.readFile(filePath);
     return new globalThis.Response(data);
   })();

@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { ActionRowBuilder, ButtonBuilder } from 'discord.js';
 
-// TODO [SECURITY]: upgrade vitest — breaking change, requires manual review
+// TODO [SECURITY]: upgrade tar, vite, vitest — breaking change, requires manual review
 // TODO [SECURITY]: upgrade discord.js — breaking change, requires manual review
 // TODO [SECURITY]: upgrade @xenova/transformers — breaking change, requires manual review
 

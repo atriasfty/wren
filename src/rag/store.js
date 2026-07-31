@@ -24,7 +24,10 @@ export async function writeVectorStore(vectorStorePath, store) {
 
 export async function appendManualDoc(dataDir, filename, content) {
   const safe = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const full = path.join(dataDir, 'manual', safe);
+  const manualDir = path.resolve(dataDir, 'manual');
+  const full = path.resolve(manualDir, safe);
+  // [SECURITY-FIX] Path traversal: prevent writing outside the manual/ directory
+  if (!full.startsWith(manualDir + path.sep)) throw new Error('Invalid filename');
   await fs.writeFile(full, content, 'utf-8');
   return safe;
 }
@@ -42,5 +45,9 @@ export async function readManualDoc(dataDir, filename) {
   // Defence in depth: sanitise here too, not only at the call site, so a stray
   // caller can never traverse out of the tenant's manual/ directory.
   const safe = String(filename).replace(/[^a-zA-Z0-9._-]/g, '_');
-  return fs.readFile(path.join(dataDir, 'manual', safe), 'utf-8');
+  const manualDir = path.resolve(dataDir, 'manual');
+  const full = path.resolve(manualDir, safe);
+  // [SECURITY-FIX] Path traversal: prevent reading outside the manual/ directory
+  if (!full.startsWith(manualDir + path.sep)) throw new Error('Invalid filename');
+  return fs.readFile(full, 'utf-8');
 }

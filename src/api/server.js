@@ -41,10 +41,22 @@ export async function createApiServer(client) {
   setEncryptionKey(cfg.tenantSecretEncKey);
 
   const app = express();
+
+  // [SECURITY-FIX] Remove X-Powered-By header entirely
+  app.disable('x-powered-by');
+
   app.use(express.json({ 
     limit: '256kb',
     verify: (req, res, buf) => { req.rawBody = buf; }
   }));
+
+  // [SECURITY-FIX] Catch malformed JSON instead of leaking HTML stack trace
+  app.use((err, req, res, _next) => {
+    if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+      return res.status(400).json({ error: 'Malformed JSON payload' });
+    }
+    _next(err);
+  });
 
   app.use((req, res, next) => {
     // [SECURITY-FIX] Configuration & Headers: add missing security headers
@@ -54,7 +66,6 @@ export async function createApiServer(client) {
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('Permissions-Policy', 'geolocation=(), camera=(), microphone=()');
-    res.setHeader('X-Powered-By', 'wren');
     next();
   });
 
@@ -251,6 +262,13 @@ export async function createApiServer(client) {
       sourcesCount: req.tenantCtx.sources.length,
       policyCount: Object.keys(req.tenantCtx.policy).length,
     });
+  });
+
+  // [SECURITY-FIX] Catch-all error handler to avoid leaking stack traces
+  app.use((err, req, res, _next) => {
+    if (res.headersSent) return _next(err);
+    console.error('[api] unhandled exception:', err);
+    res.status(500).json({ error: 'Internal server error' });
   });
 
   return app;

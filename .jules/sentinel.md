@@ -1,0 +1,4 @@
+## 2024-05-18 - Express Default Error Handler Information Leakage
+**Vulnerability:** Express default error handlers can leak sensitive HTML stack traces to clients when unhandled exceptions occur, including `SyntaxError`s from malformed JSON payloads handled by `express.json()`.
+**Learning:** By default, Express responds to exceptions (including 400 Bad Request on JSON parse failures) with an HTML-formatted stack trace. This reveals internal server structures and file paths, which malicious users could exploit.
+**Prevention:** Always implement a custom error handling middleware immediately after `express.json()` to catch `SyntaxError`s, and a global catch-all error handling middleware at the end of the route definitions to catch unhandled exceptions, returning standard, generic JSON responses instead of default HTML traces.

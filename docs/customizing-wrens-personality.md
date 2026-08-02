@@ -1,6 +1,6 @@
 # Customizing Wren's Personality
 
-By default, Wren is friendly, helpful, and concise. However, you can change Wren's personality and foundational knowledge to perfectly match the vibe of your server.
+By default, Wren talks like a fast, informal, slightly sarcastic friend who's good at server admin - mostly lowercase, short texting-style replies, light teasing when appropriate, and a calmer tone for serious topics. You can override this and change Wren's personality and foundational knowledge to perfectly match the vibe of your server.
 
 This is done using the **Core Info** and **Response Style** settings in the configuration menu.
 

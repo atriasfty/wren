@@ -2,6 +2,7 @@
 
 ## Starting
 * [Welcome to Wren](README.md)
+* [Self-Hosting Wren](self-hosting.md)
 * [Configuration Guide](configuration.md)
 * [Plans & Pricing](plans-and-pricing.md)
 * [Understanding Your Subscription & Limits](subscription-limits.md)

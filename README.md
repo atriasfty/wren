@@ -113,4 +113,4 @@ src/
 
 ## License
 
-ISC.
+AGPL-3.

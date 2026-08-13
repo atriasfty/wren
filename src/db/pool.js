@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { dbQueryDuration } from '../metrics.js';
 
 const { Pool } = pg;
 
@@ -21,7 +22,12 @@ export function getPool() {
 }
 
 export async function query(text, params) {
-  return getPool().query(text, params);
+  const start = Date.now();
+  try {
+    return await getPool().query(text, params);
+  } finally {
+    dbQueryDuration.observe((Date.now() - start) / 1000);
+  }
 }
 
 export async function withTx(fn) {

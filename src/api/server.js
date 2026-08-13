@@ -1,4 +1,5 @@
 import express from 'express';
+import crypto from 'crypto';
 import { hashToken } from '../tenant/crypto.js';
 import { findTenantByTokenHash, updateSubscription, tryClaimEvent } from '../tenant/store.js';
 import { resolveTenantById, setEncryptionKey, invalidateTenant } from '../tenant/resolve.js';
@@ -6,6 +7,7 @@ import { validateEvent } from '@polar-sh/sdk/webhooks';
 import { runAssistantPipeline } from '../ai/pipeline.js';
 import { loadConfig } from '../config.js';
 import { createMcpRouter } from './mcp.js';
+import { register, httpRequestDuration, chatPipelineDuration, chatPipelineErrors } from '../metrics.js';
 
 const SCOPES = new Set(['chat', 'mod']);
 
@@ -58,8 +60,34 @@ export async function createApiServer(client) {
     next();
   });
 
+  app.use((req, res, next) => {
+    const start = Date.now();
+    res.on('finish', () => {
+      // req.route reflects the matched sub-route (e.g. inside the mcp
+      // router); req.baseUrl carries the mount prefix, so combining them
+      // reconstructs the full path without per-tenant/per-token cardinality.
+      const route = req.baseUrl + (req.route?.path || req.path);
+      httpRequestDuration.labels(req.method, route, String(res.statusCode)).observe((Date.now() - start) / 1000);
+    });
+    next();
+  });
+
   app.get('/healthz', (_req, res) => res.json({ ok: true }));
   app.get('/health', (_req, res) => res.json({ ok: true }));
+
+  app.get('/metrics', async (req, res) => {
+    const secret = cfg.metricsSecret;
+    const authHeader = req.headers.authorization || '';
+    const expected = `Bearer ${secret || ''}`;
+    const authorized = !!secret &&
+      authHeader.length === expected.length &&
+      crypto.timingSafeEqual(Buffer.from(authHeader), Buffer.from(expected));
+
+    if (!authorized) return res.status(401).send('Unauthorized');
+
+    res.set('Content-Type', register.contentType);
+    res.send(await register.metrics());
+  });
 
   app.use('/api/mcp', createMcpRouter(client));
 
@@ -228,6 +256,7 @@ export async function createApiServer(client) {
     if (!question || typeof question !== 'string') return res.status(400).json({ error: 'question required' });
     if (question.length > 4000) return res.status(400).json({ error: 'question too long (max 4000 chars)' });
     if (imageUrls != null && !Array.isArray(imageUrls)) return res.status(400).json({ error: 'imageUrls must be an array of URLs' });
+    const pipelineStart = Date.now();
     try {
       const result = await runAssistantPipeline(req.tenantCtx, {
         question,
@@ -235,8 +264,11 @@ export async function createApiServer(client) {
         imageUrls,
         actor: req.actor,
       });
+      chatPipelineDuration.observe((Date.now() - pipelineStart) / 1000);
       res.json({ text: result.text, error: result.error || null });
     } catch (err) {
+      chatPipelineDuration.observe((Date.now() - pipelineStart) / 1000);
+      chatPipelineErrors.inc();
       console.error('[api] chat failed:', err);
       res.status(500).json({ error: 'Internal server error' });
     }

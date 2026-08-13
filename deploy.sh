@@ -60,6 +60,14 @@ if [ -f "${SHARED_ENV_FILE}" ]; then
     # shellcheck disable=SC1090
     . "${SHARED_ENV_FILE}"
     set +a
+
+    # Backfilled after this var was added — existing .env files predate it.
+    if ! grep -q "^WREN_METRICS_SECRET=" "${SHARED_ENV_FILE}"; then
+        echo -e "${YELLOW}Adding missing WREN_METRICS_SECRET...${NC}"
+        NEW_METRICS_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64'))")
+        echo "WREN_METRICS_SECRET=${NEW_METRICS_SECRET}" >> "${SHARED_ENV_FILE}"
+        export WREN_METRICS_SECRET="${NEW_METRICS_SECRET}"
+    fi
 else
     echo -e "${YELLOW}No existing .env file found. Starting first-time setup...${NC}"
     
@@ -133,7 +141,10 @@ console.log(u.toString());
     
     echo -e "${YELLOW}Generating AES-256-GCM Tenant Encryption Key...${NC}"
     TENANT_SECRET_ENC_KEY=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64'))")
-    
+
+    echo -e "${YELLOW}Generating Prometheus metrics secret...${NC}"
+    WREN_METRICS_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64'))")
+
     cat <<EOF > "${SHARED_ENV_FILE}"
 GITHUB_PAT=${GITHUB_PAT}
 DISCORD_TOKEN=${DISCORD_TOKEN}
@@ -145,6 +156,7 @@ TENANT_SECRET_ENC_KEY=${TENANT_SECRET_ENC_KEY}
 API_PORT=${API_PORT}
 POSTHOG_API_KEY=${POSTHOG_API_KEY}
 ATRIA_STAFF_IDS=${ATRIA_STAFF_IDS}
+WREN_METRICS_SECRET=${WREN_METRICS_SECRET}
 EOF
     echo -e "${GREEN}Environment file created at ${SHARED_ENV_FILE}${NC}"
     export GITHUB_PAT=$GITHUB_PAT

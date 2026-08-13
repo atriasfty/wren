@@ -32,6 +32,7 @@ export function loadConfig() {
     apiPort: Number(process.env.API_PORT || 4167),
     nodeEnv: process.env.NODE_ENV || 'development',
     atriaStaffIds,
+    metricsSecret: process.env.WREN_METRICS_SECRET || null,
   };
   return _config;
 }

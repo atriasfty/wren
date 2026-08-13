@@ -31,6 +31,28 @@ export const chatPipelineErrors = new client.Counter({
   registers: [register],
 });
 
+export const llmTokens = new client.Counter({
+  name: 'wren_llm_tokens_total',
+  help: 'LLM token usage from OpenRouter chat completion responses (resp.usage)',
+  labelNames: ['type', 'model'], // type: prompt | completion
+  registers: [register],
+});
+
+export const mcpToolCalls = new client.Counter({
+  name: 'wren_mcp_tool_calls_total',
+  help: 'Tool calls executed via executor.js, by tool name and outcome',
+  labelNames: ['tool', 'outcome'], // outcome: ok | error
+  registers: [register],
+});
+
+export const mcpToolDuration = new client.Histogram({
+  name: 'wren_mcp_tool_duration_seconds',
+  help: 'Tool execution duration by tool name',
+  labelNames: ['tool'],
+  buckets: [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 20],
+  registers: [register],
+});
+
 export const dbQueryDuration = new client.Histogram({
   name: 'wren_db_query_duration_seconds',
   help: 'Postgres query duration via db/pool.js query()',

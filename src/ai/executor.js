@@ -7,6 +7,7 @@ import { policyToolKey, DISCORD_ONLY_TOOLS } from './tools.js';
 import { actorKey } from './utils.js';
 import { getClient } from '../discord/client.js';
 import { safeFetch } from './ssrf.js';
+import { mcpToolCalls, mcpToolDuration } from '../metrics.js';
 
 const BANNED_TARGETS = new Set(['all', 'everyone', 'everybody', '*', 'others', 'server', 'people']);
 const MOD_TOOLS = new Set([
@@ -55,7 +56,22 @@ function actorCanViewChannel(actor, channel) {
   return !!perms?.has?.('ViewChannel');
 }
 
+// executeToolInner never rejects (every branch below returns a
+// {success, ...} object, even on internal error) — this wrapper just times
+// each call and records outcome from the returned `success` field, without
+// touching the 500+ line switch body itself.
 export async function executeTool(tenantCtx, name, args, actor) {
+  const start = Date.now();
+  try {
+    const result = await executeToolInner(tenantCtx, name, args, actor);
+    mcpToolCalls.inc({ tool: name, outcome: result?.success === false ? 'error' : 'ok' });
+    return result;
+  } finally {
+    mcpToolDuration.observe({ tool: name }, (Date.now() - start) / 1000);
+  }
+}
+
+async function executeToolInner(tenantCtx, name, args, actor) {
   // Discord-management tools (channel reads/purges, member info) must never be
   // reachable from non-Discord callers (in-game PMs, voice, API) — those actors
   // have no real Discord identity to check permissions against. Enforced here,

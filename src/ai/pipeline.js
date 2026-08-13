@@ -6,6 +6,7 @@ import { buildSystemPrompt } from './prompts.js';
 import { loadConfig } from '../config.js';
 import { incrementMessageUsage, decrementMessageUsage } from '../tenant/store.js';
 import { actorKey } from './utils.js';
+import { llmTokens } from '../metrics.js';
 
 let _client = null;
 export function client() {
@@ -111,6 +112,9 @@ export async function runAssistantPipeline(tenantCtx, {
           'gen_ai.usage.input_tokens': resp.usage.prompt_tokens ?? 0,
           'gen_ai.usage.output_tokens': resp.usage.completion_tokens ?? 0,
         });
+        const model = loadConfig().openRouterModel;
+        if (resp.usage.prompt_tokens) llmTokens.inc({ type: 'prompt', model }, resp.usage.prompt_tokens);
+        if (resp.usage.completion_tokens) llmTokens.inc({ type: 'completion', model }, resp.usage.completion_tokens);
       }
       if (resp.choices?.[0]?.message) {
         span.setAttribute('gen_ai.output.messages', JSON.stringify([resp.choices[0].message]));
@@ -180,6 +184,11 @@ export async function runAssistantPipeline(tenantCtx, {
         messages,
         temperature: 0.2,
       });
+      if (resp.usage) {
+        const model = loadConfig().openRouterModel;
+        if (resp.usage.prompt_tokens) llmTokens.inc({ type: 'prompt', model }, resp.usage.prompt_tokens);
+        if (resp.usage.completion_tokens) llmTokens.inc({ type: 'completion', model }, resp.usage.completion_tokens);
+      }
       const msg = resp.choices?.[0]?.message;
       finalText = typeof msg?.content === 'string' ? msg.content : (msg?.content?.[0]?.text || '');
     } catch (err) {

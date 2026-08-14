@@ -9,8 +9,13 @@ import { resolveTenantById } from '../tenant/resolve.js';
 import { retrieveSources } from '../rag/retrieve.js';
 import { executeTool } from '../ai/executor.js';
 import { TOOL_DEFS } from '../ai/tools.js';
+import { mcpAuthFailures } from '../metrics.js';
 
 const transports = new Map();
+
+export function getActiveMcpConnectionCount() {
+  return transports.size;
+}
 
 // The specific ERLC tools we want to expose via MCP
 const ALLOWED_ERLC_TOOLS = [
@@ -30,6 +35,7 @@ async function mcpAuth(req, res, next) {
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
 
   if (!token) {
+    mcpAuthFailures.inc();
     return res.status(401).json({ error: 'Missing MCP token' });
   }
 
@@ -37,6 +43,7 @@ async function mcpAuth(req, res, next) {
   try {
     const dbRes = await query('SELECT tenant_id, discord_id FROM user_mcp_tokens WHERE token_hash = $1 AND revoked_at IS NULL', [tokenHash]);
     if (dbRes.rows.length === 0) {
+      mcpAuthFailures.inc();
       return res.status(403).json({ error: 'Invalid or revoked MCP token' });
     }
     

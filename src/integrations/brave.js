@@ -1,3 +1,5 @@
+import { externalApiDuration } from '../metrics.js';
+
 const BRAVE_URL = 'https://api.search.brave.com/res/v1/web/search';
 
 export async function webSearch(query, { count = 5 } = {}) {
@@ -12,6 +14,7 @@ export async function webSearch(query, { count = 5 } = {}) {
   const url = `${BRAVE_URL}?q=${encodeURIComponent(safeQuery)}&count=${count}`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10_000);
+  const __start = Date.now();
   try {
     const res = await fetch(url, {
       headers: {
@@ -20,6 +23,7 @@ export async function webSearch(query, { count = 5 } = {}) {
       },
       signal: controller.signal,
     });
+    externalApiDuration.observe({ service: 'brave', status: res.ok ? 'ok' : 'error' }, (Date.now() - __start) / 1000);
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       const err = new Error(`Brave Search error ${res.status}: ${body.slice(0, 200)}`);
@@ -32,6 +36,9 @@ export async function webSearch(query, { count = 5 } = {}) {
       snippet: r.description || '',
       url: r.url || '',
     }));
+  } catch (err) {
+    if (!err.status) externalApiDuration.observe({ service: 'brave', status: 'error' }, (Date.now() - __start) / 1000);
+    throw err;
   } finally {
     clearTimeout(timer);
   }

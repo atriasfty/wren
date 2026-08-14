@@ -6,7 +6,7 @@ import { buildSystemPrompt } from './prompts.js';
 import { loadConfig } from '../config.js';
 import { incrementMessageUsage, decrementMessageUsage } from '../tenant/store.js';
 import { actorKey } from './utils.js';
-import { llmTokens } from '../metrics.js';
+import { llmTokens, ragRetrievalErrors, quotaBlockedTotal } from '../metrics.js';
 
 let _client = null;
 export function client() {
@@ -48,6 +48,7 @@ export async function runAssistantPipeline(tenantCtx, {
   
   const used = await incrementMessageUsage(tenantCtx.tenantId, limit);
   if (used > limit) {
+    quotaBlockedTotal.inc({ tier });
     return { text: `⚠️ This server has used all **${limit}** messages included in its **${tier.toUpperCase()}** plan this month. A server manager can run \`/wren upgrade\` to raise the limit, or \`/wren usage\` to see when it resets.`, error: null };
   }
 
@@ -61,6 +62,7 @@ export async function runAssistantPipeline(tenantCtx, {
         results.map((r, i) => `[${i + 1}] (${r.chunk.label || r.chunk.sourceRef}): ${r.chunk.text}`).join('\n\n');
     }
   } catch (err) {
+    ragRetrievalErrors.inc();
     console.warn('[pipeline] retrieve failed:', err.message);
   }
 

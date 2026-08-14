@@ -23,6 +23,10 @@ import { query } from '../../db/pool.js';
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { spawn } from 'child_process';
 import crypto from 'crypto';
+import {
+  voiceWakewordDetections, voiceQuotaBlocked, voiceSttDuration, voiceSttErrors,
+  voiceTtsDuration, voiceTtsErrors,
+} from '../../metrics.js';
 
 let ffmpegPath = 'ffmpeg';
 if (fsSync.existsSync('/usr/bin/ffmpeg')) {
@@ -81,6 +85,10 @@ async function createWakeWordModel() {
 }
 
 const activeGuilds = new Map();
+
+export function getActiveVoiceSessionCount() {
+  return activeGuilds.size;
+}
 
 // Clears local tracking state for a guild (timers, loaded model, map entry)
 // without touching the underlying connection — safe to call whether or not
@@ -431,6 +439,7 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
     if (tier === 'pro') maxVoiceSecs = 120 * 60;
     
     if (voiceSecs >= maxVoiceSecs) {
+      voiceQuotaBlocked.inc({ tier });
       console.log(`[voice] User ${userId} hit wake word, but tenant ${guildId} is out of voice minutes.`);
       // Silence here looks like a broken bot — tell the channel what's going
       // on, at most once per 10 minutes so repeated wake words don't spam.
@@ -450,7 +459,8 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
     }
 
     console.log(`[voice] Wake word detected: "hey wren" from user ${userId}`);
-    
+    voiceWakewordDetections.inc();
+
     // Play the first charm
     await playCharm(state.player);
     state.promptStartTime = Date.now();
@@ -600,6 +610,7 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
       }
     };
 
+    const __sttStart = Date.now();
     const res = await fetch('https://openrouter.ai/api/v1/audio/transcriptions', {
       method: 'POST',
       headers: {
@@ -611,6 +622,7 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(30_000)
     });
+    voiceSttDuration.observe((Date.now() - __sttStart) / 1000);
 
     if (!res.ok) {
       throw new Error(`OpenRouter STT failed: ${res.status} ${await res.text()}`);
@@ -618,6 +630,7 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
     const data = await res.json();
     finalTranscript = data.text;
   } catch (err) {
+    voiceSttErrors.inc();
     console.error('[voice] STT failed:', err);
     state.isSpeaking = false;
     return;
@@ -669,6 +682,7 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
       .trim();
 
     // 5. Generate TTS via Kokoro 82M
+    const __ttsStart = Date.now();
     const ttsRes = await fetch('https://openrouter.ai/api/v1/audio/speech', {
       method: 'POST',
       headers: {
@@ -683,8 +697,10 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
       }),
       signal: AbortSignal.timeout(30_000)
     });
+    voiceTtsDuration.observe((Date.now() - __ttsStart) / 1000);
 
     if (!ttsRes.ok) {
+      voiceTtsErrors.inc();
       console.error('[voice] TTS failed:', await ttsRes.text());
       state.isSpeaking = false;
       return;

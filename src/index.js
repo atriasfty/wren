@@ -31,6 +31,7 @@ import { fetchChannelContext, splitForDiscord } from './discord/messageHandler.j
 import { resolveTenantByGuildId } from './tenant/resolve.js';
 import { runAssistantPipeline } from './ai/pipeline.js';
 import { startNsfwFilterRefresh } from './ai/nsfwFilter.js';
+import { guildEvents } from './metrics.js';
 
 function publicInteractionError() {
   return 'Something went wrong while processing that request.';
@@ -65,6 +66,13 @@ async function main() {
       console.error('[voice] voiceStateUpdate handler failed:', err);
     });
   });
+
+  // Metrics only — wren_discord_guild_count (a gauge) can't show churn, and no
+  // guildCreate/guildDelete listener existed at all before this. Global slash
+  // commands still don't need per-guild registration here (see the comment
+  // near syncAllGuilds below), so this is deliberately just a counter.
+  client.on('guildCreate', () => guildEvents.inc({ event: 'join' }));
+  client.on('guildDelete', () => guildEvents.inc({ event: 'leave' }));
 
   client.on('interactionCreate', async (interaction) => {
     if (interaction.isAutocomplete()) {

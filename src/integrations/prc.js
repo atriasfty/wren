@@ -1,4 +1,5 @@
 import { assertPublicHttpUrlCached, ssrfAgent } from '../ai/ssrf.js';
+import { externalApiDuration } from '../metrics.js';
 
 function baseUrl(tenantCtx) {
   return tenantCtx.tenant.prcBaseUrl || process.env.PRC_BASE_URL || 'https://api.erlc.gg/v1';
@@ -8,8 +9,11 @@ function baseUrl(tenantCtx) {
 // before sending the tenant's server key to it (SSRF guard).
 async function guardedFetch(urlStr, opts) {
   await assertPublicHttpUrlCached(urlStr);
+  const __start = Date.now();
   // Pin the socket to a connect-time-validated address (DNS-rebind defence).
-  return fetch(urlStr, { ...opts, dispatcher: ssrfAgent });
+  const res = await fetch(urlStr, { ...opts, dispatcher: ssrfAgent });
+  externalApiDuration.observe({ service: 'prc', status: res.ok ? 'ok' : 'error' }, (Date.now() - __start) / 1000);
+  return res;
 }
 
 // See https://apidocs.erlc.gg/creating-authorization-links — an authorization
@@ -96,6 +100,7 @@ setInterval(() => {
 // in server logs instead of silently reading as an invalid username.
 async function lookupRobloxUsernameExact(clean) {
   let res;
+  const __start = Date.now();
   try {
     res = await fetch('https://users.roblox.com/v1/usernames/users', {
       method: 'POST',
@@ -103,9 +108,11 @@ async function lookupRobloxUsernameExact(clean) {
       body: JSON.stringify({ usernames: [clean], excludeBannedUsers: false }),
     });
   } catch (err) {
+    externalApiDuration.observe({ service: 'roblox', status: 'error' }, (Date.now() - __start) / 1000);
     console.warn(`[roblox] username lookup network error for "${clean}": ${err.message}`);
     return null;
   }
+  externalApiDuration.observe({ service: 'roblox', status: res.ok ? 'ok' : 'error' }, (Date.now() - __start) / 1000);
   if (!res.ok) {
     console.warn(`[roblox] username lookup failed for "${clean}": HTTP ${res.status}`);
     return null;

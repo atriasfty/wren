@@ -1,5 +1,6 @@
 import { withTx, query } from '../db/pool.js';
 import { encryptSecret, decryptSecret } from './crypto.js';
+import { memoryOps } from '../metrics.js';
 
 const DEFAULT_POLICY = {
   ban_player: 'admin',
@@ -302,6 +303,7 @@ export async function addMemory({ tenantId, scope, userKey = null, content, adde
      VALUES ($1, $2, $3, $4, $5) RETURNING id`,
     [tenantId, scope, userKey, content, addedBy],
   );
+  memoryOps.inc({ op: 'add' });
   return r.rows[0].id;
 }
 
@@ -311,6 +313,7 @@ export async function removeMemory(tenantId, id, userKey = null) {
   } else {
     await query(`DELETE FROM tenant_memory WHERE tenant_id = $1 AND id = $2`, [tenantId, id]);
   }
+  memoryOps.inc({ op: 'remove' });
 }
 
 // ---------- staff links (verified Discord -> Roblox mapping for POW) ----------

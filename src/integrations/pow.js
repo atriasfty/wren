@@ -1,6 +1,7 @@
 import { getRobloxUserId, getRobloxUserIdExact } from './prc.js';
 import { getStaffLink, setStaffLink } from '../tenant/store.js';
 import { assertPublicHttpUrlCached, ssrfAgent } from '../ai/ssrf.js';
+import { externalApiDuration } from '../metrics.js';
 
 // Per the POW Developer API docs (powdocs.atriasafety.org/advanced-features/developer-api),
 // the public API is served under /api/public/v1 — not bare /api — and each API
@@ -13,8 +14,11 @@ function baseUrl(tenantCtx) {
 // before sending the tenant's POW token to it (SSRF guard).
 async function guardedFetch(urlStr, opts) {
   await assertPublicHttpUrlCached(urlStr);
+  const __start = Date.now();
   // Pin the socket to a connect-time-validated address (DNS-rebind defence).
-  return fetch(urlStr, { ...opts, dispatcher: ssrfAgent });
+  const res = await fetch(urlStr, { ...opts, dispatcher: ssrfAgent });
+  externalApiDuration.observe({ service: 'pow', status: res.ok ? 'ok' : 'error' }, (Date.now() - __start) / 1000);
+  return res;
 }
 
 function token(tenantCtx) {

@@ -8,6 +8,7 @@ import { loadConfig } from '../config.js';
 import { embedBatch } from './embed.js';
 import { ensureTenantDataDir, readVectorStore, writeVectorStore, readManualDoc } from './store.js';
 import { fetchWebpage } from '../integrations/search/webpage.js';
+import { ingestDuration, ingestChunks } from '../metrics.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -134,7 +135,22 @@ function clientReady(client) {
   return new Promise((resolve) => client.once('ready', resolve));
 }
 
-export async function ingestTenant(tenantCtx, client, { kinds = ['all'] } = {}) {
+// Thin wrapper purely for duration/outcome/chunk-count metrics — the actual
+// ingestion logic is ingestTenantInner, unchanged below.
+export async function ingestTenant(tenantCtx, client, opts = {}) {
+  const __start = Date.now();
+  try {
+    const result = await ingestTenantInner(tenantCtx, client, opts);
+    ingestDuration.observe({ outcome: 'ok' }, (Date.now() - __start) / 1000);
+    if (result?.chunks) ingestChunks.inc(result.chunks);
+    return result;
+  } catch (err) {
+    ingestDuration.observe({ outcome: 'error' }, (Date.now() - __start) / 1000);
+    throw err;
+  }
+}
+
+async function ingestTenantInner(tenantCtx, client, { kinds = ['all'] } = {}) {
   await ensureTenantDataDir(tenantCtx.dataDir);
   const doAll = kinds.includes('all');
   const sources = tenantCtx.sources;

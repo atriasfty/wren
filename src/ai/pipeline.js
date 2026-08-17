@@ -71,12 +71,7 @@ export async function runAssistantPipeline(tenantCtx, {
     ...(channelContext ? [{ type: 'text', text: `\n\nRECENT CHANNEL MESSAGES:\n${channelContext}` }] : []),
     ...(ragContext ? [{ type: 'text', text: ragContext }] : []),
     ...(documentsText ? [{ type: 'text', text: `\n\nATTACHED DOCUMENTS:\n${documentsText}` }] : []),
-    // TEMPORARY: the current model has no vision support, so image parts are
-    // disabled — the model is told about the attachment instead of receiving
-    // it. Restore the commented line below when switching back to a vision-
-    // capable model.
-    // ...(imageUrls?.length ? imageUrls.map((u) => ({ type: 'image_url', image_url: { url: u } })) : []),
-    ...(imageUrls?.length ? [{ type: 'text', text: `\n\n[NOTE: The user attached ${imageUrls.length} image${imageUrls.length === 1 ? '' : 's'}, but the current model does not support image input. Let the user know you cannot view images right now.]` }] : []),
+    ...(imageUrls?.length ? imageUrls.map((u) => ({ type: 'image_url', image_url: { url: u } })) : []),
   ];
 
   const messages = [

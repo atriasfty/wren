@@ -126,18 +126,18 @@ export async function handleConfig(interaction, ctx) {
   if (!ctx.tenant.erlcServerKey) {
     const gate = await buildErlcKeyGatePanel(interaction.guild.id);
     if (!gate) return ephemeral('Could not load configuration.');
-    return { ...gate, ephemeral: true };
+    return panelPayload(gate, true);
   }
 
   if (!ctx.tenant.erlcAuthorized) {
     const authPanel = await buildAuthorizePanel(interaction.guild.id);
     if (!authPanel) return ephemeral('Could not load configuration.');
-    return { ...authPanel, ephemeral: true };
+    return panelPayload(authPanel, true);
   }
 
   const panel = await buildMainPanel(interaction.guild.id);
   if (!panel) return ephemeral('Could not load configuration.');
-  return { ...panel, ephemeral: true };
+  return panelPayload(panel, true);
 }
 
 const SOURCE_KIND_LABELS = { discord_channel: 'channel', website: 'website', manual_doc: 'document' };
@@ -352,7 +352,7 @@ export async function handleIngest(interaction, ctx) {
     // outcome is never silently lost.
     async function reportOutcome(embed) {
       try {
-        await interaction.editReply(v2FromEmbed(embed));
+        await interaction.editReply(v2FromEmbed(embed, [], { ephemeral: false }));
       } catch {
         await interaction.channel?.send({
           ...v2FromEmbed(embed, [], { ephemeral: false, content: `<@${interaction.user.id}>` }),
@@ -566,10 +566,10 @@ export async function dispatchWrenCommand(interaction) {
   return reply;
 }
 
-function panelPayload(panel, ephemeralFlag = true) {
-  // content: '' clears any lingering "Saved …" confirmation from a previous
-  // edit when the user navigates elsewhere in the panel.
-  return v2FromEmbed(panel.embeds?.[0], panel.components || [], { ephemeral: ephemeralFlag });
+function panelPayload(panel, ephemeralFlag = false, content = '') {
+  // New panel interactions edit the existing ephemeral message. Preserve its
+  // visibility by omitting the ephemeral flag from component-update payloads.
+  return v2FromEmbed(panel.embeds?.[0], panel.components || [], { ephemeral: ephemeralFlag, content });
 }
 
 export async function handleMcp(interaction) {
@@ -725,7 +725,9 @@ export async function handleComponentInteraction(interaction) {
   // The confirm prompt is an ephemeral message, so only its owner can click.
   if (route === 'wren_mcp_regen') {
     const payload = await issueMcpToken(ctx, tenantId, interaction.user.id);
-    return interaction.update(payload);
+    const updatePayload = { ...payload };
+    delete updatePayload.ephemeral;
+    return interaction.update(updatePayload);
   }
 
   const actorRankStr = resolveActorRank({ kind: 'discord', member: interaction.member, id: interaction.user?.id || 'unknown' }, ctx);
@@ -760,13 +762,13 @@ export async function handleComponentInteraction(interaction) {
     invalidateTenant(tenantId);
     const panel = await buildMainPanel(tenantId);
     if (!panel) return;
-    return interaction.update({ ...panelPayload(panel), content: '✅ Thanks — this authorization link won’t be shown again.' });
+    return interaction.update(panelPayload(panel, false, '✅ Thanks — this authorization link won’t be shown again.'));
   }
 
   if (route === 'wren_cfg_authskip') {
     const panel = await buildMainPanel(tenantId);
     if (!panel) return;
-    return interaction.update({ ...panelPayload(panel), content: 'Okay, skipped for now — you’ll be asked to authorize again next time you open `/wren config`.' });
+    return interaction.update(panelPayload(panel, false, 'Okay, skipped for now — you’ll be asked to authorize again next time you open `/wren config`.'));
   }
 
   if (route === 'wren_cfg_field') {
@@ -791,7 +793,7 @@ export async function handleComponentInteraction(interaction) {
     const category = CONFIG_CATEGORY_FOR_FIELD[fieldKey];
     const panel = category ? await buildCategoryPanel(tenantId, category) : await buildMainPanel(tenantId);
     if (!panel) return;
-    return interaction.update({ ...panelPayload(panel), content: result.message });
+    return interaction.update(panelPayload(panel, false, result.message));
   }
 
   if (route === 'wren_cfg_value') {
@@ -837,7 +839,7 @@ export async function handleComponentInteraction(interaction) {
       });
       await publicMessage.edit(v2Text(result.message, { title: 'Configuration review' }));
       const panel = await buildCategoryPanel(tenantId, CONFIG_CATEGORY_FOR_FIELD[fieldKey]);
-      if (panel) await interaction.editReply({ ...panelPayload(panel), content: result.outcome === 'approved' ? 'Saved.' : result.message });
+      if (panel) await interaction.editReply(panelPayload(panel, false, result.outcome === 'approved' ? 'Saved.' : result.message));
       return;
     }
 
@@ -851,7 +853,7 @@ export async function handleComponentInteraction(interaction) {
     const deny = new ButtonBuilder().setCustomId(`wren_cfg_modreview:${tenantId}:${token}:deny`).setLabel('Deny').setStyle(ButtonStyle.Danger);
     await publicMessage.edit(v2Text(`⚠️ <@${interaction.user.id}> wants to update **${field.label}**. This server has already used its free reviews in the last 12 hours — reviewing this one will use **1 message** from the server's monthly quota. A leadership member must approve or deny.`, { title: 'Approval needed', ephemeral: false, components: [new ActionRowBuilder().addComponents(approve, deny)] }));
 
-      return interaction.editReply(v2Text('⚠️ Waiting for a leadership member to confirm — this change would use part of your server’s message quota. See the message below.'));
+      return interaction.editReply(v2Text('⚠️ Waiting for a leadership member to confirm — this change would use part of your server’s message quota. See the message below.', { ephemeral: false }));
   }
 
   if (route === 'wren_cfg_modreview') {
@@ -867,14 +869,14 @@ export async function handleComponentInteraction(interaction) {
 
     const field = CONFIG_FIELDS[pending.fieldKey];
     if (action === 'deny') {
-      return interaction.update(v2Text(`❌ <@${pending.requesterId}>'s change to **${field.label}** was cancelled — <@${interaction.user.id}> denied the quota confirmation.`, { title: 'Change cancelled' }));
+      return interaction.update(v2Text(`❌ <@${pending.requesterId}>'s change to **${field.label}** was cancelled — <@${interaction.user.id}> denied the quota confirmation.`, { title: 'Change cancelled', ephemeral: false }));
     }
 
-    await interaction.update(v2Text(`⏳ <@${interaction.user.id}> approved — reviewing…`, { title: 'Review in progress' }));
+    await interaction.update(v2Text(`⏳ <@${interaction.user.id}> approved — reviewing…`, { title: 'Review in progress', ephemeral: false }));
     const result = await runPersonalityReview({
       tenantId, tenantCtx: ctx, fieldKey: pending.fieldKey, rawValue: pending.rawValue, requesterId: pending.requesterId, chargeQuota: true,
     });
-    return interaction.editReply(v2Text(result.message, { title: 'Configuration review' }));
+    return interaction.editReply(v2Text(result.message, { title: 'Configuration review', ephemeral: false }));
   }
 
   console.warn('[panel] unknown route:', route, customId);

@@ -93,7 +93,9 @@ async function main() {
         const reply = await dispatchWrenCommand(interaction);
         if (reply) {
           if (interaction.deferred || interaction.replied) {
-            await interaction.editReply(reply).catch(() => {});
+            const editPayload = { ...reply };
+            delete editPayload.ephemeral;
+            await interaction.editReply(editPayload).catch(() => {});
           } else {
             await interaction.reply(reply).catch(async () => {
               await interaction.followUp(reply).catch(() => {});
@@ -106,7 +108,11 @@ async function main() {
         // throw would leave an eternal "thinking…" spinner if we only reply().
         try {
           const content = v2Text(publicInteractionError(), { title: 'Wren could not complete that command', color: 0xff3333 });
-          if (interaction.deferred || interaction.replied) await interaction.editReply(content);
+          if (interaction.deferred || interaction.replied) {
+            const editPayload = { ...content };
+            delete editPayload.ephemeral;
+            await interaction.editReply(editPayload);
+          }
           else await interaction.reply(content);
         } catch {}
       }
@@ -180,7 +186,7 @@ async function main() {
       try {
         await handleComponentInteraction(interaction);
       } catch (err) {
-        console.error('[component] dispatch failed:', err);
+        console.error('[component] dispatch failed:', err, err.rawError?.errors ? JSON.stringify(err.rawError.errors) : '');
         try {
           const content = v2Text(publicInteractionError(), { title: 'Wren could not complete that command', color: 0xff3333 });
           if (interaction.replied || interaction.deferred) await interaction.followUp(content);

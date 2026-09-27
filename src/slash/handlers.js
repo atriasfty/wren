@@ -37,6 +37,7 @@ import {
 } from './configPanel.js';
 import { handleVoice } from '../discord/voice/manager.js';
 import { reviewPersonalityText } from '../ai/personalityReview.js';
+import { v2Text, v2FromEmbed } from './componentsV2.js';
 
 const CONFIG_CATEGORY_FOR_FIELD = Object.fromEntries(
   Object.entries(CONFIG_FIELDS).map(([k, f]) => [k, f.category])
@@ -54,18 +55,17 @@ async function checkManageGuild(interaction) {
   return false;
 }
 
-// Discord caps embed descriptions at 4096 chars — keep headroom so a long
-// list or message never turns into a raw API error for the user.
-const MAX_EMBED_DESC = 3900;
+// Keep a little headroom beneath the per-Text-Display character limit.
+const MAX_MESSAGE_TEXT = 3900;
 
 function ephemeral(text) {
   const t = String(text ?? '');
-  const safe = t.length > MAX_EMBED_DESC ? `${t.slice(0, MAX_EMBED_DESC - 1)}…` : t;
-  return { embeds: [new EmbedBuilder().setColor(0x0bb0d1).setDescription(safe)], ephemeral: true };
+  const safe = t.length > MAX_MESSAGE_TEXT ? `${t.slice(0, MAX_MESSAGE_TEXT - 1)}…` : t;
+  return v2Text(safe);
 }
 
 function errorEphemeral(text) {
-  return { embeds: [new EmbedBuilder().setColor(0xff3333).setDescription(`❌ ${text}`)], ephemeral: true };
+  return v2Text(`❌ ${text}`, { color: 0xff3333 });
 }
 
 // Renders a list of lines into a single ephemeral embed, keeping under the
@@ -74,7 +74,7 @@ function listEphemeral(lines, { header = null } = {}) {
   const out = [];
   let used = header ? header.length + 1 : 0;
   for (const line of lines) {
-    if (used + line.length + 1 > MAX_EMBED_DESC - 80) break;
+    if (used + line.length + 1 > MAX_MESSAGE_TEXT - 80) break;
     out.push(line);
     used += line.length + 1;
   }
@@ -113,10 +113,7 @@ export async function handleSetup(interaction) {
   });
   // Overridable so a redeploy on a different host doesn't ship a wrong IP.
   const egressIp = process.env.WREN_EGRESS_IP || '152.53.21.47';
-  return {
-    embeds: [new EmbedBuilder().setColor(0x0bb0d1).setDescription(`✅ **Wren is now configured for this server!**\n\n⚠️ **IMPORTANT**: You must whitelist Wren's IP (\`${egressIp}\`) in your ERLC server dashboard (https://api.erlc.gg/server-owners), otherwise Wren won't be able to connect or perform any actions.\n\nYou can now use \`/wren config view\` to set up your channels, API keys, and options.\nBe sure to check out the setup guide at **https://wren.atriasafety.org** to learn how to add knowledge sources.`)],
-    ephemeral: false
-  };
+  return v2Text(`✅ **Wren is now configured for this server!**\n\n⚠️ **IMPORTANT**: You must whitelist Wren's IP (\`${egressIp}\`) in your ERLC server dashboard (https://api.erlc.gg/server-owners), otherwise Wren won't be able to connect or perform any actions.\n\nYou can now use \`/wren config view\` to set up your channels, API keys, and options.\nBe sure to check out the setup guide at **https://wren.atriasafety.org** to learn how to add knowledge sources.`, { title: 'Wren is configured', ephemeral: false });
 }
 
 
@@ -348,18 +345,17 @@ export async function handleIngest(interaction, ctx) {
       .setColor(0x0bb0d1)
       .setDescription('Starting ingestion…\n\n*This may take a few minutes depending on how many sources are configured and how much content they contain.*');
 
-    await interaction.reply({ embeds: [initialEmbed], ephemeral: true });
+    await interaction.reply(v2FromEmbed(initialEmbed));
 
     // Interaction tokens die after 15 minutes and big ingestions can exceed
     // that — if editReply fails, fall back to posting in the channel so the
     // outcome is never silently lost.
     async function reportOutcome(embed) {
       try {
-        await interaction.editReply({ embeds: [embed] });
+        await interaction.editReply(v2FromEmbed(embed));
       } catch {
         await interaction.channel?.send({
-          content: `<@${interaction.user.id}>`,
-          embeds: [embed],
+          ...v2FromEmbed(embed, [], { ephemeral: false, content: `<@${interaction.user.id}>` }),
           allowedMentions: { users: [interaction.user.id] },
         }).catch((err) => console.error('[ingest] failed to report outcome:', err.message));
       }
@@ -518,7 +514,7 @@ export async function handleManage(interaction) {
     message += `\nNo active subscriptions found for you or this server.`;
   }
 
-  return { embeds: [new EmbedBuilder().setColor(0x0bb0d1).setDescription(message)], components, ephemeral: true };
+  return v2Text(message, { title: 'Wren subscription', components, ephemeral: true });
 }
 
 export async function dispatchWrenCommand(interaction) {
@@ -573,7 +569,7 @@ export async function dispatchWrenCommand(interaction) {
 function panelPayload(panel, ephemeralFlag = true) {
   // content: '' clears any lingering "Saved …" confirmation from a previous
   // edit when the user navigates elsewhere in the panel.
-  return { content: '', embeds: panel.embeds, components: panel.components, ephemeral: ephemeralFlag };
+  return v2FromEmbed(panel.embeds?.[0], panel.components || [], { ephemeral: ephemeralFlag });
 }
 
 export async function handleMcp(interaction) {
@@ -593,14 +589,10 @@ export async function handleMcp(interaction) {
         .setLabel('Regenerate token')
         .setStyle(ButtonStyle.Danger),
     );
-    return {
-      embeds: [new EmbedBuilder()
+    return v2FromEmbed(new EmbedBuilder()
         .setColor(0x0bb0d1)
         .setTitle('Wren MCP Access')
-        .setDescription('You already have an MCP token for this server.\n\n⚠️ Regenerating creates a new token and **immediately invalidates the old one** — any agent using it will stop working until you update its config.')],
-      components: [row],
-      ephemeral: true,
-    };
+        .setDescription('You already have an MCP token for this server.\n\n⚠️ Regenerating creates a new token and **immediately invalidates the old one** — any agent using it will stop working until you update its config.'), [row]);
   }
 
   return issueMcpToken(ctx, interaction.guild.id, interaction.user.id);
@@ -626,7 +618,7 @@ export async function issueMcpToken(ctx, tenantId, discordId) {
       { name: 'Installation (Claude Desktop)', value: `1. Open your Claude Desktop config file (\`claude_desktop_config.json\`).\n2. Add the Wren MCP server:\n\`\`\`json\n"mcpServers": {\n  "wren-mcp": {\n    "command": "npx",\n    "args": [\n      "-y",\n      "mcp-proxy",\n      "--headers", "Authorization", "Bearer ${rawToken}",\n      "https://wrenapi.atriasafety.org/api/mcp/sse"\n    ]\n  }\n}\n\`\`\``, inline: false }
     );
     
-  return { embeds: [embed], ephemeral: true };
+  return v2FromEmbed(embed);
 }
 
 // Behaviour fields whose free text feeds straight into Wren's system prompt
@@ -733,7 +725,7 @@ export async function handleComponentInteraction(interaction) {
   // The confirm prompt is an ephemeral message, so only its owner can click.
   if (route === 'wren_mcp_regen') {
     const payload = await issueMcpToken(ctx, tenantId, interaction.user.id);
-    return interaction.update({ ...payload, components: [] });
+    return interaction.update(payload);
   }
 
   const actorRankStr = resolveActorRank({ kind: 'discord', member: interaction.member, id: interaction.user?.id || 'unknown' }, ctx);
@@ -836,14 +828,14 @@ export async function handleComponentInteraction(interaction) {
     if (!channel) return interaction.reply(errorEphemeral('Could not access this channel to run the review.'));
 
     await interaction.deferUpdate();
-    const publicMessage = await channel.send(`⏳ <@${interaction.user.id}> is updating **${field.label}** — reviewing…`);
+    const publicMessage = await channel.send(v2Text(`⏳ <@${interaction.user.id}> is updating **${field.label}** — reviewing…`, { title: 'Configuration review', ephemeral: false }));
 
     const recentCount = await countRecentPersonalityReviews(tenantId);
     if (recentCount < 3) {
       const result = await runPersonalityReview({
         tenantId, tenantCtx: ctx, fieldKey, rawValue, requesterId: interaction.user.id, chargeQuota: false,
       });
-      await publicMessage.edit({ content: result.message });
+      await publicMessage.edit(v2Text(result.message, { title: 'Configuration review' }));
       const panel = await buildCategoryPanel(tenantId, CONFIG_CATEGORY_FOR_FIELD[fieldKey]);
       if (panel) await interaction.editReply({ ...panelPayload(panel), content: result.outcome === 'approved' ? 'Saved.' : result.message });
       return;
@@ -857,12 +849,9 @@ export async function handleComponentInteraction(interaction) {
 
     const approve = new ButtonBuilder().setCustomId(`wren_cfg_modreview:${tenantId}:${token}:approve`).setLabel('Approve').setStyle(ButtonStyle.Success);
     const deny = new ButtonBuilder().setCustomId(`wren_cfg_modreview:${tenantId}:${token}:deny`).setLabel('Deny').setStyle(ButtonStyle.Danger);
-    await publicMessage.edit({
-      content: `⚠️ <@${interaction.user.id}> wants to update **${field.label}**. This server has already used its free reviews in the last 12 hours — reviewing this one will use **1 message** from the server's monthly quota. A leadership member must approve or deny.`,
-      components: [new ActionRowBuilder().addComponents(approve, deny)],
-    });
+    await publicMessage.edit(v2Text(`⚠️ <@${interaction.user.id}> wants to update **${field.label}**. This server has already used its free reviews in the last 12 hours — reviewing this one will use **1 message** from the server's monthly quota. A leadership member must approve or deny.`, { title: 'Approval needed', ephemeral: false, components: [new ActionRowBuilder().addComponents(approve, deny)] }));
 
-    return interaction.editReply({ content: '⚠️ Waiting for a leadership member to confirm — this change would use part of your server’s message quota. See the message below.' });
+      return interaction.editReply(v2Text('⚠️ Waiting for a leadership member to confirm — this change would use part of your server’s message quota. See the message below.'));
   }
 
   if (route === 'wren_cfg_modreview') {
@@ -878,17 +867,14 @@ export async function handleComponentInteraction(interaction) {
 
     const field = CONFIG_FIELDS[pending.fieldKey];
     if (action === 'deny') {
-      return interaction.update({
-        content: `❌ <@${pending.requesterId}>'s change to **${field.label}** was cancelled — <@${interaction.user.id}> denied the quota confirmation.`,
-        components: [],
-      });
+      return interaction.update(v2Text(`❌ <@${pending.requesterId}>'s change to **${field.label}** was cancelled — <@${interaction.user.id}> denied the quota confirmation.`, { title: 'Change cancelled' }));
     }
 
-    await interaction.update({ content: `⏳ <@${interaction.user.id}> approved — reviewing…`, components: [] });
+    await interaction.update(v2Text(`⏳ <@${interaction.user.id}> approved — reviewing…`, { title: 'Review in progress' }));
     const result = await runPersonalityReview({
       tenantId, tenantCtx: ctx, fieldKey: pending.fieldKey, rawValue: pending.rawValue, requesterId: pending.requesterId, chargeQuota: true,
     });
-    return interaction.editReply({ content: result.message });
+    return interaction.editReply(v2Text(result.message, { title: 'Configuration review' }));
   }
 
   console.warn('[panel] unknown route:', route, customId);

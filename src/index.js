@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { ActionRowBuilder, ButtonBuilder } from 'discord.js';
+import { v2Text } from './slash/componentsV2.js';
 
 // TODO [SECURITY]: upgrade vitest — breaking change, requires manual review
 // TODO [SECURITY]: upgrade discord.js — breaking change, requires manual review
@@ -104,7 +105,7 @@ async function main() {
         // Handlers that defer (upgrade, manage, voice join, ingest run) and then
         // throw would leave an eternal "thinking…" spinner if we only reply().
         try {
-          const content = { content: publicInteractionError(), ephemeral: true };
+          const content = v2Text(publicInteractionError(), { title: 'Wren could not complete that command', color: 0xff3333 });
           if (interaction.deferred || interaction.replied) await interaction.editReply(content);
           else await interaction.reply(content);
         } catch {}
@@ -116,7 +117,7 @@ async function main() {
       if (interaction.customId === 'agree_tos') {
         const dedupeKey = interaction.message.id;
         if (tosClickInFlight.has(dedupeKey)) {
-          await interaction.reply({ content: 'Already processing your agreement — one moment!', ephemeral: true }).catch(() => {});
+          await interaction.reply(v2Text('Already processing your agreement — one moment!', { title: 'Agreement' })).catch(() => {});
           return;
         }
         tosClickInFlight.add(dedupeKey);
@@ -126,12 +127,22 @@ async function main() {
           // Disable the button so it can't be replayed again later — not just
           // during this race window, but from a stale click hours afterward.
           try {
-            const existingButton = interaction.message.components?.[0]?.components?.[0];
-            if (existingButton) {
+            if (interaction.message.flags?.bitfield & 32768) {
               const disabledRow = new ActionRowBuilder().addComponents(
-                ButtonBuilder.from(existingButton).setDisabled(true)
+                new ButtonBuilder().setCustomId('agree_tos').setLabel('Agree').setStyle(1).setDisabled(true)
               );
-              await interaction.message.edit({ components: [disabledRow] });
+              await interaction.message.edit(v2Text(
+                '**Before using Wren in Voice Chat**, please accept our Terms of Service and Privacy Policy. By clicking Agree, you agree to both documents.\n\n[Documentation](https://wren.atriasafety.org) · [Terms of Service](https://atriasfty.org/wren-tos) · [Privacy Policy](https://atriasfty.org/wren-privacy)',
+                { title: 'Welcome to Wren', ephemeral: false, components: [disabledRow] },
+              ));
+            } else {
+              const existingButton = interaction.message.components?.[0]?.components?.[0];
+              if (existingButton) {
+                const disabledRow = new ActionRowBuilder().addComponents(
+                  ButtonBuilder.from(existingButton).setDisabled(true)
+                );
+                await interaction.message.edit({ components: [disabledRow] });
+              }
             }
           } catch (editErr) {
             console.warn('[slash] failed to disable agree_tos button:', editErr.message);
@@ -142,17 +153,17 @@ async function main() {
             // Only replay the original request if the person agreeing is its
             // author — someone else's click must not consent on their behalf.
             if (originalMsg && originalMsg.author.id === interaction.user.id) {
-              await interaction.reply({ content: 'Thank you for agreeing to the Terms of Service and Privacy Policy! Processing your original request...', ephemeral: true });
+              await interaction.reply(v2Text('Thank you for agreeing to the Terms of Service and Privacy Policy! Processing your original request...', { title: 'Agreement' }));
               interaction.client.emit('messageCreate', originalMsg);
             } else {
-              await interaction.reply({ content: 'Thank you for agreeing to the Terms of Service and Privacy Policy! You can now use Wren.', ephemeral: true });
+              await interaction.reply(v2Text('Thank you for agreeing to the Terms of Service and Privacy Policy! You can now use Wren.', { title: 'Agreement' }));
             }
           } else {
-            await interaction.reply({ content: 'Thank you for agreeing to the Terms of Service and Privacy Policy! You can now use Wren.', ephemeral: true });
+            await interaction.reply(v2Text('Thank you for agreeing to the Terms of Service and Privacy Policy! You can now use Wren.', { title: 'Agreement' }));
           }
         } catch (err) {
           console.error('[slash] button failed:', err);
-          await interaction.reply({ content: 'Failed to record agreement.', ephemeral: true }).catch(() => {});
+          await interaction.reply(v2Text('Failed to record agreement.', { title: 'Agreement', color: 0xff3333 })).catch(() => {});
         } finally {
           tosClickInFlight.delete(dedupeKey);
         }
@@ -171,7 +182,7 @@ async function main() {
       } catch (err) {
         console.error('[component] dispatch failed:', err);
         try {
-          const content = { content: publicInteractionError(), ephemeral: true };
+          const content = v2Text(publicInteractionError(), { title: 'Wren could not complete that command', color: 0xff3333 });
           if (interaction.replied || interaction.deferred) await interaction.followUp(content);
           else await interaction.reply(content);
         } catch {}

@@ -21,6 +21,7 @@ import { incrementVoiceTime, getVoiceUsageSeconds } from '../../tenant/store.js'
 import { runAssistantPipeline } from '../../ai/pipeline.js';
 import { query } from '../../db/pool.js';
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { v2Text, v2FromEmbed } from '../../slash/componentsV2.js';
 import { spawn } from 'child_process';
 import crypto from 'crypto';
 import {
@@ -120,7 +121,7 @@ function teardownGuildVoice(guildId) {
 
 // Voice replies use the same branded embed as every other Wren response.
 function voiceReply(text) {
-  return { embeds: [new EmbedBuilder().setColor(0x0bb0d1).setDescription(text)], ephemeral: true };
+  return v2Text(text, { title: 'Wren voice' });
 }
 
 export async function handleVoice(interaction) {
@@ -540,7 +541,7 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
             .setLabel('Agree')
             .setStyle(ButtonStyle.Primary)
         );
-        await user.send({ embeds: [embed], components: [row] });
+        await user.send(v2FromEmbed(embed, [row], { ephemeral: false }));
       } catch (dmErr) {
         console.error('[voice] Could not send ToS DM:', dmErr);
       }

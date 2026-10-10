@@ -7,6 +7,7 @@ import { policyToolKey, DISCORD_ONLY_TOOLS } from './tools.js';
 import { actorKey } from './utils.js';
 import { getClient } from '../discord/client.js';
 import { safeFetch } from './ssrf.js';
+import { parseImageId, imageAttachments, formatAge } from './images.js';
 import { mcpToolCalls, mcpToolDuration } from '../metrics.js';
 
 const BANNED_TARGETS = new Set(['all', 'everyone', 'everybody', '*', 'others', 'server', 'people']);
@@ -483,6 +484,23 @@ async function executeToolInner(tenantCtx, name, args, actor) {
           count: msgs.size,
           messages: msgs.map((m) => ({ author: m.author.username, content: m.content, timestamp: m.createdAt.toISOString(), id: m.id })).reverse(),
         };
+        break;
+      }
+      case 'view_image': {
+        const ref = parseImageId(args.image_id);
+        if (!ref) return { success: false, error: 'Invalid image_id. Use the exact id from the channel history.' };
+        const guild = getGuild(tenantCtx, actor);
+        if (!guild) return { success: false, error: 'Discord guild context required' };
+        const channel = await guild.channels.fetch(ref.channelId).catch(() => null);
+        if (!channel?.isTextBased?.()) return { success: false, error: 'Image not found' };
+        if (!actorCanViewChannel(actor, channel)) return { success: false, error: 'You do not have access to that channel.' };
+        const msg = await channel.messages.fetch(ref.messageId).catch(() => null);
+        const img = msg ? imageAttachments(msg)[ref.index] : null;
+        if (!img) return { success: false, error: 'Image not found (the message may have been deleted).' };
+        // `imageUrl` is consumed by the pipeline, which attaches the pixels as
+        // a one-off user turn (tool results can only carry text) and strips it
+        // from the text the model sees.
+        result = { success: true, image_id: args.image_id, sent: formatAge(Date.now() - msg.createdTimestamp), note: 'The image is attached in the next message, for this reply only.', imageUrl: img.url };
         break;
       }
       case 'get_user_info': {

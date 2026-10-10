@@ -2,6 +2,7 @@ import { resolveTenantByGuildId } from '../tenant/resolve.js';
 import { runAssistantPipeline } from '../ai/pipeline.js';
 import { enforceBan } from './guards.js';
 import { ingestDiscordMessage, removeDiscordMessageChunks } from '../rag/ingest.js';
+import { imageAttachments, describeImagesForContext } from '../ai/images.js';
 import { query } from '../db/pool.js';
 import { handleAtriaCommands } from './atriaCommands.js';
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
@@ -51,7 +52,7 @@ export async function fetchChannelContext(channel, beforeId, botId, count = 25) 
 
     const lines = sorted.map((m) => {
       const name = m.member?.nickname ? `${m.member.nickname} (${m.author.username})` : m.author.username;
-      return `[${name}]: ${m.content}`;
+      return `[${name}]: ${m.content}${describeImagesForContext(m)}`;
     });
     const selected = [];
     let totalLen = 0;
@@ -246,7 +247,7 @@ export function attachMessageHandler(client) {
     let replyContext = '';
     if (refMsg) {
       const name = refMsg.member?.nickname ? `${refMsg.member.nickname} (${refMsg.author.username})` : refMsg.author.username;
-      replyContext = `[Replying to ${name}: "${refMsg.content}"]\n`;
+      replyContext = `[Replying to ${name}: "${refMsg.content}"${describeImagesForContext(refMsg)}]\n`;
     }
 
     const question = replyContext + stripMention(message.content, client.user.id);
@@ -266,9 +267,8 @@ export function attachMessageHandler(client) {
     inFlight.add(userId);
 
     const channelContext = await fetchChannelContext(message.channel, message.id, client.user.id);
-    const imageUrls = [...message.attachments.values()]
-      .filter((a) => a.contentType?.startsWith?.('image/'))
-      .map((a) => a.url);
+    const imageRefs = imageAttachments(message);
+    const imageUrls = imageRefs.map((r) => r.url);
 
     // Cap attachment downloads: only 20k chars survive anyway, so refuse to
     // buffer arbitrarily large uploads into memory.
@@ -336,6 +336,7 @@ export function attachMessageHandler(client) {
         question,
         channelContext,
         imageUrls,
+        imageRefs,
         documentsText,
         actor,
         channelId: message.channel.id,

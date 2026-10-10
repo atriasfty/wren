@@ -1,0 +1,118 @@
+// The model ↔ tool loop, shared by the production pipeline and WrenBench.
+//
+// Everything environment-specific is injected: `complete` performs one chat
+// completion (the pipeline wraps it with tracing/metrics, the bench with a
+// call budget), and `runTool` executes a tool call (the real executor in
+// production, a fake ERLC world in the bench).
+
+export const MAX_TOOL_STEPS = 8;
+export const MAX_VIEWED_IMAGES = 3;
+
+function contentText(content) {
+  return typeof content === 'string' ? content : (content?.[0]?.text || '');
+}
+
+// Mutates `messages` (appends assistant/tool turns). Errors from a regular
+// step propagate to the caller; only the forced-final call is best-effort.
+// Returns { text, noChoice, trace } where trace is one entry per tool call.
+export async function runModelLoop({
+  complete,
+  runTool,
+  model,
+  messages,
+  tools,
+  temperature = 0.2,
+  maxSteps = MAX_TOOL_STEPS,
+  onToolStep = null,
+}) {
+  const trace = [];
+  let finalText = '';
+
+  for (let step = 0; step < maxSteps; step++) {
+    const resp = await complete({ model, messages, tools, tool_choice: 'auto', temperature });
+
+    const choice = resp.choices?.[0];
+    if (!choice) return { text: 'No response from model.', noChoice: true, trace };
+
+    const msg = choice.message;
+    const toolCalls = msg.tool_calls || [];
+
+    if (toolCalls.length === 0) {
+      finalText = contentText(msg.content);
+      break;
+    }
+
+    // Set content to null (not empty string) when tool_calls are present
+    const assistantContent = msg.content == null || msg.content === '' ? null : msg.content;
+    messages.push({ role: 'assistant', content: assistantContent, tool_calls: toolCalls });
+
+    if (onToolStep) {
+      try { await onToolStep(assistantContent); } catch (e) { console.warn('[loop] onToolStep failed:', e.message); }
+    }
+
+    const toolResults = [];
+    const viewedImages = [];
+    for (const tc of toolCalls) {
+      const name = tc.function?.name;
+      let args = {};
+      let malformedArgs = false;
+      try { args = tc.function?.arguments ? JSON.parse(tc.function.arguments) : {}; } catch { malformedArgs = true; }
+
+      let result = await runTool(name, args);
+
+      // view_image hands back a URL; pull it out so only text goes in the tool
+      // result and the pixels arrive as a user turn below.
+      if (result?.imageUrl) {
+        const { imageUrl, ...rest } = result;
+        if (viewedImages.length < MAX_VIEWED_IMAGES) {
+          viewedImages.push({ id: result.image_id, url: imageUrl });
+        } else {
+          rest.success = false;
+          rest.error = `At most ${MAX_VIEWED_IMAGES} images can be viewed per reply.`;
+        }
+        result = rest;
+      }
+
+      trace.push({ step, name, args, malformedArgs, result });
+      toolResults.push({
+        tool_call_id: tc.id,
+        role: 'tool',
+        name,
+        content: JSON.stringify(result),
+      });
+    }
+
+    messages.push(...toolResults);
+    // Tool messages must stay contiguous after the assistant's tool_calls, so
+    // the requested images go in a user turn after all of them.
+    for (const v of viewedImages) {
+      messages.push({
+        role: 'user',
+        content: [
+          { type: 'text', text: `[Image id=${v.id}, requested via view_image. Shown for this reply only.]` },
+          { type: 'image_url', image_url: { url: v.url } },
+        ],
+      });
+    }
+  }
+
+  let forcedFinal = false;
+  if (!finalText) {
+    // Ran out of tool steps mid-research. Force one more call with no tool
+    // access so the model summarizes whatever it already gathered instead of
+    // leaving the user with a dead-end reply. The `tools` array is omitted
+    // entirely rather than relying on tool_choice:'none' — some providers
+    // (seen with deepseek via OpenRouter) still emit a tool_calls-only,
+    // content-less message even when told not to call tools, so the only
+    // reliable way to force text is to not expose any tools at all.
+    forcedFinal = true;
+    try {
+      const resp = await complete({ model, messages, temperature });
+      finalText = contentText(resp.choices?.[0]?.message?.content);
+    } catch (err) {
+      console.error('[loop] forced final reply failed:', err);
+    }
+  }
+
+  return { text: finalText, forcedFinal, trace };
+}

@@ -17,6 +17,7 @@ export const TOOL_DEFS = [
   { name: 'get_all_channels', description: 'List channels accessible to the configured security role.', params: { type: 'object', properties: {} } },
   { name: 'get_channel_messages', description: 'Fetch recent messages from a Discord channel.', params: { type: 'object', properties: { channel_id: { type: 'string' }, limit: { type: 'integer' } }, required: ['channel_id'] } },
   { name: 'get_user_info', description: 'Get a Discord member\'s roles and join date.', params: { type: 'object', properties: { user_id: { type: 'string' } }, required: ['user_id'] } },
+  { name: 'view_image', description: 'Look at an image that was attached earlier in the conversation, using the image id shown in the channel history (e.g. "[image id=123:456:0 ...]"). The image is shown to you for this reply only. Use it when the user refers back to an image and the text description is not enough.', params: { type: 'object', properties: { image_id: { type: 'string', description: 'The exact id from the channel history, formatted channelId:messageId:index.' } }, required: ['image_id'] } },
   { name: 'summarize_chat', description: 'Return a recent message transcript from a Discord channel for summarization.', params: { type: 'object', properties: { channel_id: { type: 'string' }, message_count: { type: 'integer' } }, required: ['channel_id'] } },
   { name: 'purge_messages', description: 'Delete a number of recent messages from a Discord channel.', params: { type: 'object', properties: { channel_id: { type: 'string' }, count: { type: 'integer' } }, required: ['channel_id', 'count'] } },
   // ERLC info
@@ -45,7 +46,7 @@ export const TOOL_DEFS = [
 // info) and only make sense — and are only permission-checked — for a real
 // Discord actor. They must never be offered to in-game/voice/API callers.
 export const DISCORD_ONLY_TOOLS = new Set([
-  'get_all_channels', 'get_channel_messages', 'get_user_info', 'summarize_chat', 'purge_messages',
+  'get_all_channels', 'get_channel_messages', 'get_user_info', 'summarize_chat', 'purge_messages', 'view_image',
 ]);
 
 export function getToolsForMistral({ isDiscordActor = true } = {}) {

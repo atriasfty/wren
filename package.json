@@ -11,7 +11,9 @@
     "test:watch": "vitest",
     "lint": "eslint src/",
     "migrate": "node src/db/migrate.js",
-    "ingest": "node src/rag/ingest.js"
+    "ingest": "node src/rag/ingest.js",
+    "bench": "node bench/cli.js",
+    "bench:charts": "node bench/charts.js"
   },
   "dependencies": {
     "@discordjs/opus": "^0.10.0",

@@ -19,7 +19,7 @@ const MOD_TOOLS = new Set([
   'get_server_briefing', 'get_player_profile',
 ]);
 
-function rejectTarget(username) {
+export function rejectTarget(username) {
   if (!username) return null;
   const t = username.toLowerCase().trim();
   if (BANNED_TARGETS.has(t)) return 'Mass actions are not allowed. Specify a single player.';

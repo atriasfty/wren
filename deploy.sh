@@ -68,6 +68,16 @@ if [ -f "${SHARED_ENV_FILE}" ]; then
         echo "WREN_METRICS_SECRET=${NEW_METRICS_SECRET}" >> "${SHARED_ENV_FILE}"
         export WREN_METRICS_SECRET="${NEW_METRICS_SECRET}"
     fi
+
+    # Web and image search moved from Brave to Exa. Existing .env files predate
+    # EXA_API_KEY, so add an empty line to fill in and warn until it is set.
+    if ! grep -q "^EXA_API_KEY=" "${SHARED_ENV_FILE}"; then
+        echo -e "${YELLOW}Adding empty EXA_API_KEY to ${SHARED_ENV_FILE} (paste your key after it)...${NC}"
+        printf '\nEXA_API_KEY=\n' >> "${SHARED_ENV_FILE}"
+    fi
+    if [ -z "${EXA_API_KEY}" ]; then
+        echo -e "${YELLOW}[WARN] EXA_API_KEY is empty in ${SHARED_ENV_FILE}. Wren's web search and image search will not work until you set it and redeploy.${NC}"
+    fi
 else
     echo -e "${YELLOW}No existing .env file found. Starting first-time setup...${NC}"
     
@@ -77,7 +87,7 @@ else
     read -s -p "OpenRouter API Key: " OPENROUTER_API_KEY; echo
     read -p "OpenRouter Model [mistralai/mistral-large-2411]: " OPENROUTER_MODEL
     OPENROUTER_MODEL=${OPENROUTER_MODEL:-mistralai/mistral-large-2411}
-    read -s -p "Brave Search API Key (Optional, press enter to skip): " BRAVE_SEARCH_API_KEY; echo
+    read -s -p "Exa API Key (web + image search; press enter to skip and add it to the .env later): " EXA_API_KEY; echo
     read -p "API Listen Port [4167]: " API_PORT
     API_PORT=${API_PORT:-4167}
     read -s -p "PostHog API Key (Optional, for observability): " POSTHOG_API_KEY; echo
@@ -150,7 +160,7 @@ GITHUB_PAT=${GITHUB_PAT}
 DISCORD_TOKEN=${DISCORD_TOKEN}
 OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
 OPENROUTER_MODEL=${OPENROUTER_MODEL}
-BRAVE_SEARCH_API_KEY=${BRAVE_SEARCH_API_KEY}
+EXA_API_KEY=${EXA_API_KEY}
 DATABASE_URL=${DATABASE_URL}
 TENANT_SECRET_ENC_KEY=${TENANT_SECRET_ENC_KEY}
 API_PORT=${API_PORT}

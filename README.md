@@ -8,7 +8,7 @@ Multi-tenant Discord bot for ERLC (Emergency Response: Liberty County) servers. 
 - **Discord**: `discord.js` v14. Mention the bot (or reply to it) to chat. Slash commands live under `/wren` for server admins.
 - **AI**: OpenRouter (`mistralai/mistral-large-2411`) with function-calling. 26 tools covering mod actions, Discord introspection, ERLC server queries, and memory.
 - **RAG**: per-tenant JSON vector store at `data/tenants/<guild_id>/vector-store.json`. Sources can be Discord channels, websites, or manual documents — each weighted.
-- **Web search**: Brave Search API (with page-fetch fallback).
+- **Web search**: Exa (web search and image search), with a page-fetch fallback.
 - **POW**: per-tenant token, AES-256-GCM encrypted at rest, key in env.
 - **PRC**: per-tenant ERLC server key, encrypted at rest.
 - **Permission gate**: deny by default — every tool requires a `tenant_role_policy` row; rank resolved from `tenant_roles` + Discord guild permissions.
@@ -32,7 +32,7 @@ On boot Wren registers `/wren` in every guild it is a member of and (re)starts t
 | `DISCORD_TOKEN` | yes | Bot token. Enable Message Content Intent in the dev portal. |
 | `OPENROUTER_API_KEY` | yes | https://openrouter.ai/ |
 | `OPENROUTER_MODEL` | yes | OpenRouter model string (e.g. `mistralai/mistral-large-2411`). |
-| `BRAVE_SEARCH_API_KEY` | yes | https://brave.com/search/api/ |
+| `EXA_API_KEY` | no | https://exa.ai/ (web and image search) |
 | `DATABASE_URL` | yes | Postgres connection string. |
 | `TENANT_SECRET_ENC_KEY` | yes | base64 of 32 random bytes. Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` |
 | `API_PORT` | no | REST API listen port (default 4167). |
@@ -71,7 +71,7 @@ All require `ManageGuild` unless noted; some require server owner.
 2. Tenant context resolved by `guild.id`. If unknown, the bot says so and bails (no data leak between tenants).
 3. System prompt built from `botDisplayName`, `coreInfo`, `responseStyle`, configured sources, and tenant-scoped memory.
 4. RAG: top-K cosine over `data/tenants/<id>/vector-store.json`, weighted per source.
-5. If no chunk is clearly relevant, Brave Search is consulted (rate-limited).
+5. If no chunk is clearly relevant, Exa web search is consulted.
 6. OpenRouter returns either a final answer or a list of `tool_calls`. The pipeline loops up to 6 steps:
    - Each tool call goes through `canRunTool(...)` — deny by default.
    - Mass-action targets (`all`, `everyone`, `*`, …) are rejected before any API call.
@@ -81,7 +81,7 @@ All require `ManageGuild` unless noted; some require server owner.
 ## Development
 
 ```bash
-npm test           # vitest — crypto, policy, brave wrapper, retrieve, slash validation
+npm test           # vitest — crypto, policy, exa wrapper, retrieve, slash validation
 npm run dev        # node --watch
 npm run ingest -- --tenant=<guildId>   # backfill ingestion for one tenant
 ```
@@ -94,7 +94,7 @@ src/
 ├── config.js             # env loader (fails loud if anything missing)
 ├── db/                   # pg pool + schema.sql + migrate
 ├── tenant/               # CRUD store, crypto, ctx builder, resolver (60s cache)
-├── integrations/         # prc.js, pow.js, bloxlink.js, brave.js, search/webpage.js
+├── integrations/         # prc.js, pow.js, bloxlink.js, exa.js, search/webpage.js
 ├── rag/                  # per-tenant JSON vector store + MiniLM embedder
 ├── ai/                   # tool catalog, policy gate, prompt builder, LLM pipeline
 ├── discord/              # client + message/ticket/raid/ingame handlers

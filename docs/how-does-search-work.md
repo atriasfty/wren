@@ -2,12 +2,12 @@
 
 Sometimes you will ask Wren a question that it just doesn't know the answer to. Maybe it is a question about today's news, or a very specific fact about a video game. That is where Wren's Search feature comes in!
 
-## The Brave Search Engine
+## The Exa Search API
 
-When Wren gets stuck, it uses the Brave Search engine to look up the answer on the internet. 
+When Wren gets stuck, it uses Exa to look up the answer on the internet. 
 
-{% hint style="success" %}
-Brave Search is fast and private, meaning Wren can get you the information you need quickly without compromising your safety.
+{% hint style="info" %}
+What Wren sends to Exa is the search query it writes (at most 300 characters), not your whole message or your Discord details. See the [Privacy Policy](privacy-policy.md) for how Exa handles queries.
 {% endhint %}
 
 ## What does Wren do with the results?

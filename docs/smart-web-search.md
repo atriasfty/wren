@@ -6,7 +6,7 @@ Sometimes you need to know about something that happened today, or a very specif
 
 When Wren realizes it doesn't know the answer to your question, it turns to the internet. 
 
-1. **Searching:** Wren uses a fast and private search engine (Brave Search) to look up your question.
+1. **Searching:** Wren uses Exa, a search API, to look up your question.
 2. **Reading:** It reads through the top search results to find the most relevant information.
 3. **Summarizing:** Instead of just giving you a list of links, Wren takes all that information, summarizes it, and writes a helpful, friendly reply.
 
@@ -26,7 +26,7 @@ A few things worth knowing:
 - Adult content is filtered out, but no filter is perfect.
 - Wren downloads the image and attaches it. It doesn't store it, and the original is credited to its source page.
 - It doesn't work in voice chat or in-game.
-- Self-hosters: this uses the same `BRAVE_SEARCH_API_KEY` as web search. Whether image search is included depends on your Brave plan.
+- Exa doesn't have a dedicated image search. Wren finds relevant web pages and picks the images from them, so results look more like press photos and article pictures than a general image index. Self-hosters: this uses the same `EXA_API_KEY` as web search.
 
 ## Configuration
 

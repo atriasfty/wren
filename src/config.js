@@ -26,7 +26,7 @@ export function loadConfig() {
     discordToken: process.env.DISCORD_TOKEN,
     openRouterApiKey: process.env.OPENROUTER_API_KEY,
     openRouterModel: process.env.OPENROUTER_MODEL,
-    braveApiKey: process.env.BRAVE_SEARCH_API_KEY || null,
+    exaApiKey: process.env.EXA_API_KEY || null,
     databaseUrl: process.env.DATABASE_URL,
     tenantSecretEncKey: Buffer.from(encKey, 'base64'),
     apiPort: Number(process.env.API_PORT || 4167),

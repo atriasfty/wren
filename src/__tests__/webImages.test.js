@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('../config.js', () => ({ loadConfig: () => ({ openRouterApiKey: 'key' }) }));
 
@@ -77,34 +77,5 @@ describe('find_images wiring', () => {
     expect(runTool).toHaveBeenCalledTimes(2);
     expect(out.generatedImages).toHaveLength(4);
     expect(messages.filter((m) => m.role === 'tool').every((m) => !m.content.includes('attachedImages'))).toBe(true);
-  });
-});
-
-describe('imageSearch', () => {
-  let imageSearch;
-  beforeEach(async () => {
-    process.env.BRAVE_SEARCH_API_KEY = 'k';
-    vi.resetModules();
-    ({ imageSearch } = await import('../integrations/brave.js'));
-  });
-  afterEach(() => { delete process.env.BRAVE_SEARCH_API_KEY; });
-
-  it('maps results, uses strict safesearch, and drops entries with no image', async () => {
-    globalThis.fetch = vi.fn(async () => ({
-      ok: true,
-      json: async () => ({ results: [
-        { title: 'A', url: 'https://page/a', source: 'page', properties: { url: 'https://img/a.jpg', width: 800, height: 600 }, thumbnail: { src: 'https://thumb/a' } },
-        { title: 'no image', url: 'https://page/b' },
-      ] }),
-    }));
-    const out = await imageSearch('iphone');
-    expect(globalThis.fetch.mock.calls[0][0]).toContain('/images/search');
-    expect(globalThis.fetch.mock.calls[0][0]).toContain('safesearch=strict');
-    expect(out).toEqual([{ title: 'A', pageUrl: 'https://page/a', source: 'page', imageUrl: 'https://img/a.jpg', thumbnailUrl: 'https://thumb/a', width: 800, height: 600 }]);
-  });
-
-  it('throws a missing_key error without a key', async () => {
-    delete process.env.BRAVE_SEARCH_API_KEY;
-    await expect(imageSearch('x')).rejects.toMatchObject({ code: 'missing_key' });
   });
 });

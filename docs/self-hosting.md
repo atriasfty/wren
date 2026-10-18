@@ -12,7 +12,7 @@ This page is for **operators** running their own copy of the bot. If you're a se
 * **PostgreSQL** — one database, all tables tenant-scoped by `guild_id`. Any reachable Postgres instance works (local, Railway, RDS, etc.).
 * A **Discord application + bot token** from the [Discord Developer Portal](https://discord.com/developers/applications), with the **Message Content Intent** enabled.
 * An **[OpenRouter](https://openrouter.ai/)** API key — Wren's model calls (chat + tool calling) go through OpenRouter.
-* Optional: a **[Brave Search API](https://brave.com/search/api/)** key for web search fallback.
+* Optional: an **[Exa](https://exa.ai/)** API key for web search and image search.
 
 ## 1. Clone and install
 
@@ -47,7 +47,7 @@ Wren refuses to start if any of these are missing, or if `TENANT_SECRET_ENC_KEY`
 | Key | Default | Notes |
 |---|---|---|
 | `API_PORT` | `4167` | Port for the REST API (`POST /v1/chat`, `GET /v1/info`). |
-| `BRAVE_SEARCH_API_KEY` | — | Without it, Wren's web-search fallback is disabled; RAG and everything else still works. |
+| `EXA_API_KEY` | — | Powers web search and image search. Without it both are disabled; RAG and everything else still works. |
 | `ATRIA_STAFF_IDS` | — | Comma-separated Discord user IDs to grant `$atria` global admin commands, on top of the three IDs already hardcoded into `src/discord/atriaCommands.js`. |
 | `WREN_METRICS_SECRET` | — | Bearer secret for `GET /metrics` (Prometheus). Blank disables the endpoint (always 401). |
 

@@ -153,7 +153,7 @@ export const mcpAuthFailures = new client.Counter({
 
 export const externalApiDuration = new client.Histogram({
   name: 'wren_external_api_duration_seconds',
-  help: 'Outbound calls to external integrations (PRC, POW public API, Brave Search, Roblox)',
+  help: 'Outbound calls to external integrations (PRC, POW public API, Exa, Roblox)',
   labelNames: ['service', 'status'],
   buckets: [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10],
   registers: [register],

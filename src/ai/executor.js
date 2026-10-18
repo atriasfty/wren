@@ -1,6 +1,6 @@
 import * as prc from '../integrations/prc.js';
 import * as pow from '../integrations/pow.js';
-import { webSearch, imageSearch } from '../integrations/brave.js';
+import { webSearch, imageSearch } from '../integrations/exa.js';
 import { collectImages } from './webImages.js';
 import { audit, addMemory, removeMemory, reserveImageGeneration, releaseImageGeneration, getImageQuota } from '../tenant/store.js';
 import { generateImage } from './imageGen.js';

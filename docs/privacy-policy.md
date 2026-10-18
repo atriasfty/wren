@@ -1,7 +1,7 @@
 # Privacy Policy
 
 **Effective Date:** 25 June 2026  
-**Last Updated:** 31 July 2026
+**Last Updated:** 18 October 2026
 
 ---
 
@@ -53,6 +53,7 @@ When you send a message to Wren in a Discord server, we process:
 | **Your message content** | Passed to the AI model to generate a response; logged for observability | **Yes** — transmitted to OpenRouter under a signed Data Processing Agreement (not used to train AI models; may be temporarily logged by AI providers) and stored in PostHog (EU servers) for **30 days**; may also be stored indefinitely as conversation memory if a Server Owner has saved it via Wren's memory system |
 | **Recent channel messages** (up to 100 messages) | Provides conversational context to the AI | **Yes** — transmitted to OpenRouter under a signed Data Processing Agreement (not used to train AI models; may be temporarily logged by AI providers) and stored in PostHog (EU servers) for **30 days**; not otherwise persisted in our own database |
 | **Images you attach** | Passed by URL to the AI model for vision analysis | No — URLs only; images are not stored by us |
+| **Web search and image-search queries** (when Wren looks something up) | Sent to Exa to find web pages and images | Not stored by us beyond normal request logging. Wren also downloads the chosen images from the websites that host them, which reveals our server's IP address to those sites, not your information |
 | **Image generation prompts** (if you ask Wren to create an image) | Sent to OpenRouter, which routes them to the image model; we also record that you generated an image (your user ID and a timestamp) to enforce weekly limits | Prompts: not stored by us. Usage record: Yes — our database |
 | **Your in-game username / handle** (ERLC integration, if enabled) | Identifies you in game server moderation tools | Yes — stored as plain text in our database; only if your server uses the ERLC integration |
 
@@ -121,10 +122,12 @@ Your data may be transmitted to the following third-party processors in order to
 |---|---|---|---|
 | **OpenRouter.ai** | Routes requests to AI language models | Your message content, up to 100 recent channel messages, conversation history, system prompt. **We have a signed Data Processing Agreement with OpenRouter. No customer prompts are used to train AI models; prompts may be temporarily logged by AI providers.** | [openrouter.ai/privacy](https://openrouter.ai/privacy) |
 | **AI Model Providers** (via OpenRouter) | Generates responses | Same as above — OpenRouter forwards this to the underlying model provider under the terms of our Data Processing Agreement | Varies by model selected |
-| **Brave Search** | Web search tool available to Wren | Your query/question (truncated to 300 characters) | [api.search.brave.com/app/trust-center](https://api.search.brave.com/app/trust-center) |
+| **Exa** | Web search and image search tools available to Wren | The search query Wren writes when it decides to look something up (truncated to 300 characters). This is usually derived from your question, so it can contain what you asked. Your full message, channel history, Discord IDs and usernames are not sent. | [exa.ai/privacy-policy](https://exa.ai/privacy-policy) |
 | **Polar.sh** | Subscription billing and payment processing | Discord User ID (as `externalCustomerId`), guild ID (in subscription metadata), subscription tier | [polar.sh/privacy](https://polar.sh/privacy) |
 | **PostgreSQL (self-hosted)** | Primary database | All data described in Section 4 above | N/A — operated by us |
 | **PostHog** (EU data residency) | Observability, tracing, and prompt/response logging | AI model name, token usage counts, Discord User ID, username, Guild ID, **full message prompts and AI responses** (including recent channel context). Retained for **30 days**. | [posthog.com/privacy](https://posthog.com/privacy) |
+
+> **Exa and search queries:** Exa's public privacy policy says query data may be used to improve its products and technology, including training and fine-tuning its models, and it does not state a retention period. The no-training commitments elsewhere in this policy come from our agreement with OpenRouter and do not extend to Exa. Search queries Wren sends to Exa are therefore not covered by them. Avoid putting personal information in a request that you expect Wren to search the web for. We chose Exa for search quality; this is the tradeoff.
 
 > **Note:** When OpenRouter transmits your message to an AI model provider, it is subject to that provider's data policies. OpenRouter's default agreements with model providers prohibit using API data to train models. See [openrouter.ai/privacy](https://openrouter.ai/privacy) for details.
 

@@ -33,13 +33,15 @@ vi.mock('../integrations/prc.js', () => ({
 
 vi.mock('../integrations/pow.js', () => ({}));
 
-vi.mock('../integrations/brave.js', () => ({
+vi.mock('../integrations/exa.js', () => ({
   webSearch: (...a) => mocks.webSearch(...a),
+  imageSearch: vi.fn(),
 }));
 
 vi.mock('../ai/ssrf.js', () => ({
   safeFetch: (...a) => mocks.safeFetch(...a),
   readTextCapped: (resp) => resp.text(),
+  readBytesCapped: async () => null,
   ssrfAgent: undefined,
 }));
 

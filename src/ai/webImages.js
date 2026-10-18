@@ -44,8 +44,8 @@ export async function fetchImageForAttachment(url, { fetchImpl = safeFetch } = {
   }
 }
 
-// Walks search results in order, trying the original image then Brave's
-// proxied thumbnail, until `n` distinct images are downloaded.
+// Walks search results in order, trying the original image then the
+// thumbnail (if the provider gives one), until `n` distinct images are downloaded.
 export async function collectImages(results, n, { fetchImpl } = {}) {
   const out = [];
   for (const r of results) {

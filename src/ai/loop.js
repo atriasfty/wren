@@ -8,6 +8,7 @@
 export const MAX_TOOL_STEPS = 8;
 export const MAX_VIEWED_IMAGES = 3;
 export const MAX_GENERATED_IMAGES = 2;
+export const MAX_REPLY_IMAGES = 4; // generated + web images combined
 
 function contentText(content) {
   return typeof content === 'string' ? content : (content?.[0]?.text || '');
@@ -28,6 +29,7 @@ export async function runModelLoop({
   generatedImages = [],
 }) {
   const trace = [];
+  let generatedCount = 0;
   let finalText = '';
 
   for (let step = 0; step < maxSteps; step++) {
@@ -65,11 +67,12 @@ export async function runModelLoop({
       // model would then report an action that never happened.
       // Refuse before running, not after: generate_image spends the user's
       // weekly allowance, so a call whose image would be dropped must not run.
-      const imageCapHit = name === 'generate_image' && generatedImages.length >= MAX_GENERATED_IMAGES;
+      const imageCapHit = (name === 'generate_image' && generatedCount >= MAX_GENERATED_IMAGES) ||
+        ((name === 'generate_image' || name === 'find_images') && generatedImages.length >= MAX_REPLY_IMAGES);
       let result = malformedArgs
         ? { success: false, error: 'Tool arguments were not valid JSON; nothing was executed. Retry with valid arguments.' }
         : imageCapHit
-          ? { success: false, error: `At most ${MAX_GENERATED_IMAGES} images can be generated per reply.` }
+          ? { success: false, error: `Image limit for one reply reached (${MAX_GENERATED_IMAGES} generated, ${MAX_REPLY_IMAGES} total).` }
           : await runTool(name, args);
 
       // view_image hands back a URL; pull it out so only text goes in the tool
@@ -90,6 +93,13 @@ export async function runModelLoop({
       if (result?.generatedImage) {
         const { generatedImage, ...rest } = result;
         generatedImages.push(generatedImage);
+        generatedCount++;
+        result = rest;
+      }
+      // find_images hands back downloaded web images the same way.
+      if (result?.attachedImages) {
+        const { attachedImages, ...rest } = result;
+        generatedImages.push(...attachedImages.slice(0, MAX_REPLY_IMAGES - generatedImages.length));
         result = rest;
       }
 

@@ -42,6 +42,7 @@ export const TOOL_DEFS = [
   { name: 'read_webpage', description: 'Fetch and read the content of up to 5 web pages, converted to markdown for easy reading.', params: { type: 'object', properties: { urls: { type: 'array', items: { type: 'string' }, description: 'List of URLs to fetch (up to 5).' } }, required: ['urls'] } },
   // images
   { name: 'generate_image', description: 'Generate an image from a text prompt and attach it to your reply. Only call when the user explicitly asks you to create/draw/generate an image. Limited per person per week by plan (Free: none, Core: 2, Pro: 10); if the result says the limit is reached, tell the user plainly. After success, reply naturally (e.g. "here\'s your image") and mention what it shows; do not paste a link.', params: { type: 'object', properties: { prompt: { type: 'string', description: 'A detailed description of the image to generate: subject, style, lighting, composition, colours.' }, aspect_ratio: { type: 'string', enum: ['1:1', '4:3', '3:4', '16:9', '9:16'], description: 'Shape of the image. Default 1:1; use 16:9 for wide/landscape, 9:16 for tall/phone wallpapers.' } }, required: ['prompt'] } },
+  { name: 'find_images', description: 'Find 1-2 real images on the web and attach them to your reply. Use ONLY when the user wants to SEE something ("show me what X looks like", "what does Y look like", "picture of Z"). For facts or news use search_web instead. You cannot see the images yourself, so describe them only as what the sources say they are, and credit the source. Not for creating new art (use generate_image for that).', params: { type: 'object', properties: { query: { type: 'string', description: 'A specific image search query, e.g. "iPhone 17 Pro Max official photo".' }, count: { type: 'integer', description: '1 or 2. Default 1.' } }, required: ['query'] } },
   { name: 'check_image_quota', description: 'Check how many image generations a user has left this week on their server\'s plan. Defaults to the person talking to you. Use when someone asks how many images they (or someone else) can still make.', params: { type: 'object', properties: { user_id: { type: 'string', description: 'Discord user id to check. Omit for the current user. Checking other people requires moderator rank.' } } } },
 ];
 
@@ -50,10 +51,10 @@ export const TOOL_DEFS = [
 // Discord actor. They must never be offered to in-game/voice/API callers.
 // Tools whose output is a file attached to a Discord message: pointless (and,
 // for quota-metered ones, wasteful) when the reply is spoken aloud.
-export const TEXT_REPLY_ONLY_TOOLS = new Set(['generate_image']);
+export const TEXT_REPLY_ONLY_TOOLS = new Set(['generate_image', 'find_images']);
 
 export const DISCORD_ONLY_TOOLS = new Set([
-  'get_all_channels', 'get_channel_messages', 'get_user_info', 'summarize_chat', 'purge_messages', 'view_image', 'generate_image', 'check_image_quota',
+  'get_all_channels', 'get_channel_messages', 'get_user_info', 'summarize_chat', 'purge_messages', 'view_image', 'generate_image', 'find_images', 'check_image_quota',
 ]);
 
 export function getToolsForMistral({ isDiscordActor = true, canAttachFiles = true } = {}) {
@@ -73,6 +74,8 @@ export function getToolsForMistral({ isDiscordActor = true, canAttachFiles = tru
 // resolve tool name to the internal policy name. Most map 1:1 except save_memory which
 // has two flavours.
 export function policyToolKey(name, args) {
+  // Web image lookup is a kind of web search: one policy row governs both.
+  if (name === 'find_images') return 'search_web';
   if (name === 'save_memory') return args?.type === 'server' ? 'save_memory_server' : 'save_memory_user';
   if (name === 'delete_memory') return args?.type === 'server' ? 'delete_memory_server' : 'delete_memory_user';
   return name;

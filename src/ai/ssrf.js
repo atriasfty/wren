@@ -304,3 +304,35 @@ export async function readTextCapped(resp, maxBytes = 2 * 1024 * 1024) {
   }
   return Buffer.concat(chunks).subarray(0, maxBytes).toString('utf8');
 }
+
+
+/**
+ * Reads a response body into a Buffer, refusing anything larger than maxBytes.
+ * Returns null if the body is too big (never a truncated, corrupt file).
+ */
+export async function readBytesCapped(resp, maxBytes = 8 * 1024 * 1024) {
+  const declared = Number(resp.headers?.get?.('content-length'));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    await resp.body?.cancel?.().catch(() => {});
+    return null;
+  }
+  if (!resp.body || typeof resp.body.getReader !== 'function') {
+    const buf = Buffer.from(await resp.arrayBuffer());
+    return buf.length > maxBytes ? null : buf;
+  }
+  const reader = resp.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) return null;
+      chunks.push(value);
+    }
+  } finally {
+    reader.cancel().catch(() => {});
+  }
+  return Buffer.concat(chunks);
+}

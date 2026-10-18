@@ -16,6 +16,18 @@ You can specifically ask Wren to search for things, like "Look up the weather in
 
 This feature ensures that Wren is always up to date and can help you with almost anything!
 
+## Showing images
+
+If you ask Wren to show you something ("show me what the new iPhone looks like"), it can find a real image on the web and attach one or two to its reply, with the source credited. This works in text channels on every plan and uses no extra allowance beyond the normal message.
+
+A few things worth knowing:
+
+- Wren picks images based on their titles and where they came from. It can't actually look at them, so now and then it will attach one that isn't quite right. Say so and ask again with a more specific description.
+- Adult content is filtered out, but no filter is perfect.
+- Wren downloads the image and attaches it. It doesn't store it, and the original is credited to its source page.
+- It doesn't work in voice chat or in-game.
+- Self-hosters: this uses the same `BRAVE_SEARCH_API_KEY` as web search. Whether image search is included depends on your Brave plan.
+
 ## Configuration
 
 The Smart Web Search feature works automatically out of the box! If the server is configured to allow search, Wren handles everything behind the scenes. 

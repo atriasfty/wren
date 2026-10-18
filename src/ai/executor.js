@@ -1,6 +1,7 @@
 import * as prc from '../integrations/prc.js';
 import * as pow from '../integrations/pow.js';
-import { webSearch } from '../integrations/brave.js';
+import { webSearch, imageSearch } from '../integrations/brave.js';
+import { collectImages } from './webImages.js';
 import { audit, addMemory, removeMemory, reserveImageGeneration, releaseImageGeneration, getImageQuota } from '../tenant/store.js';
 import { generateImage } from './imageGen.js';
 import { canRunTool, denialReason, POLICY_GATED_TOOLS, resolveActorRank, RANK_ORDER } from './policy.js';
@@ -544,6 +545,32 @@ async function executeToolInner(tenantCtx, name, args, actor) {
         // `generatedImage` is consumed by the model loop (attached to the final
         // reply) and stripped from what the model sees.
         result = { success: true, note: 'The image is generated and will be attached to your reply automatically. Reply naturally; do not include a link.', remaining_this_week: slot.limit - slot.used, generatedImage: img };
+        break;
+      }
+      case 'find_images': {
+        if (actor?.voice) return { success: false, error: 'Images can\'t be sent in voice chat. Ask in a text channel instead.' };
+        if (typeof args.query !== 'string' || !args.query.trim()) return { success: false, error: 'query is required' };
+        const want = clampPositiveInt(args.count, 1, 2);
+        let found;
+        try {
+          found = await imageSearch(args.query.trim(), { count: 8 });
+        } catch (e) {
+          if (e.code === 'missing_key') return { success: false, error: 'Image search is not configured on this Wren instance.' };
+          console.warn('[executor] find_images search failed:', e.message);
+          return { success: false, error: 'Image search failed. Try again in a moment, or share a link instead.' };
+        }
+        if (!found.length) return { success: false, error: 'No images found for that search.' };
+        const got = await collectImages(found, want);
+        if (!got.length) return { success: false, error: 'Found image results but none could be downloaded safely. Share the source links instead.' };
+        // `attachedImages` is consumed by the model loop and attached to the
+        // reply; the model only sees the text metadata below, never the bytes.
+        result = {
+          success: true,
+          attached: got.length,
+          images: got.map((g) => ({ title: g.meta.title, source: g.meta.source || null, page_url: g.meta.pageUrl || null, width: g.meta.width, height: g.meta.height })),
+          note: 'The images are attached to your reply automatically. You cannot see them: describe them only as the titles and sources say, and credit the source.',
+          attachedImages: got.map(({ buffer, mediaType, filename }) => ({ buffer, mediaType, filename })),
+        };
         break;
       }
       case 'check_image_quota': {

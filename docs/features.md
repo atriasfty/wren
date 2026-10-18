@@ -6,7 +6,7 @@ Wren is packed with awesome capabilities to make your community and gaming exper
 * **[Real-Time Knowledge](real-time-knowledge.md)**: Wren reads conversations in your server to build a knowledge base, helping answer questions perfectly.
 * **[Roblox Integration](roblox-integration.md)**: Chat with Wren directly inside your favorite Roblox games with full multi-turn conversation support.
 * **[POW Integration](pow-integration.md)**: Connect Wren to Project Overwatch for advanced ERLC moderation capabilities.
-* **[Smart Web Search](smart-web-search.md)**: When Wren doesn't know the answer, it searches the web and summarizes the best information for you.
+* **[Smart Web Search](smart-web-search.md)**: When Wren doesn't know the answer, it searches the web and summarizes the best information for you. It can also show you real images from the web.
 * **[Image Generation](image-generation.md)**: Ask Wren to draw or generate an image and it replies with the picture attached (Core and Pro plans).
 * **[Voice Chat](voice-chat.md)**: Speak aloud to Wren in Discord Voice Channels using a Wake Word for hands-free assistance.
 

@@ -1,8 +1,16 @@
 import { assertPublicHttpUrlCached, ssrfAgent } from '../ai/ssrf.js';
 import { externalApiDuration } from '../metrics.js';
 
+// Field selection (`/server?Players=true&...`) only exists on v2. v1 ignores
+// the query and returns bare server status, so every list read back as empty
+// ("no one is in the server"). Tenants created before the switch still have
+// the old v1 default stored, so upgrade that exact value here too.
+const PRC_DEFAULT_BASE_URL = 'https://api.erlc.gg/v2';
+const LEGACY_V1_BASE_URL = /^https:\/\/api\.erlc\.gg\/v1\/?$/;
+
 function baseUrl(tenantCtx) {
-  return tenantCtx.tenant.prcBaseUrl || process.env.PRC_BASE_URL || 'https://api.erlc.gg/v1';
+  const url = tenantCtx.tenant.prcBaseUrl || process.env.PRC_BASE_URL || PRC_DEFAULT_BASE_URL;
+  return LEGACY_V1_BASE_URL.test(url) ? PRC_DEFAULT_BASE_URL : url;
 }
 
 // The base URL is tenant-configurable, so validate it points at a public host

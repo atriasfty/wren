@@ -17,7 +17,7 @@ let prc;
 const originalFetch = globalThis.fetch;
 
 function tenant(key = 'server-key-1', tenantId = 'guild-1') {
-  return { tenantId, tenant: { erlcServerKey: key, prcBaseUrl: 'https://prc.test/v1' } };
+  return { tenantId, tenant: { erlcServerKey: key, prcBaseUrl: 'https://prc.test/v2' } };
 }
 
 function jsonResponse(body, status = 200) {
@@ -69,7 +69,13 @@ describe('getOnlinePlayers', () => {
   it('validates the base URL through the SSRF guard before sending the server key', async () => {
     globalThis.fetch.mockResolvedValue(jsonResponse({ Players: [] }));
     await prc.getOnlinePlayers(tenant());
-    expect(ssrfMock.assertPublicHttpUrlCached).toHaveBeenCalledWith(expect.stringContaining('https://prc.test/v1/server'));
+    expect(ssrfMock.assertPublicHttpUrlCached).toHaveBeenCalledWith(expect.stringContaining('https://prc.test/v2/server'));
+  });
+
+  it('upgrades a stored legacy v1 base URL to v2, since only v2 honours ?Players=true', async () => {
+    globalThis.fetch.mockResolvedValue(jsonResponse({ Players: [] }));
+    await prc.getOnlinePlayers({ tenantId: 'g', tenant: { erlcServerKey: 'k', prcBaseUrl: 'https://api.erlc.gg/v1' } });
+    expect(String(globalThis.fetch.mock.calls[0][0])).toBe('https://api.erlc.gg/v2/server?Players=true');
   });
 
   it('never sends the server key when the base URL fails the SSRF guard', async () => {
@@ -292,5 +298,21 @@ describe('buildAuthorizationLink', () => {
 
   it('returns null when the key ends with a trailing dash', () => {
     expect(prc.buildAuthorizationLink('abc123-')).toBeNull();
+  });
+});
+
+describe('getModcalls', () => {
+  it('requests CommandLogs from v2 and keeps only recent :pm commands', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    globalThis.fetch.mockResolvedValue(jsonResponse({
+      CommandLogs: [
+        { Player: 'CoolCop:12345', Command: ':pm wren where is the bank', Timestamp: now - 5 },
+        { Player: 'CoolCop:12345', Command: ':h hello all', Timestamp: now - 4 },
+        { Player: 'OldTimer:9', Command: ':pm wren stale', Timestamp: now - 600 },
+      ],
+    }));
+    const out = await prc.getModcalls({ tenantId: 'g', tenant: { erlcServerKey: 'k', prcBaseUrl: 'https://api.erlc.gg/v1' } });
+    expect(String(globalThis.fetch.mock.calls[0][0])).toBe('https://api.erlc.gg/v2/server?CommandLogs=true');
+    expect(out).toEqual([{ callerName: 'CoolCop', message: ':pm wren where is the bank', timestamp: now - 5 }]);
   });
 });

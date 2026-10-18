@@ -58,7 +58,7 @@ Needed only if you want tenants to connect Wren to their Emergency Response: Lib
 | Key | Default | Notes |
 |---|---|---|
 | `PRC_GLOBAL_KEY` | — | Global authorization key for the PRC API. Required at call time for **any** ERLC feature — if unset, ERLC-dependent commands throw a clear "operator misconfiguration" error rather than failing silently. |
-| `PRC_BASE_URL` | `https://api.erlc.gg/v1` | Override if PRC ever changes endpoints. |
+| `PRC_BASE_URL` | `https://api.erlc.gg/v2` | Override if PRC ever changes endpoints. |
 | `WREN_EGRESS_IP` | `152.53.21.47` (Atria's IP) | **You must override this.** Wren tells server owners to whitelist this IP in their ERLC dashboard during `/wren setup`. The default is Atria's own hosted IP — on a self-hosted instance it's wrong, and ERLC calls will fail until server owners whitelist the address your instance actually egresses from. |
 
 {% hint style="danger" %}

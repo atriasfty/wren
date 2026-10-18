@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS tenants (
   in_game_handle      TEXT NOT NULL DEFAULT ':pm wren',
   owner_discord_id    TEXT,
   erlc_server_key_enc BYTEA,
-  prc_base_url        TEXT NOT NULL DEFAULT 'https://api.erlc.gg/v1',
+  prc_base_url        TEXT NOT NULL DEFAULT 'https://api.erlc.gg/v2',
   pow_base_url        TEXT,
   pow_token_enc       BYTEA,
   pow_server_id       TEXT,
@@ -223,6 +223,12 @@ DO $$ BEGIN
   ALTER TABLE tenants RENAME COLUMN pow_server_a_id TO pow_server_id;
 EXCEPTION WHEN undefined_column THEN NULL;
 END $$;
+
+-- PRC's field-selection endpoint (/server?Players=true) is v2-only; move
+-- tenants still on the old v1 default over (idempotent).
+ALTER TABLE tenants ALTER COLUMN prc_base_url SET DEFAULT 'https://api.erlc.gg/v2';
+UPDATE tenants SET prc_base_url = 'https://api.erlc.gg/v2'
+  WHERE prc_base_url IN ('https://api.erlc.gg/v1', 'https://api.erlc.gg/v1/');
 
 -- Backfill policy rows added after tenants were created (idempotent).
 INSERT INTO tenant_role_policy (tenant_id, tool, min_role)

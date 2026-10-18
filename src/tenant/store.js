@@ -63,7 +63,10 @@ export async function createTenant({ tenantId, displayName, ownerDiscordId = nul
         [tenantId, tool, minRole],
       );
     }
-    return getTenant(tenantId, encKey);
+    // Read through the transaction's own connection — a pool query runs on a
+    // different connection and can't see this uncommitted row.
+    const r = await c.query(`SELECT * FROM tenants WHERE tenant_id = $1`, [tenantId]);
+    return r.rows[0] ? rowToTenant(r.rows[0], encKey) : null;
   });
 }
 
@@ -156,10 +159,25 @@ function rowToTenant(row, encKey) {
     updatedAt: row.updated_at,
   };
   if (encKey) {
-    if (row.erlc_server_key_enc) t.erlcServerKey = decryptSecret(row.erlc_server_key_enc, encKey);
-    if (row.pow_token_enc) t.powToken = decryptSecret(row.pow_token_enc, encKey);
+    // One undecryptable secret (rotated key, corrupt blob) must not take down
+    // boot (listTenants) or every message for that guild — treat it as unset
+    // and log, so the owner can re-enter it via /wren config.
+    t.erlcServerKey = safeDecrypt(row.erlc_server_key_enc, encKey, row.tenant_id, 'erlc_server_key');
+    t.powToken = safeDecrypt(row.pow_token_enc, encKey, row.tenant_id, 'pow_token');
+    if (t.erlcServerKey === undefined) delete t.erlcServerKey;
+    if (t.powToken === undefined) delete t.powToken;
   }
   return t;
+}
+
+function safeDecrypt(blob, encKey, tenantId, field) {
+  if (!blob) return undefined;
+  try {
+    return decryptSecret(blob, encKey);
+  } catch (err) {
+    console.error(`[tenant] failed to decrypt ${field} for tenant ${tenantId}: ${err.message}`);
+    return undefined;
+  }
 }
 
 // ---------- sources ----------
@@ -350,6 +368,10 @@ export async function tryClaimEvent({ tenantId, eventId, ttlSeconds }) {
   return r.rowCount > 0;
 }
 
+export async function releaseEvent({ tenantId, eventId }) {
+  await query(`DELETE FROM processed_events WHERE tenant_id = $1 AND event_id = $2`, [tenantId, eventId]);
+}
+
 export async function pruneExpiredEvents() {
   await query(`DELETE FROM processed_events WHERE expires_at < NOW()`);
 }
@@ -386,7 +408,8 @@ export async function recentRaidEvents({ tenantId, playerId = null, windowMs }) 
   return r.rows.map((row) => ({
     playerId: row.player_id,
     command: row.command,
-    logTs: row.log_ts,
+    // BIGINT columns come back from node-pg as strings.
+    logTs: Number(row.log_ts),
     targetCount: row.target_count,
   }));
 }
@@ -420,18 +443,6 @@ export async function audit({ tenantId, actor, action, target = null, metadata =
     `INSERT INTO audit_log (tenant_id, actor, action, target, metadata) VALUES ($1, $2, $3, $4, $5::jsonb)`,
     [tenantId, actor, action, target, metadata ? JSON.stringify(metadata) : null],
   );
-}
-
-// Count of personality-change reviews (see personalityReview.js) run for this
-// tenant in the trailing 12h — the first 3 in that window are free; the 4th+
-// requires explicit confirmation before it spends the tenant's message quota.
-export async function countRecentPersonalityReviews(tenantId) {
-  const r = await query(
-    `SELECT count(*)::int AS n FROM audit_log
-     WHERE tenant_id = $1 AND action = 'personality_review' AND created_at > NOW() - INTERVAL '12 hours'`,
-    [tenantId],
-  );
-  return r.rows[0]?.n || 0;
 }
 
 // ---------- API tokens ----------
@@ -499,6 +510,38 @@ export async function incrementMessageUsage(tenantId, limit) {
   return r.rows[0]?.monthly_message_count || 0;
 }
 
+// Like incrementMessageUsage, but judges the cap against the tier as it stands
+// AFTER any billing-cycle reset in this same statement (a lapsed paid tenant is
+// downgraded to free on reset), and reports that tier back. Using the cached
+// tenant tier instead would let a lapsed Core tenant keep Core's limit for the
+// whole first cycle after it lapsed.
+export async function incrementMessageUsageForTier(tenantId, limits) {
+  const r = await query(
+    `WITH cur AS (
+       SELECT tenant_id,
+              NOW() > billing_cycle_reset AS rolled,
+              CASE WHEN NOW() > billing_cycle_reset AND polar_subscription_id IS NULL THEN 'free'
+                   ELSE subscription_tier END AS tier
+       FROM tenants WHERE tenant_id = $1
+     )
+     UPDATE tenants t SET
+       monthly_message_count = CASE
+         WHEN cur.rolled THEN 1
+         WHEN t.monthly_message_count > (CASE cur.tier WHEN 'pro' THEN $4::int WHEN 'core' THEN $3::int ELSE $2::int END)
+           THEN t.monthly_message_count
+         ELSE t.monthly_message_count + 1
+       END,
+       monthly_voice_time_seconds = CASE WHEN cur.rolled THEN 0 ELSE t.monthly_voice_time_seconds END,
+       subscription_tier = cur.tier,
+       billing_cycle_reset = CASE WHEN cur.rolled THEN NOW() + interval '1 month' ELSE t.billing_cycle_reset END
+     FROM cur WHERE t.tenant_id = cur.tenant_id
+     RETURNING t.monthly_message_count, t.subscription_tier`,
+    [tenantId, limits.free, limits.core, limits.pro],
+  );
+  const row = r.rows[0];
+  return { used: row?.monthly_message_count || 0, tier: row?.subscription_tier || 'free' };
+}
+
 // Refunds one message from the cycle counter. Used when a pipeline run fails
 // before producing a real answer — an LLM/provider outage must not eat the
 // tenant's quota (at free tier's 10 messages, a bad evening wipes the month).
@@ -539,6 +582,22 @@ export async function incrementVoiceTime(tenantId, seconds) {
 }
 
 export async function updateSubscription(tenantId, tier, polarSubId = null, ownerId = null, customerId = null) {
+  // A downgrade to free is a Polar cancellation: drop the subscription link too.
+  // Leaving polar_subscription_id set made the tenant look Polar-managed
+  // forever, so a later manual `$atria billing upgrade` never expired back to
+  // free on cycle rollover.
+  if (tier === 'free' && !polarSubId) {
+    await query(
+      `UPDATE tenants SET
+         subscription_tier = 'free',
+         polar_subscription_id = NULL,
+         subscription_owner_id = NULL,
+         updated_at = NOW()
+       WHERE tenant_id = $1`,
+      [tenantId],
+    );
+    return;
+  }
   await query(
     `UPDATE tenants SET 
        subscription_tier = $1, 
@@ -556,4 +615,72 @@ export async function updateSubscription(tenantId, tier, polarSubId = null, owne
 // column, JSON handling) instead of two that could drift apart.
 export async function logAudit(tenantId, actor, action, metadata = {}) {
   return audit({ tenantId, actor, action, metadata });
+}
+
+// Image generation quota: per person, trailing 7 days, by the server's plan.
+export const IMAGE_WEEKLY_LIMITS = { free: 0, core: 2, pro: 10 };
+
+// Atomically reserves one generation for `userKey` if they're under their
+// plan's weekly cap. The tier is judged the same way as message usage (a lapsed
+// paid tenant counts as free). Returns { ok, tier, limit, used, id, retryAt }.
+// Call releaseImageGeneration(id) if the generation then fails.
+export async function reserveImageGeneration(tenantId, userKey, limits = IMAGE_WEEKLY_LIMITS) {
+  const t = await query(
+    `SELECT CASE WHEN NOW() > billing_cycle_reset AND polar_subscription_id IS NULL THEN 'free'
+                 ELSE subscription_tier END AS tier
+     FROM tenants WHERE tenant_id = $1`,
+    [tenantId],
+  );
+  const tier = t.rows[0]?.tier || 'free';
+  const limit = limits[tier] ?? 0;
+  if (limit <= 0) return { ok: false, tier, limit, used: 0 };
+  // Serialise per person so concurrent requests can't both slip under the cap.
+  return withTx(async (c) => {
+    await c.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`img:${tenantId}:${userKey}`]);
+    const r = await c.query(
+      `SELECT COUNT(*)::int AS used, MIN(created_at) AS oldest
+       FROM image_generations
+       WHERE tenant_id = $1 AND user_key = $2 AND created_at > NOW() - interval '7 days'`,
+      [tenantId, userKey],
+    );
+    const used = r.rows[0].used;
+    if (used >= limit) {
+      const oldest = r.rows[0].oldest;
+      return { ok: false, tier, limit, used, retryAt: oldest ? new Date(new Date(oldest).getTime() + 7 * 864e5) : null };
+    }
+    const ins = await c.query(
+      'INSERT INTO image_generations (tenant_id, user_key) VALUES ($1, $2) RETURNING id',
+      [tenantId, userKey],
+    );
+    return { ok: true, tier, limit, used: used + 1, id: ins.rows[0].id };
+  });
+}
+
+// Read-only view of a person's image quota: { tier, limit, used, remaining, nextFreeAt }.
+export async function getImageQuota(tenantId, userKey, limits = IMAGE_WEEKLY_LIMITS) {
+  const t = await query(
+    `SELECT CASE WHEN NOW() > billing_cycle_reset AND polar_subscription_id IS NULL THEN 'free'
+                 ELSE subscription_tier END AS tier
+     FROM tenants WHERE tenant_id = $1`,
+    [tenantId],
+  );
+  const tier = t.rows[0]?.tier || 'free';
+  const limit = limits[tier] ?? 0;
+  const r = await query(
+    `SELECT COUNT(*)::int AS used, MIN(created_at) AS oldest
+     FROM image_generations
+     WHERE tenant_id = $1 AND user_key = $2 AND created_at > NOW() - interval '7 days'`,
+    [tenantId, userKey],
+  );
+  const used = r.rows[0].used;
+  const oldest = r.rows[0].oldest;
+  return {
+    tier, limit, used,
+    remaining: Math.max(0, limit - used),
+    nextFreeAt: used > 0 && oldest ? new Date(new Date(oldest).getTime() + 7 * 864e5) : null,
+  };
+}
+
+export async function releaseImageGeneration(id) {
+  await query('DELETE FROM image_generations WHERE id = $1', [id]);
 }

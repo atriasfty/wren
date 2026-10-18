@@ -52,4 +52,4 @@ Every non-empty change to **Core Info** or **Response Style** is automatically r
 
 When you submit a change, a message appears in the channel showing whether it was **✅ approved** or **❌ denied** (with a reason). Clearing a field (submitting it empty) skips review entirely.
 
-The first 3 personality reviews in a rolling 12-hour window are free. After that, further changes in the same window need a **Leadership** member to confirm before they're reviewed, since each one uses a message from your server's monthly quota.
+Personality reviews are **completely free**. They never count against your server's monthly message quota, there's no limit on how many you can submit, and no extra approval step is needed. If the reviewer can't be reached for any reason, the change simply isn't saved and you can try again.

@@ -13,7 +13,19 @@ export async function runMigrations() {
   const sqlPath = path.join(__dirname, 'schema.sql');
   const sql = await fs.readFile(sqlPath, 'utf-8');
   const pool = getPool();
-  await pool.query(sql);
+  // Serialise concurrent boots (rolling deploys, two instances) — racing
+  // CREATE/ALTER statements can fail with catalog unique violations.
+  const client = await pool.connect();
+  try {
+    await client.query('SELECT pg_advisory_lock(hashtext($1))', ['wren_schema_migration']);
+    try {
+      await client.query(sql);
+    } finally {
+      await client.query('SELECT pg_advisory_unlock(hashtext($1))', ['wren_schema_migration']).catch(() => {});
+    }
+  } finally {
+    client.release();
+  }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

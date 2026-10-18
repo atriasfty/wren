@@ -467,16 +467,17 @@ describe('Atria Commands', () => {
       const mockSend2 = vi.fn();
 
       message.client.channels.fetch
-        .mockResolvedValueOnce({ send: mockSend1 })
-        .mockResolvedValueOnce({ send: mockSend2 });
+        .mockResolvedValueOnce({ send: mockSend1, isTextBased: () => true })
+        .mockResolvedValueOnce({ send: mockSend2, isTextBased: () => true });
 
       await runCommand('$atria broadcast hello world');
       await confirmCommand();
 
       expect(query).toHaveBeenCalledWith("SELECT tenant_id, status_channel_id, last_active_channel_id FROM tenants WHERE (status_channel_id IS NOT NULL AND status_channel_id != '') OR (last_active_channel_id IS NOT NULL AND last_active_channel_id != '')");
 
-      expect(mockSend1).toHaveBeenCalledWith('**ATRIA PLATFORM BROADCAST:**\nhello world');
-      expect(mockSend2).toHaveBeenCalledWith('**ATRIA PLATFORM BROADCAST:**\nhello world');
+      const expected = { content: '**ATRIA PLATFORM BROADCAST:**\nhello world', allowedMentions: { parse: [] } };
+      expect(mockSend1).toHaveBeenCalledWith(expected);
+      expect(mockSend2).toHaveBeenCalledWith(expected);
 
       expect(message.reply.mock.calls[1][0]).toBe('Broadcast sent to 2 servers. (Failed: 0)');
     });

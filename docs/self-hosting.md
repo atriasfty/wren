@@ -49,6 +49,7 @@ Wren refuses to start if any of these are missing, or if `TENANT_SECRET_ENC_KEY`
 | `API_PORT` | `4167` | Port for the REST API (`POST /v1/chat`, `GET /v1/info`). |
 | `BRAVE_SEARCH_API_KEY` | — | Without it, Wren's web-search fallback is disabled; RAG and everything else still works. |
 | `ATRIA_STAFF_IDS` | — | Comma-separated Discord user IDs to grant `$atria` global admin commands, on top of the three IDs already hardcoded into `src/discord/atriaCommands.js`. |
+| `WREN_METRICS_SECRET` | — | Bearer secret for `GET /metrics` (Prometheus). Blank disables the endpoint (always 401). |
 
 ### Optional — ERLC / PRC integration
 
@@ -73,12 +74,22 @@ Only relevant if you want to run paid subscription tiers through [Polar.sh](http
 | `POLAR_ACCESS_TOKEN` | Polar API access token. |
 | `POLAR_WEBHOOK_SECRET` | Validates incoming Polar webhooks. |
 | `POLAR_CORE_PRODUCT_ID` / `POLAR_PRO_PRODUCT_ID` | Product IDs for your Polar-side plans. |
+| `POLAR_SMALL_SERVER_DISCOUNT_ID` | Polar discount applied to small-server checkouts in `/wren upgrade`. Defaults to Atria's own discount ID — override it with yours. |
 
 ### Optional — observability
 
 | Key | Notes |
 |---|---|
-| `POSTHOG_API_KEY` | Enables PostHog tracing/logging (see [Security & Data Privacy Overview](security-privacy-overview.md) for what's captured). Omit to run with tracing disabled. |
+| `POSTHOG_API_KEY` | Enables OpenTelemetry tracing (see [Security & Data Privacy Overview](security-privacy-overview.md) for what's captured). Omit to run with tracing disabled. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Where traces are exported (standard OpenTelemetry variable). Without it the SDK targets `localhost:4318`. |
+| `WREN_TRACE_CONTENT` | Set to `1` to include full prompts and model replies on trace spans. Off by default because prompts carry memory, channel history and attached documents. |
+
+### Optional — standalone MCP stdio server (`src/mcp/server.js`)
+
+| Key | Notes |
+|---|---|
+| `WREN_MCP_TOKEN` | A user's MCP token (from `/wren mcp`). Required when running the stdio server. |
+| `WREN_TENANT_ID` | The guild ID that token belongs to. Required when running the stdio server. |
 
 ### Optional — Roblox account linking
 

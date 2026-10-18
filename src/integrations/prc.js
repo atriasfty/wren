@@ -7,11 +7,20 @@ function baseUrl(tenantCtx) {
 
 // The base URL is tenant-configurable, so validate it points at a public host
 // before sending the tenant's server key to it (SSRF guard).
+const EXTERNAL_TIMEOUT_MS = 10_000;
+
 async function guardedFetch(urlStr, opts) {
   await assertPublicHttpUrlCached(urlStr);
   const __start = Date.now();
   // Pin the socket to a connect-time-validated address (DNS-rebind defence).
-  const res = await fetch(urlStr, { ...opts, dispatcher: ssrfAgent });
+  // Redirects are refused outright: a hop to an IP literal would skip the
+  // connect-time lookup and carry the tenant's key to an internal address.
+  const res = await fetch(urlStr, {
+    ...opts,
+    dispatcher: ssrfAgent,
+    redirect: 'error',
+    signal: opts?.signal ?? AbortSignal.timeout(EXTERNAL_TIMEOUT_MS),
+  });
   externalApiDuration.observe({ service: 'prc', status: res.ok ? 'ok' : 'error' }, (Date.now() - __start) / 1000);
   return res;
 }
@@ -79,6 +88,8 @@ async function executeCommand(tenantCtx, command) {
 
 const ROBLOX_USER_CACHE = new Map();
 const CACHE_TTL = 3600 * 1000; // 1 hour
+// A fuzzy match depends on who is online right now, so it goes stale fast.
+const FUZZY_CACHE_TTL = 60 * 1000;
 
 // Expired entries are only replaced on re-lookup, never evicted, so the map
 // grows with every unique (tenant, name) ever queried. Wipe it fully every
@@ -106,6 +117,7 @@ async function lookupRobloxUsernameExact(clean) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body: JSON.stringify({ usernames: [clean], excludeBannedUsers: false }),
+      signal: AbortSignal.timeout(EXTERNAL_TIMEOUT_MS),
     });
   } catch (err) {
     externalApiDuration.observe({ service: 'roblox', status: 'error' }, (Date.now() - __start) / 1000);
@@ -163,7 +175,7 @@ export async function getRobloxUserId(tenantCtx, username) {
     }
     if (match) {
       const data = { userId: match.userId, username: match.username };
-      ROBLOX_USER_CACHE.set(fuzzyKey, { data, expires: Date.now() + CACHE_TTL });
+      ROBLOX_USER_CACHE.set(fuzzyKey, { data, expires: Date.now() + FUZZY_CACHE_TTL });
       return data;
     }
   }
@@ -192,6 +204,55 @@ export async function getOnlinePlayers(tenantCtx) {
       wantedStars: player.WantedStars,
     };
   });
+}
+
+// Exact (case-insensitive) match only. Use wherever the match grants anything —
+// identity/rank checks must never resolve to a different, similarly named player.
+export async function findPlayerExact(tenantCtx, name) {
+  const term = (name || '').toLowerCase().trim();
+  if (!term) return null;
+  const players = await getOnlinePlayers(tenantCtx);
+  return players.find((p) => p.username.toLowerCase() === term) || null;
+}
+
+// Resolves the target of a state-changing command (ban, kick, kill, mod, ...).
+// Unlike getRobloxUserId, a partial name is only accepted when it is
+// unambiguous: exactly one online player matches it AND no Roblox account has
+// that exact name. Otherwise "ban John" could hit an online JohnDoe123 while
+// the real (offline) John was meant.
+export async function resolveActionTarget(tenantCtx, username) {
+  const clean = (username || '').trim();
+  if (!clean) return null;
+  const lower = clean.toLowerCase();
+  let online = [];
+  try {
+    online = await getOnlinePlayers(tenantCtx);
+  } catch (err) {
+    console.warn(`[prc] online-player lookup failed for tenant ${tenantCtx?.tenantId ?? '?'}: ${err.message}`);
+  }
+  const exact = online.find((p) => p.username.toLowerCase() === lower);
+  if (exact) return { userId: exact.userId, username: exact.username };
+
+  const candidates = clean.length >= 4
+    ? online.filter((p) => p.username.toLowerCase().startsWith(lower) || (clean.length >= 5 && p.username.toLowerCase().includes(lower)))
+    : [];
+  const global = (clean.length >= 3 && clean.length <= 20) ? await lookupRobloxUsernameExact(clean) : null;
+
+  if (candidates.length === 0) return global;
+  if (candidates.length === 1 && !global) return { userId: candidates[0].userId, username: candidates[0].username };
+  const names = [...candidates.map((p) => p.username), ...(global ? [`${global.username} (offline)`] : [])];
+  throw new Error(`"${clean}" is ambiguous — it could mean ${names.slice(0, 5).join(', ')}. Use the full username.`);
+}
+
+// Game commands are a single line; strip anything that could split or extend
+// one (newlines, control chars) from free-text arguments, and bound length.
+function sanitizeCommandText(text, max = 200) {
+  return String(text ?? '')
+    // eslint-disable-next-line no-control-regex -- stripping control chars is the point
+    .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max);
 }
 
 export async function findPlayer(tenantCtx, partialName) {
@@ -312,32 +373,36 @@ export async function getModcalls(tenantCtx, { sinceTs, limit } = {}) {
 }
 
 export async function banPlayer(tenantCtx, username, reason = 'No reason provided', duration = 0) {
-  const userInfo = await getRobloxUserId(tenantCtx, username);
+  const dur = duration == null || duration === '' ? 0 : Number(duration);
+  if (!Number.isInteger(dur) || dur < 0) throw new Error(`Invalid ban duration: ${duration}`);
+  const userInfo = await resolveActionTarget(tenantCtx, username);
   if (!userInfo) throw new Error(`Could not find Roblox user: ${username}`);
-  const cmd = duration === 0
-    ? `:ban ${userInfo.userId} ${reason}`
-    : `:ban ${userInfo.userId} ${duration} ${reason}`;
+  const why = sanitizeCommandText(reason) || 'No reason provided';
+  const cmd = dur === 0
+    ? `:ban ${userInfo.userId} ${why}`
+    : `:ban ${userInfo.userId} ${dur} ${why}`;
   const result = await executeCommand(tenantCtx, cmd);
   return { ...result, actualUsername: userInfo.username };
 }
 
 export async function kickPlayer(tenantCtx, username, reason = 'No reason provided') {
-  const userInfo = await getRobloxUserId(tenantCtx, username);
+  const userInfo = await resolveActionTarget(tenantCtx, username);
   if (!userInfo) throw new Error(`Could not find Roblox user: ${username}`);
-  return { ...(await executeCommand(tenantCtx, `:kick ${userInfo.username} ${reason}`)), actualUsername: userInfo.username };
+  const why = sanitizeCommandText(reason) || 'No reason provided';
+  return { ...(await executeCommand(tenantCtx, `:kick ${userInfo.username} ${why}`)), actualUsername: userInfo.username };
 }
 
 export async function killPlayer(tenantCtx, username) {
   if (!username) throw new Error('killPlayer: username required');
-  const userInfo = await getRobloxUserId(tenantCtx, username);
+  const userInfo = await resolveActionTarget(tenantCtx, username);
   if (!userInfo) throw new Error(`Could not find Roblox user: ${username}`);
   return { ...(await executeCommand(tenantCtx, `:kill ${userInfo.username}`)), actualUsername: userInfo.username };
 }
 
 export async function tpPlayer(tenantCtx, player1, player2) {
-  const a = await getRobloxUserId(tenantCtx, player1);
+  const a = await resolveActionTarget(tenantCtx, player1);
   if (!a) throw new Error(`Could not find Roblox user: ${player1}`);
-  const b = await getRobloxUserId(tenantCtx, player2);
+  const b = await resolveActionTarget(tenantCtx, player2);
   if (!b) throw new Error(`Could not find Roblox user: ${player2}`);
   const r = await executeCommand(tenantCtx, `:tp ${a.username} ${b.username}`);
   return { ...r, actualUsername1: a.username, actualUsername2: b.username };
@@ -345,32 +410,33 @@ export async function tpPlayer(tenantCtx, player1, player2) {
 
 export async function sendPrivateMessage(tenantCtx, username, message) {
   if (!username) throw new Error('sendPrivateMessage: username required');
-  if (!message) throw new Error('sendPrivateMessage: message required');
-  const userInfo = await getRobloxUserId(tenantCtx, username);
+  const text = sanitizeCommandText(message, 400);
+  if (!text) throw new Error('sendPrivateMessage: message required');
+  const userInfo = await resolveActionTarget(tenantCtx, username);
   if (!userInfo) throw new Error(`Could not find Roblox user: ${username}`);
-  return { ...(await executeCommand(tenantCtx, `:pm ${userInfo.username} ${message}`)), actualUsername: userInfo.username };
+  return { ...(await executeCommand(tenantCtx, `:pm ${userInfo.username} ${text}`)), actualUsername: userInfo.username };
 }
 
 export async function modPlayer(tenantCtx, username) {
-  const u = await getRobloxUserId(tenantCtx, username);
+  const u = await resolveActionTarget(tenantCtx, username);
   if (!u) throw new Error(`Could not find Roblox user: ${username}`);
   return { ...(await executeCommand(tenantCtx, `:mod ${u.userId}`)), actualUsername: u.username };
 }
 
 export async function unmodPlayer(tenantCtx, username) {
-  const u = await getRobloxUserId(tenantCtx, username);
+  const u = await resolveActionTarget(tenantCtx, username);
   if (!u) throw new Error(`Could not find Roblox user: ${username}`);
   return { ...(await executeCommand(tenantCtx, `:unmod ${u.userId}`)), actualUsername: u.username };
 }
 
 export async function adminPlayer(tenantCtx, username) {
-  const u = await getRobloxUserId(tenantCtx, username);
+  const u = await resolveActionTarget(tenantCtx, username);
   if (!u) throw new Error(`Could not find Roblox user: ${username}`);
   return { ...(await executeCommand(tenantCtx, `:admin ${u.userId}`)), actualUsername: u.username };
 }
 
 export async function unadminPlayer(tenantCtx, username) {
-  const u = await getRobloxUserId(tenantCtx, username);
+  const u = await resolveActionTarget(tenantCtx, username);
   if (!u) throw new Error(`Could not find Roblox user: ${username}`);
   return { ...(await executeCommand(tenantCtx, `:unadmin ${u.userId}`)), actualUsername: u.username };
 }

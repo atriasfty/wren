@@ -29,7 +29,7 @@ vi.mock('../config.js', () => ({
 }));
 
 vi.mock('../tenant/store.js', () => ({
-  incrementMessageUsage: vi.fn().mockResolvedValue(1),
+  incrementMessageUsageForTier: vi.fn().mockResolvedValue({ used: 1, tier: 'free' }),
   decrementMessageUsage: vi.fn().mockResolvedValue(undefined),
   addMemory: vi.fn(),
 }));
@@ -100,8 +100,29 @@ describe('observability tracing in assistant pipeline', () => {
     expect(attrs['posthog.tenant_id']).toBe('guild-abc');
     expect(attrs['gen_ai.usage.input_tokens']).toBe(10);
     expect(attrs['gen_ai.usage.output_tokens']).toBe(15);
-    expect(attrs['gen_ai.input.messages']).toBeDefined();
-    expect(attrs['gen_ai.output.messages']).toBeDefined();
+    // Prompt/response bodies are only exported when WREN_TRACE_CONTENT=1.
+    expect(attrs['gen_ai.input.messages']).toBeUndefined();
+    expect(attrs['gen_ai.output.messages']).toBeUndefined();
+  });
+
+  it('exports prompt/response bodies on spans only when WREN_TRACE_CONTENT=1', async () => {
+    process.env.WREN_TRACE_CONTENT = '1';
+    try {
+      mockOpenAIChat.mockResolvedValue({
+        choices: [{ message: { content: 'ok' } }],
+        usage: { prompt_tokens: 1, completion_tokens: 1 },
+      });
+      const { runAssistantPipeline } = await import('../ai/pipeline.js');
+      await runAssistantPipeline(
+        { tenantId: 'guild-abc', tenant: {}, sources: [], memory: [] },
+        { question: 'hi', actor: { kind: 'discord', member: { id: 'user-123' } } },
+      );
+      const span = memoryExporter.getFinishedSpans().find((s) => s.name === 'gen_ai.chat');
+      expect(span.attributes['gen_ai.input.messages']).toBeDefined();
+      expect(span.attributes['gen_ai.output.messages']).toBeDefined();
+    } finally {
+      delete process.env.WREN_TRACE_CONTENT;
+    }
   });
 
   it('handles LLM API call failure and records error status and exception on the span', async () => {
@@ -171,7 +192,9 @@ describe('observability tracing in assistant pipeline', () => {
       actor,
     });
 
-    expect(result.text).toBe('No response from model.');
+    // No choices is a failed run: refunded, and the placeholder isn't posted.
+    expect(result.text).toMatch(/something went wrong/i);
+    expect(result.error).toBe('no choices returned');
 
     const spans = memoryExporter.getFinishedSpans();
     expect(spans.length).toBeGreaterThan(0);

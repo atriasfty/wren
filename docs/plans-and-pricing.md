@@ -7,21 +7,21 @@ Wren uses a usage-based subscription model to cover the costs of its advanced AI
 ### 🌱 Free Plan
 
 **Cost:** Free forever  
-**Included:** 10 messages per month | 2 Voice Minutes
+**Included:** 10 messages per month | 2 Voice Minutes | No image generation
 
 Perfect for testing Wren in a private server or getting a feel for the features before rolling it out to your staff team.
 
 ### 🚀 Core Plan
 
 **Cost:** $10 / month  
-**Included:** 1,000 messages per month | 30 Voice Minutes
+**Included:** 1,000 messages per month | 30 Voice Minutes | 2 image generations per person per week
 
 The Core plan is designed for medium-sized roleplay servers. This gives your staff plenty of overhead to use Wren for moderation, looking up player profiles, and keeping tabs on the server without worrying about hitting a limit every day.
 
 ### 🌟 Pro Plan
 
 **Cost:** $25 / month  
-**Included:** 5,000 messages per month | 120 Voice Minutes
+**Included:** 5,000 messages per month | 120 Voice Minutes | 10 image generations per person per week
 
 Built for the largest and most active ERLC communities. With 5,000 messages, your staff can rely on Wren for anything they may need.
 
@@ -38,6 +38,8 @@ You can manage your billing directly from Discord using these commands:
 * **`/wren usage`** — Check what plan you are currently on and exactly how many messages you've used this billing cycle.
 * **`/wren upgrade [plan]`** — Generates a secure Polar.sh checkout link so you can upgrade your server in seconds. If you qualify for the small-server discount, it's applied automatically!
 * **`/wren manage`** — If you are the person who purchased the active subscription, this command will generate a secure link to the Customer Portal where you can update your payment method, upgrade, downgrade, or cancel your subscription at any time.
+
+_Image generation limits are per person over a rolling 7 days, and are covered in [Image Generation](image-generation.md)._
 
 _Message limits automatically reset exactly one month from the day you subscribe._
 

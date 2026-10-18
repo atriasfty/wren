@@ -90,7 +90,16 @@ function stripMention(content, botUserId) {
 }
 
 export function attachMessageHandler(client) {
-  client.on('messageCreate', async (message) => {
+  // index.js no longer exits on an unhandled rejection, but a rejected
+  // listener still loses the error context — catch at the boundary.
+  client.on('messageCreate', (message) => {
+    // Returned so callers (and tests) can await completion; it never rejects.
+    return handleMessageCreate(message).catch((err) => {
+      console.error('[messageCreate] handler failed:', err);
+    });
+  });
+
+  async function handleMessageCreate(message) {
     if (message.author.id === client.user.id) return;
     if (message.author.bot) return;
 
@@ -165,7 +174,20 @@ export function attachMessageHandler(client) {
     const actor = { kind: 'discord', member: message.member, id: message.author.id };
     const isUserBanned = await enforceBan(tenantCtx, actor);
 
-    if (isSourceChannel && !isUserBanned) {
+    // Checked before ingestion: a globally banned user's messages must not be
+    // embedded into a tenant's knowledge base either.
+    let isGloballyBanned = false;
+    try {
+      const banRes = await query("SELECT expires_at FROM global_bans WHERE discord_id = $1", [message.author.id]);
+      if (banRes.rows.length > 0) {
+        const expires = banRes.rows[0].expires_at;
+        isGloballyBanned = !expires || new Date(expires) > new Date();
+      }
+    } catch (e) {
+      console.error('[message] Global ban check error:', e);
+    }
+
+    if (isSourceChannel && !isUserBanned && !isGloballyBanned) {
       ingestDiscordMessage(tenantCtx, message).catch((err) => {
         console.error('[messageCreate] Auto-ingestion failed:', err.message);
       });
@@ -201,18 +223,7 @@ export function attachMessageHandler(client) {
       return;
     }
 
-    // Check global ban
-    try {
-      const banRes = await query("SELECT expires_at FROM global_bans WHERE discord_id = $1", [message.author.id]);
-      if (banRes.rows.length > 0) {
-        const expires = banRes.rows[0].expires_at;
-        if (!expires || new Date(expires) > new Date()) {
-          return; // Ignore globally banned users entirely without a reply
-        }
-      }
-    } catch (e) {
-      console.error('[message] Global ban check error:', e);
-    }
+    if (isGloballyBanned) return; // Ignore globally banned users entirely without a reply
 
     // Check ToS Agreement
     try {
@@ -250,7 +261,13 @@ export function attachMessageHandler(client) {
       replyContext = `[Replying to ${name}: "${refMsg.content}"${describeImagesForContext(refMsg)}]\n`;
     }
 
-    const question = replyContext + stripMention(message.content, client.user.id);
+    const imageRefs = imageAttachments(message);
+    let question = replyContext + stripMention(message.content, client.user.id);
+    // A bare mention with only an image attached is a real request ("what's
+    // this?"), not a poke — let the model look at the image.
+    if (!question.trim() && imageRefs.length) {
+      question = '(The user sent an image with no text.)';
+    }
     if (!question || question.trim() === '') {
       // A bare mention with no text is usually someone poking the bot for the
       // first time — silence here reads as "broken". Point them at how to ask.
@@ -265,9 +282,17 @@ export function attachMessageHandler(client) {
       return;
     }
     inFlight.add(userId);
+    // Everything between claiming the slot and releasing it lives in this
+    // try, so no throw (attachment parsing, a Discord API error...) can leave
+    // the user permanently locked out.
+    try {
+      await runForUser();
+    } finally {
+      inFlight.delete(userId);
+    }
 
+    async function runForUser() {
     const channelContext = await fetchChannelContext(message.channel, message.id, client.user.id);
-    const imageRefs = imageAttachments(message);
     const imageUrls = imageRefs.map((r) => r.url);
 
     // Cap attachment downloads: only 20k chars survive anyway, so refuse to
@@ -282,7 +307,7 @@ export function attachMessageHandler(client) {
       const isRawText = a.contentType?.startsWith('text/') ||
                         a.contentType === 'application/json' ||
                         a.contentType === 'application/xml' ||
-                        /\.(txt|csv|md|json|xml|yaml|yml|js|py|html|css|log)$/i.test(a.name);
+                        /\.(txt|csv|md|json|xml|yaml|yml|js|py|html|css|log)$/i.test(a.name || '');
 
       if (isRawText) {
         try {
@@ -323,7 +348,7 @@ export function attachMessageHandler(client) {
         if (!statusMessage) {
           statusMessage = await message.reply({ content, allowedMentions: { parse: [] } });
         } else {
-          await statusMessage.edit({ content });
+          await statusMessage.edit({ content, allowedMentions: { parse: [] } });
         }
       } catch (e) {
         console.warn('[message] status update failed:', e.message);
@@ -346,31 +371,50 @@ export function attachMessageHandler(client) {
     } catch (err) {
       console.error('[message] pipeline error:', err);
       try {
-        if (statusMessage) await statusMessage.edit({ content: publicErrorMessage() });
+        if (statusMessage) await statusMessage.edit({ content: publicErrorMessage(), allowedMentions: { parse: [] } });
         else await message.reply(publicErrorMessage());
       } catch {}
       return;
     } finally {
       clearInterval(typingInterval);
-      inFlight.delete(userId);
     }
 
     const chunks = splitForDiscord(result.text || '');
+    const noPings = { parse: [] };
+    const files = (result.images || []).map((im) => ({ attachment: im.buffer, name: im.filename }));
+    let first = false;
+    if (statusMessage) {
+      try {
+        await statusMessage.edit({ content: chunks[0] || '\u2026', allowedMentions: noPings, ...(files.length ? { files } : {}) });
+        first = true;
+      } catch (err) {
+        // Status message deleted or uneditable — fall back to a fresh reply
+        // below rather than dropping the whole answer.
+        console.warn('[message] status edit failed, sending fresh reply:', err.message);
+      }
+    }
     try {
-      if (statusMessage) {
-        await statusMessage.edit({ content: chunks[0] || '\u2026' });
-      } else {
-        await message.reply({ content: chunks[0] || '\u2026', allowedMentions: { parse: [] } });
+      if (!first) {
+        const first0 = { content: chunks[0] || '\u2026', allowedMentions: noPings, ...(files.length ? { files } : {}) };
+        await message.reply(first0).catch(() => message.channel.send(first0));
       }
       for (let i = 1; i < chunks.length; i++) {
-        await message.channel.send({ content: chunks[i], allowedMentions: { parse: [] } });
+        await message.channel.send({ content: chunks[i], allowedMentions: noPings });
       }
     } catch (err) {
       console.error('[message] send failed:', err.message);
     }
+    }
+  }
+
+  client.on('messageUpdate', (oldMessage, newMessage) => {
+    // Returned so callers (and tests) can await completion; it never rejects.
+    return handleMessageUpdate(newMessage).catch((err) => {
+      console.error('[messageUpdate] handler failed:', err);
+    });
   });
 
-  client.on('messageUpdate', async (oldMessage, newMessage) => {
+  async function handleMessageUpdate(newMessage) {
     try {
       if (newMessage.partial) newMessage = await newMessage.fetch();
     } catch { return; }
@@ -390,9 +434,16 @@ export function attachMessageHandler(client) {
         console.error('[messageUpdate] Auto-ingestion failed:', err.message);
       });
     }
+  }
+
+  client.on('messageDelete', (message) => {
+    // Returned so callers (and tests) can await completion; it never rejects.
+    return handleMessageDelete(message).catch((err) => {
+      console.error('[messageDelete] handler failed:', err);
+    });
   });
 
-  client.on('messageDelete', async (message) => {
+  async function handleMessageDelete(message) {
     // A deleted message can no longer be fetched — but its IDs are always
     // available, even on partials, and that's all the cleanup needs.
     const guildId = message.guildId;
@@ -410,5 +461,5 @@ export function attachMessageHandler(client) {
         console.error('[messageDelete] Auto-remove failed:', err.message);
       });
     }
-  });
+  }
 }

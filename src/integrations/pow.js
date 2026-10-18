@@ -1,4 +1,4 @@
-import { getRobloxUserId, getRobloxUserIdExact } from './prc.js';
+import { getRobloxUserId, getRobloxUserIdExact, resolveActionTarget } from './prc.js';
 import { getStaffLink, setStaffLink } from '../tenant/store.js';
 import { assertPublicHttpUrlCached, ssrfAgent } from '../ai/ssrf.js';
 import { externalApiDuration } from '../metrics.js';
@@ -12,11 +12,20 @@ function baseUrl(tenantCtx) {
 
 // The base URL is tenant-configurable, so validate it points at a public host
 // before sending the tenant's POW token to it (SSRF guard).
+const EXTERNAL_TIMEOUT_MS = 10_000;
+
 async function guardedFetch(urlStr, opts) {
   await assertPublicHttpUrlCached(urlStr);
   const __start = Date.now();
   // Pin the socket to a connect-time-validated address (DNS-rebind defence).
-  const res = await fetch(urlStr, { ...opts, dispatcher: ssrfAgent });
+  // Redirects are refused outright: a hop to an IP literal would skip the
+  // connect-time lookup and carry the tenant's key to an internal address.
+  const res = await fetch(urlStr, {
+    ...opts,
+    dispatcher: ssrfAgent,
+    redirect: 'error',
+    signal: opts?.signal ?? AbortSignal.timeout(EXTERNAL_TIMEOUT_MS),
+  });
   externalApiDuration.observe({ service: 'pow', status: res.ok ? 'ok' : 'error' }, (Date.now() - __start) / 1000);
   return res;
 }
@@ -109,7 +118,8 @@ async function resolveModeratorId(tenantCtx, moderatorDiscordId, moderatorRoblox
 }
 
 export async function logPunishment(tenantCtx, username, moderatorDiscordId, type, reason, moderatorRobloxUsername) {
-  const userInfo = await getRobloxUserId(tenantCtx, username);
+  // A punishment record is a write — never attach it to a fuzzy-matched player.
+  const userInfo = await resolveActionTarget(tenantCtx, username);
   if (!userInfo) throw new Error(`Could not find Roblox user: ${username}`);
   // POW's moderatorId field is the moderator's Roblox User ID, not their Discord ID.
   const moderatorId = await resolveModeratorId(tenantCtx, moderatorDiscordId, moderatorRobloxUsername);

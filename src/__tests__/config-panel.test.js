@@ -71,12 +71,9 @@ describe('config panel components', () => {
 
     expect(mocks.applyFieldEdit).toHaveBeenCalledWith('123456789012345678', 'displayName', 'New name');
     expect(mocks.buildCategoryPanel).toHaveBeenCalledWith('123456789012345678', 'Identity');
-    expect(interaction.update).toHaveBeenCalledWith({
-      content: 'Saved.',
-      embeds: ['category'],
-      components: ['rows'],
-      ephemeral: true,
-    });
+    // Components V2 payload: the confirmation line is rendered as text inside it.
+    expect(interaction.update).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(interaction.update.mock.calls[0][0])).toContain('Saved.');
   });
 
   it('rejects a component whose embedded tenant id is not the interaction guild', async () => {
@@ -113,11 +110,7 @@ describe('config panel components', () => {
 
     expect(mocks.buildValueSelectPanel).toHaveBeenCalledWith('123456789012345678', 'statusChannelId');
     expect(interaction.showModal).not.toHaveBeenCalled();
-    expect(interaction.update).toHaveBeenCalledWith({
-      content: '',
-      embeds: ['picker'],
-      components: ['rows'],
-      ephemeral: true,
-    });
+    expect(interaction.update).toHaveBeenCalledTimes(1);
+    expect(interaction.update.mock.calls[0][0].flags).toBeDefined();
   });
 });

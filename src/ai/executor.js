@@ -1,14 +1,20 @@
 import * as prc from '../integrations/prc.js';
 import * as pow from '../integrations/pow.js';
 import { webSearch } from '../integrations/brave.js';
-import { audit, addMemory, removeMemory } from '../tenant/store.js';
-import { canRunTool, denialReason, POLICY_GATED_TOOLS } from './policy.js';
+import { audit, addMemory, removeMemory, reserveImageGeneration, releaseImageGeneration, getImageQuota } from '../tenant/store.js';
+import { generateImage } from './imageGen.js';
+import { canRunTool, denialReason, POLICY_GATED_TOOLS, resolveActorRank, RANK_ORDER } from './policy.js';
 import { policyToolKey, DISCORD_ONLY_TOOLS } from './tools.js';
 import { actorKey } from './utils.js';
 import { getClient } from '../discord/client.js';
-import { safeFetch } from './ssrf.js';
+import { safeFetch, readTextCapped } from './ssrf.js';
 import { parseImageId, imageAttachments, formatAge } from './images.js';
 import { mcpToolCalls, mcpToolDuration } from '../metrics.js';
+import { invalidateTenant } from '../tenant/resolve.js';
+import { TOOL_NAMES } from './tools.js';
+
+const KNOWN_TOOLS = new Set(TOOL_NAMES);
+const MAX_MEMORY_CHARS = 1000;
 
 const BANNED_TARGETS = new Set(['all', 'everyone', 'everybody', '*', 'others', 'server', 'people']);
 const MOD_TOOLS = new Set([
@@ -63,12 +69,15 @@ function actorCanViewChannel(actor, channel) {
 // touching the 500+ line switch body itself.
 export async function executeTool(tenantCtx, name, args, actor) {
   const start = Date.now();
+  // Tool names come from model output; bucket unknown ones so a hallucinated
+  // or injected name can't mint unbounded metric series.
+  const toolLabel = KNOWN_TOOLS.has(name) ? name : 'unknown';
   try {
     const result = await executeToolInner(tenantCtx, name, args, actor);
-    mcpToolCalls.inc({ tool: name, outcome: result?.success === false ? 'error' : 'ok' });
+    mcpToolCalls.inc({ tool: toolLabel, outcome: result?.success === false ? 'error' : 'ok' });
     return result;
   } finally {
-    mcpToolDuration.observe({ tool: name }, (Date.now() - start) / 1000);
+    mcpToolDuration.observe({ tool: toolLabel }, (Date.now() - start) / 1000);
   }
 }
 
@@ -157,23 +166,32 @@ async function executeToolInner(tenantCtx, name, args, actor) {
       case 'bring_all_staff': {
         const players = await prc.getOnlinePlayers(tenantCtx);
         const staff = players.filter((p) => ['Server Moderator', 'Server Administrator', 'Server Owner'].includes(p.permission));
+        if (!args.destination_player) return { success: false, error: 'destination_player is required' };
         const done = [];
+        const failed = [];
         for (const s of staff) {
           try { await prc.tpPlayer(tenantCtx, s.username, args.destination_player); done.push(s.username); }
-          catch (err) { /* skip */ }
+          catch (err) { failed.push({ username: s.username, error: err.message }); }
         }
-        result = { success: true, staff: done, message: `Brought ${done.length} staff to ${args.destination_player}` };
+        result = {
+          success: done.length > 0 || staff.length === 0,
+          staff: done,
+          failed,
+          message: `Brought ${done.length} of ${staff.length} staff to ${args.destination_player}`,
+        };
         break;
       }
       case 'pm_all_staff': {
         const players = await prc.getOnlinePlayers(tenantCtx);
         const staff = players.filter((p) => ['Server Moderator', 'Server Administrator', 'Server Owner'].includes(p.permission));
+        if (!args.message || typeof args.message !== 'string') return { success: false, error: 'message is required' };
         const done = [];
+        const failed = [];
         for (const s of staff) {
           try { await prc.sendPrivateMessage(tenantCtx, s.username, args.message); done.push(s.username); }
-          catch (err) { /* skip */ }
+          catch (err) { failed.push({ username: s.username, error: err.message }); }
         }
-        result = { success: true, staff: done, sentMessage: args.message };
+        result = { success: done.length > 0 || staff.length === 0, staff: done, failed, sentMessage: args.message };
         break;
       }
       case 'log_punishment': {
@@ -503,6 +521,53 @@ async function executeToolInner(tenantCtx, name, args, actor) {
         result = { success: true, image_id: args.image_id, sent: formatAge(Date.now() - msg.createdTimestamp), note: 'The image is attached in the next message, for this reply only.', imageUrl: img.url };
         break;
       }
+      case 'generate_image': {
+        if (actor?.voice) return { success: false, error: 'Images can\'t be sent in voice chat. Ask in a text channel instead.' };
+        if (typeof args.prompt !== 'string' || !args.prompt.trim()) return { success: false, error: 'prompt is required' };
+        const key = actorKey(actor);
+        const slot = await reserveImageGeneration(tenantCtx.tenantId, key);
+        if (!slot.ok) {
+          if (slot.limit <= 0) {
+            return { success: false, error: `Image generation is not included in this server's ${slot.tier.toUpperCase()} plan. A server manager can run /wren upgrade to get it (Core: 2 per person per week, Pro: 10).` };
+          }
+          const when = slot.retryAt ? ` Their next one frees up <t:${Math.floor(slot.retryAt.getTime() / 1000)}:R>.` : '';
+          return { success: false, error: `This user has used all ${slot.limit} image generations their server's ${slot.tier.toUpperCase()} plan allows per week.${when}` };
+        }
+        let img;
+        try {
+          img = await generateImage({ prompt: args.prompt, aspectRatio: args.aspect_ratio });
+        } catch (e) {
+          await releaseImageGeneration(slot.id).catch(() => {});
+          console.warn('[executor] generate_image failed:', e.message);
+          return { success: false, error: 'Image generation failed. Nothing was used from their weekly allowance; they can try again.' };
+        }
+        // `generatedImage` is consumed by the model loop (attached to the final
+        // reply) and stripped from what the model sees.
+        result = { success: true, note: 'The image is generated and will be attached to your reply automatically. Reply naturally; do not include a link.', remaining_this_week: slot.limit - slot.used, generatedImage: img };
+        break;
+      }
+      case 'check_image_quota': {
+        let key = actorKey(actor);
+        const other = args.user_id == null || args.user_id === '' ? null : String(args.user_id).trim();
+        if (other && `discord:${other}` !== key) {
+          if (!/^\d{5,25}$/.test(other)) return { success: false, error: 'user_id must be a Discord user id.' };
+          if (RANK_ORDER[resolveActorRank(actor, tenantCtx)] < RANK_ORDER.mod) {
+            return { success: false, error: 'Checking another user\'s image quota requires moderator rank.' };
+          }
+          key = `discord:${other}`;
+        }
+        const q = await getImageQuota(tenantCtx.tenantId, key);
+        result = {
+          success: true,
+          plan: q.tier,
+          weekly_limit: q.limit,
+          used_this_week: q.used,
+          remaining: q.remaining,
+          ...(q.nextFreeAt && q.remaining < q.limit ? { next_slot_frees_at: `<t:${Math.floor(q.nextFreeAt.getTime() / 1000)}:R>` } : {}),
+          ...(q.limit === 0 ? { note: 'This plan does not include image generation. /wren upgrade adds it.' } : {}),
+        };
+        break;
+      }
       case 'get_user_info': {
         const guild = getGuild(tenantCtx, actor);
         if (!guild) return { success: false, error: 'Discord guild context required' };
@@ -546,6 +611,8 @@ async function executeToolInner(tenantCtx, name, args, actor) {
         break;
       }
       case 'save_memory': {
+        if (!args.content || typeof args.content !== 'string') return { success: false, error: 'content is required' };
+        if (args.content.length > MAX_MEMORY_CHARS) return { success: false, error: `Memories are limited to ${MAX_MEMORY_CHARS} characters.` };
         if (args.type === 'server') {
           if (!canRunTool(tenantCtx, 'save_memory', { type: 'server' }, actor)) {
             return { success: false, error: 'Permission denied: only staff can save server memories.' };
@@ -555,6 +622,9 @@ async function executeToolInner(tenantCtx, name, args, actor) {
           const key = actorKey(actor);
           await addMemory({ tenantId: tenantCtx.tenantId, scope: 'user', userKey: key, content: args.content, addedBy: key });
         }
+        // The tenant context (incl. memory) is cached; drop it so the very next
+        // message sees the new fact.
+        invalidateTenant(tenantCtx.tenantId);
         result = { success: true, message: args.type === 'server' ? `Saved server fact: "${args.content}"` : `Saved user fact: "${args.content}"` };
         break;
       }
@@ -568,6 +638,7 @@ async function executeToolInner(tenantCtx, name, args, actor) {
           const key = actorKey(actor);
           await removeMemory(tenantCtx.tenantId, args.id, key);
         }
+        invalidateTenant(tenantCtx.tenantId);
         result = { success: true, message: `Deleted memory #${args.id}` };
         break;
       }
@@ -588,7 +659,7 @@ async function executeToolInner(tenantCtx, name, args, actor) {
               results.push({ url, error: `HTTP ${resp.status} ${resp.statusText}` });
               continue;
             }
-            const html = await resp.text();
+            const html = await readTextCapped(resp);
             // Strip scripts and styles to prevent massive markdown conversions
             const cleanHtml = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
                                   .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');

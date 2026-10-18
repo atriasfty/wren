@@ -40,18 +40,26 @@ export const TOOL_DEFS = [
   // web
   { name: 'search_web', description: 'Search the internet for real-time information.', params: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } },
   { name: 'read_webpage', description: 'Fetch and read the content of up to 5 web pages, converted to markdown for easy reading.', params: { type: 'object', properties: { urls: { type: 'array', items: { type: 'string' }, description: 'List of URLs to fetch (up to 5).' } }, required: ['urls'] } },
+  // images
+  { name: 'generate_image', description: 'Generate an image from a text prompt and attach it to your reply. Only call when the user explicitly asks you to create/draw/generate an image. Limited per person per week by plan (Free: none, Core: 2, Pro: 10); if the result says the limit is reached, tell the user plainly. After success, reply naturally (e.g. "here\'s your image") and mention what it shows; do not paste a link.', params: { type: 'object', properties: { prompt: { type: 'string', description: 'A detailed description of the image to generate: subject, style, lighting, composition, colours.' }, aspect_ratio: { type: 'string', enum: ['1:1', '4:3', '3:4', '16:9', '9:16'], description: 'Shape of the image. Default 1:1; use 16:9 for wide/landscape, 9:16 for tall/phone wallpapers.' } }, required: ['prompt'] } },
+  { name: 'check_image_quota', description: 'Check how many image generations a user has left this week on their server\'s plan. Defaults to the person talking to you. Use when someone asks how many images they (or someone else) can still make.', params: { type: 'object', properties: { user_id: { type: 'string', description: 'Discord user id to check. Omit for the current user. Checking other people requires moderator rank.' } } } },
 ];
 
 // These tools act on Discord itself (reading/deleting channel content, member
 // info) and only make sense — and are only permission-checked — for a real
 // Discord actor. They must never be offered to in-game/voice/API callers.
+// Tools whose output is a file attached to a Discord message: pointless (and,
+// for quota-metered ones, wasteful) when the reply is spoken aloud.
+export const TEXT_REPLY_ONLY_TOOLS = new Set(['generate_image']);
+
 export const DISCORD_ONLY_TOOLS = new Set([
-  'get_all_channels', 'get_channel_messages', 'get_user_info', 'summarize_chat', 'purge_messages', 'view_image',
+  'get_all_channels', 'get_channel_messages', 'get_user_info', 'summarize_chat', 'purge_messages', 'view_image', 'generate_image', 'check_image_quota',
 ]);
 
-export function getToolsForMistral({ isDiscordActor = true } = {}) {
+export function getToolsForMistral({ isDiscordActor = true, canAttachFiles = true } = {}) {
   return TOOL_DEFS
     .filter((t) => isDiscordActor || !DISCORD_ONLY_TOOLS.has(t.name))
+    .filter((t) => canAttachFiles || !TEXT_REPLY_ONLY_TOOLS.has(t.name))
     .map((t) => ({
       type: 'function',
       function: {

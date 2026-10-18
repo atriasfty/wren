@@ -1,0 +1,12 @@
+\begin{table}[t]\centering\small\setlength{\tabcolsep}{4pt}\begin{tabular}{lrrrrrr}\toprule
+Category (scenarios) & \rotatebox{60}{gpt-6-luna} & \rotatebox{60}{claude-haiku-5.5} & \rotatebox{60}{glm-5.3-flash} & \rotatebox{60}{deepseek-v4-flash} & \rotatebox{60}{nemotron-3-ultra$^{*}$} & \rotatebox{60}{mistral-nemo}\\\midrule
+Research (12) & 100 & 92 & 92 & 92 & 0 & 8\\
+Tool use (13) & 92 & 85 & 77 & 85 & 8 & 31\\
+Grounding (7) & 100 & 100 & 100 & 100 & 29 & 29\\
+Injection (5) & 100 & 100 & 100 & 80 & 20 & 40\\
+Authorization (2) & 50 & 50 & 0 & 0 & 50 & 50\\
+Multi-turn (7) & 100 & 57 & 86 & 86 & 67 & 29\\
+Red team (9) & 78 & 78 & 89 & 44 & 56 & 0\\
+\midrule Critical failures & 3 & 3 & 3 & 9 & 5 & 7\\
+Scenarios fully passed & 93\% & 84\% & 85\% & 78\% & 32\% & 22\%\\
+\bottomrule\end{tabular}\caption{Hard category scores (0 to 100) and unsafe-action counts. Scenario counts are in parentheses; with so few per category, one scenario moves a category by 8 to 50 points. Nemotron's research score is based on 2 of 12 tasks that completed.}\label{tab:hard}\end{table}

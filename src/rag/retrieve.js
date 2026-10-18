@@ -19,11 +19,17 @@ export async function retrieveSources(tenantCtx, question, topK = 8, { minSimila
     const store = await readVectorStore(tenantCtx.vectorStorePath);
     if (!store.chunks || !store.chunks.length) return [];
     const q = await embedText(question);
+    // Only chunks from currently enabled sources are eligible: chunks of a
+    // removed or disabled source can linger in the store and must not leak.
     const sourceWeight = new Map();
-    for (const s of tenantCtx.sources) sourceWeight.set(`${s.kind}:${s.ref}`, s.weight ?? 1.0);
+    for (const s of tenantCtx.sources) {
+      if (s.enabled === false) continue;
+      sourceWeight.set(`${s.kind}:${s.ref}`, s.weight ?? 1.0);
+    }
     const scored = store.chunks
+      .filter((c) => sourceWeight.has(`${c.sourceKind}:${c.sourceRef}`))
       .map((c) => {
-        const w = sourceWeight.get(`${c.sourceKind}:${c.sourceRef}`) ?? 1.0;
+        const w = sourceWeight.get(`${c.sourceKind}:${c.sourceRef}`);
         return { chunk: c, score: cosine(q, c.embedding) * w };
       })
       .filter((s) => s.score > minSimilarity)

@@ -102,20 +102,35 @@ export function chunkText(text, size = CHUNK_SIZE, overlap = CHUNK_OVERLAP) {
     chunks.push(current.trim());
   }
 
-  return chunks.filter((c) => c.length > 50);
+  // Tiny fragments add noise to retrieval — but if the whole text is short
+  // (a brief manual doc, a one-line message), keeping nothing would silently
+  // drop it from the index, so fall back to anything of meaningful length.
+  const substantial = chunks.filter((c) => c.length > 50);
+  if (substantial.length) return substantial;
+  return chunks.filter((c) => c.length >= 15 && /[\p{L}\p{N}]/u.test(c));
 }
 
-async function fetchChannelHistory(client, channelId, { capPerChannel = 1000 } = {}) {
+// Channel ids come from tenant-configured sources; client.channels.fetch()
+// resolves a channel in ANY guild the bot is in, so the guild is checked
+// explicitly — otherwise one tenant could ingest another server's channel.
+async function fetchChannelHistory(client, channelId, { guildId, capPerChannel = 1000, maxScanned = 10_000 } = {}) {
   const channel = await client.channels.fetch(channelId);
   if (!channel || !channel.isTextBased()) return [];
+  if (!guildId || channel.guildId !== guildId) {
+    throw new Error(`channel ${channelId} does not belong to this server`);
+  }
   const out = [];
   let lastId = null;
   let fetched = 0;
-  while (fetched < capPerChannel) {
+  // Bound pages scanned too, not just messages kept: a channel of mostly
+  // bot posts or one-word replies would otherwise be paged end to end.
+  let scanned = 0;
+  while (fetched < capPerChannel && scanned < maxScanned) {
     const opts = { limit: 100 };
     if (lastId) opts.before = lastId;
     const msgs = await channel.messages.fetch(opts);
     if (msgs.size === 0) break;
+    scanned += msgs.size;
     for (const m of msgs.values()) {
       if (m.author.bot) continue;
       if (!m.content || m.content.length < 15) continue;
@@ -160,14 +175,18 @@ async function ingestTenantInner(tenantCtx, client, { kinds = ['all'] } = {}) {
     if (!s.enabled) continue;
     if (s.kind === 'discord_channel' && (doAll || kinds.includes('channels'))) {
       try {
-        const msgs = await fetchChannelHistory(client, s.ref);
+        const msgs = await fetchChannelHistory(client, s.ref, { guildId: tenantCtx.tenantId });
         for (const content of msgs) corpus.push({ text: content, kind: s.kind, ref: s.ref, label: s.label });
       } catch (err) {
         console.warn(`[ingest] channel ${s.ref} failed: ${err.message}`);
       }
     } else if (s.kind === 'website' && (doAll || kinds.includes('websites'))) {
-      const page = await fetchWebpage(s.ref, { maxChars: 50_000 });
-      if (page) corpus.push({ text: page.content, kind: s.kind, ref: s.ref, label: s.label });
+      try {
+        const page = await fetchWebpage(s.ref, { maxChars: 50_000 });
+        if (page) corpus.push({ text: page.content, kind: s.kind, ref: s.ref, label: s.label });
+      } catch (err) {
+        console.warn(`[ingest] website ${s.ref} failed: ${err.message}`);
+      }
     } else if (s.kind === 'manual_doc' && (doAll || kinds.includes('documents'))) {
       const safe = s.ref.replace(/[^a-zA-Z0-9._-]/g, '_');
       try {
@@ -179,7 +198,11 @@ async function ingestTenantInner(tenantCtx, client, { kinds = ['all'] } = {}) {
     }
   }
 
-  if (!corpus.length) return { chunks: 0 };
+  if (!corpus.length) {
+    // Still drop chunks of sources that were removed since the last ingest.
+    await purgeOrphanedChunks(tenantCtx);
+    return { chunks: 0 };
+  }
 
   const chunkedCorpus = [];
   for (const c of corpus) {
@@ -201,12 +224,15 @@ async function ingestTenantInner(tenantCtx, client, { kinds = ['all'] } = {}) {
   }
 
   const totalChunks = await withStoreLock(tenantCtx.tenantId, async () => {
-    // Incremental: keep chunks from sources NOT being re-ingested.
+    // Incremental: keep chunks from sources NOT being re-ingested, and drop
+    // chunks whose source no longer exists at all (removed since last run).
     const ingestingRefs = new Set(corpus.map((c) => `${c.kind}:${c.ref}`));
+    const knownRefs = new Set(tenantCtx.sources.map((s) => `${s.kind}:${s.ref}`));
     const store = await readVectorStore(tenantCtx.vectorStorePath);
-    store.chunks = (store.chunks || []).filter(
-      (c) => !ingestingRefs.has(`${c.sourceKind}:${c.sourceRef}`)
-    );
+    store.chunks = (store.chunks || []).filter((c) => {
+      const key = `${c.sourceKind}:${c.sourceRef}`;
+      return !ingestingRefs.has(key) && knownRefs.has(key);
+    });
 
     store.metadata = {
       createdAt: new Date().toISOString(),
@@ -236,7 +262,7 @@ async function ingestTenantInner(tenantCtx, client, { kinds = ['all'] } = {}) {
       await markSourceIngested({ tenantId: tenantCtx.tenantId, kind: s.kind, ref: s.ref });
     }
   }
-  return { chunks: totalChunks, sources: corpus.length };
+  return { chunks: totalChunks, sources: new Set(corpus.map((c) => `${c.kind}:${c.ref}`)).size };
 }
 
 export async function ingestDiscordMessage(tenantCtx, message) {
@@ -280,6 +306,39 @@ export async function ingestDiscordMessage(tenantCtx, message) {
     store.metadata.updatedAt = new Date().toISOString();
 
     await writeVectorStore(tenantCtx.vectorStorePath, store);
+  });
+}
+
+// Removes every chunk for one source — called when a source is removed so its
+// content stops being retrievable immediately, not just after the next ingest.
+export async function removeSourceChunks(tenantCtx, kind, ref) {
+  await withStoreLock(tenantCtx.tenantId, async () => {
+    const store = await readVectorStore(tenantCtx.vectorStorePath);
+    const before = store.chunks?.length || 0;
+    store.chunks = (store.chunks || []).filter((c) => !(c.sourceKind === kind && c.sourceRef === ref));
+    if (store.chunks.length !== before) {
+      store.chunks.forEach((c, idx) => { c.id = idx; });
+      if (!store.metadata) store.metadata = {};
+      store.metadata.totalChunks = store.chunks.length;
+      store.metadata.updatedAt = new Date().toISOString();
+      await writeVectorStore(tenantCtx.vectorStorePath, store);
+    }
+  });
+}
+
+async function purgeOrphanedChunks(tenantCtx) {
+  const knownRefs = new Set(tenantCtx.sources.map((s) => `${s.kind}:${s.ref}`));
+  await withStoreLock(tenantCtx.tenantId, async () => {
+    const store = await readVectorStore(tenantCtx.vectorStorePath);
+    const before = store.chunks?.length || 0;
+    store.chunks = (store.chunks || []).filter((c) => knownRefs.has(`${c.sourceKind}:${c.sourceRef}`));
+    if (store.chunks.length !== before) {
+      store.chunks.forEach((c, idx) => { c.id = idx; });
+      if (!store.metadata) store.metadata = {};
+      store.metadata.totalChunks = store.chunks.length;
+      store.metadata.updatedAt = new Date().toISOString();
+      await writeVectorStore(tenantCtx.vectorStorePath, store);
+    }
   });
 }
 

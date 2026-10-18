@@ -26,11 +26,12 @@ const CONFIRM_TTL_MS = 60_000;
 // string.
 export function parseDurationMs(durationStr) {
   if (typeof durationStr !== 'string' || !durationStr) return null;
-  const d = durationStr.toLowerCase();
-  let ms = null;
-  if (d.endsWith('d')) ms = parseInt(d, 10) * 24 * 60 * 60 * 1000;
-  else if (d.endsWith('w')) ms = parseInt(d, 10) * 7 * 24 * 60 * 60 * 1000;
-  else if (d.endsWith('m')) ms = parseInt(d, 10) * 30 * 24 * 60 * 60 * 1000;
+  // Whole-string match: "7days" or "1x" must be rejected, not half-parsed.
+  const m = /^(\d+)([dwm])$/.exec(durationStr.trim().toLowerCase());
+  if (!m) return null;
+  const n = parseInt(m[1], 10);
+  const unit = { d: 24 * 60 * 60 * 1000, w: 7 * 24 * 60 * 60 * 1000, m: 30 * 24 * 60 * 60 * 1000 }[m[2]];
+  const ms = n * unit;
   // parseInt on a huge numeric string, or a string with no leading digits at
   // all ("d" alone -> NaN), must not silently become an unusable duration
   // (e.g. an Invalid Date ban expiry) instead of a clean "invalid format".
@@ -191,6 +192,12 @@ export async function handleAtriaCommands(message) {
       }
       const duration = args[2];
       const ms = parseDurationMs(duration);
+      // A duration that was given but can't be parsed must not silently turn
+      // into a permanent ban.
+      if (duration && !ms) {
+        await message.reply(`Invalid duration \`${duration}\` — use e.g. \`7d\`, \`2w\` or \`1m\`, or omit it for a permanent ban.`);
+        return true;
+      }
       const expires = ms ? new Date(Date.now() + ms).toISOString() : null;
       
       execute = async () => {
@@ -243,6 +250,11 @@ export async function handleAtriaCommands(message) {
         await message.reply('Missing broadcast message.');
         return true;
       }
+      const BROADCAST_PREFIX = '**ATRIA PLATFORM BROADCAST:**\n';
+      if (BROADCAST_PREFIX.length + msg.length > 2000) {
+        await message.reply(`Broadcast is too long (${msg.length} chars; max ${2000 - BROADCAST_PREFIX.length}).`);
+        return true;
+      }
       execute = async () => {
         const res = await query("SELECT tenant_id, status_channel_id, last_active_channel_id FROM tenants WHERE (status_channel_id IS NOT NULL AND status_channel_id != '') OR (last_active_channel_id IS NOT NULL AND last_active_channel_id != '')");
         let sent = 0;
@@ -251,7 +263,8 @@ export async function handleAtriaCommands(message) {
           try {
             const targetChannelId = (row.status_channel_id && row.status_channel_id !== '') ? row.status_channel_id : row.last_active_channel_id;
             const channel = await message.client.channels.fetch(targetChannelId);
-            await channel.send(`**ATRIA PLATFORM BROADCAST:**\n${msg}`);
+            if (!channel?.isTextBased?.() || typeof channel.send !== 'function') throw new Error('channel is not text-based');
+            await channel.send({ content: `${BROADCAST_PREFIX}${msg}`, allowedMentions: { parse: [] } });
             sent++;
           } catch (e) {
             console.error(`[broadcast error] tenant ${row.tenant_id} channel ${row.status_channel_id}:`, e.message);
@@ -371,7 +384,8 @@ export async function handleAtriaCommands(message) {
     // deleted channel/message, a Discord API hiccup) escape as an unhandled
     // rejection — messageHandler.js awaits this with no try/catch of its
     // own, and an unhandled rejection there crashes the whole process.
-    try { await message.reply(`Error executing command: ${err.message}`); } catch {}
+    // Internal error text (e.g. Postgres messages) stays in the logs.
+    try { await message.reply('Error executing command — see server logs for details.'); } catch {}
     return true;
   }
 }

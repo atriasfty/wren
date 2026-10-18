@@ -45,7 +45,10 @@ const hbar = (x, y, w, h, fill) => {
 const load = (f) => JSON.parse(fs.readFileSync(f, 'utf8'));
 const core = load(CORE); const hard = load(HARD);
 const coreScore = (m) => (core.comparable?.summaries?.[m] ?? core.summaries[m]).overall;
-const models = Object.keys(hard.summaries).filter((m) => core.summaries[m]);
+// A model with no scorable result has overall null — leave it off the charts.
+const models = Object.keys(hard.summaries).filter((m) => core.summaries[m] && coreScore(m) != null && hard.summaries[m].overall != null);
+const scenarioCount = new Set([...Object.values(core.results || {}), ...Object.values(hard.results || {})].flat().map((r) => r.id)).size;
+const hardCount = new Set(Object.values(hard.results || {}).flat().map((r) => r.id)).size;
 const rows = models.map((m) => {
   const c = coreScore(m) * 100; const h = hard.summaries[m].overall * 100;
   return { id: m, core: c, hard: h, overall: Math.sqrt(c * h), hs: hard.summaries[m] };
@@ -90,9 +93,9 @@ function cover() {
   <rect width="100%" height="100%" fill="${C.wren}"/>
   ${text(72, 96, 'WREN · ATRIA', { size: 15, weight: 500, fill: C.white, ls: '0.08em', extra: 'opacity="0.75"' })}
   ${text(66, 260, 'WrenBench', { size: 150, font: DISPLAY, weight: 700, fill: C.white, ls: '-0.04em' })}
-  ${text(72, 318, 'A benchmark for the things Wren actually does, then six', { size: 26, weight: 300, fill: C.white })}
+  ${text(72, 318, `A benchmark for the things Wren actually does, then ${models.length}`, { size: 26, weight: 300, fill: C.white })}
   ${text(72, 352, 'models trying to survive it.', { size: 26, weight: 300, fill: C.white })}
-  ${[['197', 'scenarios'], ['6', 'models'], ['55', 'hard tests, all proven passable'], [`${Math.round(best.overall)}`, `best overall (${nameOf(best.id)[0]})`]].map(([n, l], i) => {
+  ${[[String(scenarioCount), 'scenarios'], [String(models.length), 'models'], [String(hardCount), 'hard tests, all proven passable'], [`${Math.round(best.overall)}`, `best overall (${nameOf(best.id)[0]})`]].map(([n, l], i) => {
     const x = 72 + i * 270;
     return `${text(x, 500, n, { size: 64, font: DISPLAY, weight: 700, fill: C.white, ls: '-0.025em' })}${text(x, 536, l, { size: 16, weight: 400, fill: C.white, extra: 'opacity="0.8"' })}`;
   }).join('')}

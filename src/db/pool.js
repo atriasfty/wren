@@ -4,9 +4,12 @@ import { dbQueryDuration } from '../metrics.js';
 const { Pool } = pg;
 
 let pool = null;
+let closed = false;
 
 export function getPool() {
   if (pool) return pool;
+  // After shutdown, don't silently spin up a fresh pool for a late query.
+  if (closed) throw new Error('DB pool is closed');
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error('DATABASE_URL is not set');
   pool = new Pool({
@@ -36,16 +39,23 @@ export async function withTx(fn) {
     await client.query('BEGIN');
     const result = await fn(client);
     await client.query('COMMIT');
+    client.release();
     return result;
   } catch (err) {
-    await client.query('ROLLBACK');
+    try {
+      await client.query('ROLLBACK');
+      client.release();
+    } catch (rollbackErr) {
+      // The connection itself is broken — evict it instead of returning it
+      // to the pool, and surface the original error, not the rollback one.
+      client.release(rollbackErr);
+    }
     throw err;
-  } finally {
-    client.release();
   }
 }
 
 export async function closePool() {
+  closed = true;
   if (pool) {
     await pool.end();
     pool = null;

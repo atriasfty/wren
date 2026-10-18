@@ -10,8 +10,6 @@ export function initObservability() {
     return;
   }
 
-  console.log('[observability] OpenTelemetry tracing initialised (manual spans only)');
-
   sdkInstance = new NodeSDK({
     resource: resourceFromAttributes({
       'service.name': 'wren',
@@ -20,8 +18,21 @@ export function initObservability() {
 
   try {
     sdkInstance.start();
-    console.log('[observability] OpenTelemetry SDK started');
+    // NodeSDK picks its exporter from the standard OTEL_EXPORTER_OTLP_* env
+    // vars; without an endpoint configured it targets localhost:4318.
+    const endpoint = process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT || process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+    console.log(`[observability] OpenTelemetry SDK started (OTLP endpoint: ${endpoint || 'default localhost:4318'})`);
   } catch (err) {
     console.error('[observability] Failed to start OpenTelemetry SDK:', err);
+  }
+}
+
+
+export async function shutdownObservability() {
+  if (!sdkInstance) return;
+  try {
+    await sdkInstance.shutdown();
+  } catch (err) {
+    console.error('[observability] shutdown failed:', err.message);
   }
 }

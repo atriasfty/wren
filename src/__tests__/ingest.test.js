@@ -26,9 +26,15 @@ describe('chunkText', () => {
     expect(chunkText('   ')).toEqual([]);
   });
 
-  it('filters out chunks smaller than 50 characters', () => {
+  it('drops sub-50-char fragments when there are substantial chunks', () => {
+    const long = 'This sentence is comfortably longer than fifty characters in total length.';
+    const chunks = chunkText(`${long}\nTiny bit.`, 80, 10);
+    expect(chunks.every((c) => c.length > 50)).toBe(true);
+  });
+
+  it('keeps a short text instead of silently indexing nothing', () => {
     const text = 'Hello world. This is a very short text.';
-    expect(chunkText(text, 100, 10)).toEqual([]);
+    expect(chunkText(text, 100, 10)).toEqual([text]);
   });
 
   it('correctly chunks sentences and respects size limit', () => {

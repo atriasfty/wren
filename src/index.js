@@ -12,7 +12,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
-import { initObservability } from './observability.js';
+import { initObservability, shutdownObservability } from './observability.js';
 initObservability();
 
 import { loadConfig } from './config.js';
@@ -202,18 +202,33 @@ async function main() {
   console.log('[boot] slash commands synced');
 
   // Global commands persist — no need to re-register on an interval.
-  setInterval(() => pruneExpiredEvents().catch(() => {}), 60 * 60 * 1000);
+  const pruneTimer = setInterval(() => pruneExpiredEvents().catch(() => {}), 60 * 60 * 1000);
 
   startNsfwFilterRefresh();
 
-  await startApiServer(client);
+  const apiServer = await startApiServer(client);
 
+  let shuttingDown = false;
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
-  function shutdown() {
+  async function shutdown() {
+    if (shuttingDown) return;
+    shuttingDown = true;
     console.log('[shutdown] stopping...');
-    client.destroy().catch(() => {});
-    closePool().finally(() => process.exit(0));
+    clearInterval(pruneTimer);
+    // Stop accepting new work before tearing down shared resources, and
+    // let in-flight HTTP requests finish (bounded) before closing the pool.
+    const forceExit = setTimeout(() => process.exit(0), 10_000);
+    forceExit.unref();
+    try {
+      await new Promise((resolve) => apiServer.close(() => resolve()));
+      await Promise.resolve(client.destroy()).catch(() => {});
+      await shutdownObservability();
+      await closePool();
+    } catch (err) {
+      console.error('[shutdown] error during cleanup:', err);
+    }
+    process.exit(0);
   }
 }
 
@@ -227,7 +242,9 @@ process.on('uncaughtException', (err) => {
   process.exit(1);
 });
 
+// A stray rejection (a transient DB error in some handler, a Discord API
+// hiccup) is not evidence of corrupted process state, so log it rather than
+// taking every guild offline. Synchronous uncaught exceptions stay fatal.
 process.on('unhandledRejection', (reason) => {
-  console.error('[unhandledRejection] fatal:', reason);
-  process.exit(1);
+  console.error('[unhandledRejection]', reason);
 });

@@ -13,7 +13,8 @@
     "migrate": "node src/db/migrate.js",
     "ingest": "node src/rag/ingest.js",
     "bench": "node bench/cli.js",
-    "bench:charts": "node bench/charts.js"
+    "bench:charts": "node bench/charts.js",
+    "bench:charts:armor": "node bench/armorCharts.js"
   },
   "dependencies": {
     "@discordjs/opus": "^0.10.0",
@@ -47,6 +48,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@opentelemetry/sdk-trace-base": "^2.8.0",
     "eslint": "^10.6.0",
     "fast-check": "^4.8.0",
     "supertest": "^7.2.2",

@@ -13,6 +13,7 @@ vi.mock('../tenant/store.js', () => ({
   updateSubscription: vi.fn(),
   findTenantByTokenHash: vi.fn(),
   tryClaimEvent: vi.fn(),
+  releaseEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../tenant/resolve.js', () => ({
@@ -126,5 +127,54 @@ describe('Polar Webhook', () => {
     expect(res.status).toBe(200);
     expect(store.updateSubscription).toHaveBeenCalledWith('guild_1', 'free', null, null, null);
     expect(resolve.invalidateTenant).toHaveBeenCalledWith('guild_1');
+  });
+
+  it('reads the camelCase fields validateEvent() actually returns', async () => {
+    validateEvent.mockReturnValue({
+      type: 'subscription.created',
+      data: {
+        id: 'sub_cc',
+        customerId: 'cus_cc',
+        productId: 'prod_core',
+        metadata: { tenantId: 'guild_1', ownerId: 'user_1' },
+      },
+    });
+    resolve.resolveTenantById.mockResolvedValue(null);
+    const app = await createApiServer({ guilds: { fetch: vi.fn().mockResolvedValue(null) } });
+
+    const res = await request(app).post('/webhooks/polar').set('webhook-id', 'msg_cc').send({});
+
+    expect(res.status).toBe(200);
+    expect(store.updateSubscription).toHaveBeenCalledWith('guild_1', 'core', 'sub_cc', 'user_1', 'cus_cc');
+  });
+
+  it('releases the delivery claim when processing fails, so the retry is not dropped', async () => {
+    validateEvent.mockReturnValue({
+      type: 'subscription.created',
+      data: { id: 'sub_x', productId: 'prod_core', metadata: { tenantId: 'guild_1', ownerId: 'u' } },
+    });
+    resolve.resolveTenantById.mockRejectedValue(new Error('db down'));
+    const app = await createApiServer({ guilds: { fetch: vi.fn() } });
+
+    const res = await request(app).post('/webhooks/polar').set('webhook-id', 'msg_fail').send({});
+
+    expect(res.status).toBe(500);
+    expect(store.releaseEvent).toHaveBeenCalledWith({ tenantId: 'guild_1', eventId: 'msg_fail' });
+    expect(store.updateSubscription).not.toHaveBeenCalled();
+  });
+
+  it('ignores an update for an already-cancelled, non-active subscription', async () => {
+    validateEvent.mockReturnValue({
+      type: 'subscription.updated',
+      data: { id: 'sub_old', productId: 'prod_core', cancelAtPeriodEnd: true, status: 'active', metadata: { tenantId: 'guild_1', ownerId: 'u1' } },
+    });
+    resolve.resolveTenantById.mockResolvedValue({ tenant: { polarSubscriptionId: 'sub_new', subscriptionTier: 'core', subscriptionOwnerId: 'u2' } });
+    const app = await createApiServer({ guilds: { fetch: vi.fn() } });
+
+    const res = await request(app).post('/webhooks/polar').set('webhook-id', 'msg_old').send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body.note).toMatch(/non-active/);
+    expect(store.updateSubscription).not.toHaveBeenCalled();
   });
 });

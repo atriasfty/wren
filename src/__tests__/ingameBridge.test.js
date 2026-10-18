@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../integrations/prc.js', () => ({
   getModcalls: mocks.getModcalls,
-  findPlayer: mocks.findPlayer,
+  findPlayerExact: mocks.findPlayer,
 }));
 
 vi.mock('../ai/pipeline.js', () => ({
@@ -32,6 +32,8 @@ describe('ingameBridge - pollModcallsFor', () => {
     playerSessions = mod.playerSessions;
     playerSessions.clear();
     mod.lastPollTs.clear();
+    mod.handledModcalls.clear();
+    mod.modcallFailures.clear();
 
     tenantCtx = {
       tenantId: 'guild-123',
@@ -119,32 +121,32 @@ describe('ingameBridge - pollModcallsFor', () => {
     });
   });
 
-  it('continues processing subsequent modcalls if runAssistantPipeline throws an error on one, and notifies the failed player', async () => {
+  it('continues processing subsequent modcalls if runAssistantPipeline throws an error on one, and notifies the failed player once it gives up', async () => {
     mocks.getModcalls.mockResolvedValue([
       { callerName: 'Player1', message: ':pm wren first question', timestamp: 100 },
       { callerName: 'Player2', message: ':pm wren second question', timestamp: 101 },
     ]);
 
-    mocks.runAssistantPipeline
-      .mockRejectedValueOnce(new Error('LLM rate limit error'))
-      .mockResolvedValueOnce({ text: 'Hello back' });
+    mocks.runAssistantPipeline.mockImplementation(async (_ctx, { question }) => {
+      if (question === 'first question') throw new Error('LLM rate limit error');
+      return { text: 'Hello back' };
+    });
 
     await pollModcallsFor(tenantCtx);
+    await pollModcallsFor(tenantCtx);
+    await pollModcallsFor(tenantCtx);
+    await pollModcallsFor(tenantCtx);
 
-    expect(mocks.runAssistantPipeline).toHaveBeenCalledTimes(2);
-    expect(mocks.executeTool).toHaveBeenCalledTimes(2);
-    expect(mocks.executeTool).toHaveBeenCalledWith(
-      tenantCtx,
-      'send_pm',
-      { username: 'Player1', message: 'Sorry, something went wrong processing your request. Please try again.' },
-      { kind: 'system' }
-    );
-    expect(mocks.executeTool).toHaveBeenCalledWith(
-      tenantCtx,
-      'send_pm',
+    // Player1's modcall is tried 3 times then dropped; Player2's is answered
+    // exactly once even though the cursor stayed behind Player1's failure.
+    const questions = mocks.runAssistantPipeline.mock.calls.map((c) => c[1].question);
+    expect(questions.filter((q) => q === 'first question')).toHaveLength(3);
+    expect(questions.filter((q) => q === 'second question')).toHaveLength(1);
+    const pms = mocks.executeTool.mock.calls.map((c) => c[2]);
+    expect(pms).toEqual([
       { username: 'Player2', message: 'Hello back' },
-      { kind: 'system' }
-    );
+      { username: 'Player1', message: 'Sorry, something went wrong processing your request. Please try again.' },
+    ]);
   });
 
   it('retries a failed modcall on the next sweep instead of silently dropping it forever', async () => {

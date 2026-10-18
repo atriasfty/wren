@@ -15,7 +15,11 @@ function isPrivateIPv4(ip) {
   if (a === 169 && b === 254) return true; // link-local / cloud metadata
   if (a === 172 && b >= 16 && b <= 31) return true; // RFC1918
   if (a === 192 && b === 168) return true; // RFC1918
-  if (a === 192 && b === 0 && parts[2] === 2) return true; // TEST-NET
+  if (a === 192 && b === 0 && parts[2] === 0) return true; // IETF protocol assignments
+  if (a === 192 && b === 0 && parts[2] === 2) return true; // TEST-NET-1
+  if (a === 198 && (b === 18 || b === 19)) return true; // benchmarking
+  if (a === 198 && b === 51 && parts[2] === 100) return true; // TEST-NET-2
+  if (a === 203 && b === 0 && parts[2] === 113) return true; // TEST-NET-3
   if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
   if (a >= 224) return true; // multicast/reserved
   return false;
@@ -68,23 +72,38 @@ function expandIPv6ToWords(ip) {
   return [...head, ...Array(missing).fill(0), ...tail];
 }
 
-function isPrivateIPv6(ip) {
-  const lower = ip.toLowerCase();
-  if (lower === '::1' || lower === '::') return true;
-  if (lower.startsWith('fe80:')) return true; // link-local
-  if (lower.startsWith('fc') || lower.startsWith('fd')) return true; // unique local
+function wordsToIPv4(hi, lo) {
+  return `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+}
 
-  const words = expandIPv6ToWords(lower);
+function isPrivateIPv6(ip) {
+  const words = expandIPv6ToWords(ip.toLowerCase());
   if (!words) return true; // couldn't confidently parse — treat as unsafe
 
-  // IPv4-mapped (::ffff:a.b.c.d): first 5 words zero, 6th is 0xffff, last two
-  // words hold the embedded IPv4 address — checked numerically so it can't be
-  // dodged by whichever textual form the address is written or normalised in.
-  if (words[0] === 0 && words[1] === 0 && words[2] === 0 && words[3] === 0 && words[4] === 0 && words[5] === 0xffff) {
-    const a = (words[6] >> 8) & 0xff, b = words[6] & 0xff;
-    const c = (words[7] >> 8) & 0xff, d = words[7] & 0xff;
-    return isPrivateIPv4(`${a}.${b}.${c}.${d}`);
+  // All prefix checks are numeric so they can't be dodged by whichever
+  // textual form the address is written or normalised in.
+  const [w0, w1, w2, w3, w4, w5, w6, w7] = words;
+  const firstSixZero = w0 === 0 && w1 === 0 && w2 === 0 && w3 === 0 && w4 === 0;
+  if (firstSixZero && w5 === 0 && w6 === 0 && (w7 === 0 || w7 === 1)) return true; // :: and ::1
+  if ((w0 & 0xffc0) === 0xfe80) return true; // link-local fe80::/10
+  if ((w0 & 0xffc0) === 0xfec0) return true; // deprecated site-local fec0::/10
+  if ((w0 & 0xfe00) === 0xfc00) return true; // unique local fc00::/7
+  if ((w0 & 0xff00) === 0xff00) return true; // multicast ff00::/8
+  if (w0 === 0x2001 && w1 === 0x0db8) return true; // documentation
+  if (w0 === 0x0100 && w1 === 0 && w2 === 0 && w3 === 0) return true; // discard-only 100::/64
+  // Teredo (2001::/32) tunnels to an arbitrary IPv4 endpoint — no safe reading.
+  if (w0 === 0x2001 && w1 === 0) return true;
+
+  // Forms that embed an IPv4 address: judge them by that address.
+  // IPv4-mapped ::ffff:a.b.c.d and IPv4-compatible ::a.b.c.d
+  if (firstSixZero && (w5 === 0xffff || w5 === 0)) return isPrivateIPv4(wordsToIPv4(w6, w7));
+  // NAT64 well-known prefix 64:ff9b::/96 and local-use 64:ff9b:1::/48
+  if (w0 === 0x0064 && w1 === 0xff9b) {
+    if (w2 === 0x0001) return true;
+    return isPrivateIPv4(wordsToIPv4(w6, w7));
   }
+  // 6to4 2002:AABB:CCDD::/48
+  if (w0 === 0x2002) return isPrivateIPv4(wordsToIPv4(w1, w2));
   return false;
 }
 
@@ -184,7 +203,11 @@ export async function assertPublicHttpUrlCached(urlStr) {
     hostCheckCache.set(key, { ok: true, expiresAt: Date.now() + HOST_CACHE_TTL_MS });
     return validated;
   } catch (err) {
-    hostCheckCache.set(key, { ok: false, expiresAt: Date.now() + HOST_CACHE_TTL_MS });
+    // Cache policy rejections, but not a transient resolver failure — one DNS
+    // blip shouldn't take a tenant's integration down for a full minute.
+    if (err.message !== 'Could not resolve host') {
+      hostCheckCache.set(key, { ok: false, expiresAt: Date.now() + HOST_CACHE_TTL_MS });
+    }
     throw err;
   }
 }
@@ -221,18 +244,63 @@ export const ssrfAgent = new Agent({ connect: { lookup: validatingLookup } });
  * assertPublicHttpUrl, so an attacker can't bypass the SSRF guard by
  * pointing a public URL at a redirect to an internal address.
  */
-export async function safeFetch(urlStr, { maxRedirects = 3, ...fetchOpts } = {}) {
+const CROSS_ORIGIN_SAFE_HEADERS = new Set(['user-agent', 'accept', 'accept-language']);
+
+function stripToSafeHeaders(headers) {
+  if (!headers) return headers;
+  const entries = headers instanceof globalThis.Headers ? [...headers.entries()] : Object.entries(headers);
+  return Object.fromEntries(entries.filter(([k]) => CROSS_ORIGIN_SAFE_HEADERS.has(k.toLowerCase())));
+}
+
+export async function safeFetch(urlStr, { maxRedirects = 3, timeoutMs = 15_000, ...fetchOpts } = {}) {
+  const signal = fetchOpts.signal
+    ? AbortSignal.any([fetchOpts.signal, AbortSignal.timeout(timeoutMs)])
+    : AbortSignal.timeout(timeoutMs);
   let current = urlStr;
+  let headers = fetchOpts.headers;
+  let origin = null;
   for (let hop = 0; hop <= maxRedirects; hop++) {
     const url = await assertPublicHttpUrl(current);
-    const resp = await fetch(url, { ...fetchOpts, dispatcher: ssrfAgent, redirect: 'manual' });
+    // Caller-supplied headers (auth, cookies, API keys) are meant for the
+    // original origin only — drop them once a redirect leaves it.
+    if (origin && url.origin !== origin) headers = stripToSafeHeaders(headers);
+    origin ??= url.origin;
+    const resp = await fetch(url, { ...fetchOpts, headers, signal, dispatcher: ssrfAgent, redirect: 'manual' });
     if ([301, 302, 303, 307, 308].includes(resp.status)) {
       const location = resp.headers.get('location');
       if (!location) return resp;
+      await resp.body?.cancel().catch(() => {});
       current = new URL(location, url).toString();
       continue;
     }
     return resp;
   }
   throw new Error('Too many redirects');
+}
+
+/**
+ * Reads a response body as text, refusing to buffer more than maxBytes —
+ * resp.text() on an attacker-chosen URL can otherwise exhaust memory.
+ * Returns the (possibly truncated) text.
+ */
+export async function readTextCapped(resp, maxBytes = 2 * 1024 * 1024) {
+  if (!resp.body || typeof resp.body.getReader !== 'function') {
+    // No stream to read incrementally (non-standard Response) — best effort.
+    const text = typeof resp.text === 'function' ? await resp.text() : '';
+    return text.slice(0, maxBytes);
+  }
+  const reader = resp.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    while (total < maxBytes) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      total += value.byteLength;
+    }
+  } finally {
+    reader.cancel().catch(() => {});
+  }
+  return Buffer.concat(chunks).subarray(0, maxBytes).toString('utf8');
 }

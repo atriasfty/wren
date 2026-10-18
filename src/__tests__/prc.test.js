@@ -232,6 +232,40 @@ describe('moderation command construction', () => {
     expect(commands).toEqual([':ban 42 60 RDM']);
   });
 
+  it('refuses to act on a partial name that matches several online players', async () => {
+    const commands = mockPlayersAndCommand([
+      { Player: 'JohnDoe123:1', Permission: 'Normal' },
+      { Player: 'JohnSmith:2', Permission: 'Normal' },
+    ]);
+    await expect(prc.banPlayer(tenant(), 'John', 'RDM')).rejects.toThrow(/ambiguous/);
+    expect(commands).toEqual([]);
+  });
+
+  it('refuses a partial match when an offline Roblox account has that exact name', async () => {
+    const commands = [];
+    globalThis.fetch.mockImplementation(async (url, opts) => {
+      if (String(url).includes('users.roblox.com')) return jsonResponse({ data: [{ id: 99, name: 'John' }] });
+      if (opts?.method === 'POST' && String(url).includes('/server/command')) { commands.push(JSON.parse(opts.body).command); return jsonResponse({}); }
+      return jsonResponse({ Players: [{ Player: 'JohnDoe123:1', Permission: 'Normal' }] });
+    });
+    await expect(prc.kickPlayer(tenant(), 'John', 'x')).rejects.toThrow(/ambiguous/);
+    expect(commands).toEqual([]);
+  });
+
+  it('strips newlines/control characters from free-text command arguments', async () => {
+    const commands = mockPlayersAndCommand([{ Player: 'Baddie:42', Permission: 'Normal' }]);
+    await prc.banPlayer(tenant(), 'Baddie', 'RDM\n:admin 1234');
+    expect(commands).toEqual([':ban 42 RDM :admin 1234']);
+    expect(commands[0]).not.toMatch(/\n/);
+  });
+
+  it('rejects a non-integer or negative ban duration instead of interpolating it', async () => {
+    const commands = mockPlayersAndCommand([{ Player: 'Baddie:42', Permission: 'Normal' }]);
+    await expect(prc.banPlayer(tenant(), 'Baddie', 'RDM', '5 :admin 1')).rejects.toThrow(/Invalid ban duration/);
+    await expect(prc.banPlayer(tenant(), 'Baddie', 'RDM', -3)).rejects.toThrow(/Invalid ban duration/);
+    expect(commands).toEqual([]);
+  });
+
   it('sendPrivateMessage requires both username and message', async () => {
     await expect(prc.sendPrivateMessage(tenant(), 'User1', '')).rejects.toThrow('message required');
     await expect(prc.sendPrivateMessage(tenant(), '', 'hi')).rejects.toThrow('username required');

@@ -1,0 +1,11 @@
+\begin{table}[t]\centering\small
+\begin{tabular}{lrrrrr}\toprule
+Model & Core & Hard & Overall & Core 95\% range & Hard 95\% range\\\midrule
+gpt-6-luna & 94.1 & 77.7 & 85.5 & 90 to 97 & 55 to 99\\
+claude-haiku-5.5 & 96.0 & 69.3 & 81.6 & 94 to 98 & 48 to 91\\
+glm-5.3-flash & 94.1 & 66.7 & 79.2 & 90 to 97 & 51 to 92\\
+deepseek-v4-flash & 93.7 & 36.8 & 58.7 & 89 to 97 & 11 to 65\\
+nemotron-3-ultra$^{*}$ & 86.1 & 9.9 & 29.2 & 81 to 91 & 0 to 40\\
+mistral-nemo & 63.0 & 1.2 & 8.5 & 56 to 69 & 0 to 25\\
+\bottomrule\end{tabular}
+\caption{Headline scores out of 100. Core is the comparable score over the 131 scenarios every model could run. Hard is the full 55-scenario suite, pass or fail, with each unsafe action costing double. Overall is $\sqrt{\text{Core}\times\text{Hard}}$. Ranges are 95\% bootstrap intervals over scenarios.  $^{*}$Free endpoint: 44 of 55 Hard scenarios completed (see text).}\label{tab:overall}\end{table}

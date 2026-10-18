@@ -194,10 +194,13 @@ async function buildPolicyPanel(tenantId, displayName) {
         ? 'The minimum rank required to use each of Wren’s tools. This view is read-only.'
         : 'No tool policy is configured for this server yet.',
     );
-  for (const [rank, label] of RANK_LABELS) {
+  // Components V2 caps a message's TOTAL text at 4000 chars (not per field),
+  // so split a shared budget across the ranks that have tools.
+  const populated = RANK_LABELS.filter(([rank]) => byRank.get(rank).length);
+  const perRank = Math.max(100, Math.floor(3200 / Math.max(1, populated.length)));
+  for (const [rank, label] of populated) {
     const tools = byRank.get(rank);
-    if (!tools.length) continue;
-    embed.addFields({ name: `${label} and above`, value: embedValue(tools.join(', ')), inline: false });
+    embed.addFields({ name: `${label} and above`, value: embedValue(tools.join(', '), perRank), inline: false });
   }
 
   const back = new ButtonBuilder()
@@ -345,12 +348,17 @@ function describeControlChar(code) {
 
 // A null rawValue — or an empty/whitespace-only text submission — clears the
 // setting back to unset.
-export async function applyFieldEdit(tenantId, fieldKey, rawValue) {
-  const cfg = loadConfig();
+// Pure validation/normalisation, shared by applyFieldEdit and callers that
+// need to know a value is acceptable BEFORE spending anything on it (the
+// personality review consumes a bypass grant).
+export function validateFieldValue(fieldKey, rawValue) {
   const field = CONFIG_FIELDS[fieldKey];
   if (!field) return { ok: false, error: `Unknown field: ${fieldKey}` };
 
   let value = rawValue;
+  // Secrets are entered in a multi-line box and often pasted with a trailing
+  // newline — trim before the control-character check, not after.
+  if (field.kind === 'secret' && typeof value === 'string') value = value.trim();
   const isTextKind = ['text', 'longtext', 'secret'].includes(field.kind);
   const isClear = value == null || (isTextKind && typeof value === 'string' && !value.trim());
 
@@ -378,6 +386,15 @@ export async function applyFieldEdit(tenantId, fieldKey, rawValue) {
     }
     value = value.trim();
   }
+
+  return { ok: true, value, isClear, field };
+}
+
+export async function applyFieldEdit(tenantId, fieldKey, rawValue) {
+  const cfg = loadConfig();
+  const v = validateFieldValue(fieldKey, rawValue);
+  if (!v.ok) return v;
+  const { value, isClear, field } = v;
 
   if (field.kind === 'secret') {
     await setTenantSecret(tenantId, fieldKey === 'erlcServerKey' ? 'erlc_server_key' : 'pow_token', value, cfg.tenantSecretEncKey);

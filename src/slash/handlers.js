@@ -18,13 +18,10 @@ import {
   removeBan,
   listMemory,
   removeMemory,
-  incrementMessageUsage,
-  decrementMessageUsage,
-  countRecentPersonalityReviews,
   audit,
 } from '../tenant/store.js';
 import { loadConfig } from '../config.js';
-import { ingestTenant } from '../rag/ingest.js';
+import { ingestTenant, removeSourceChunks } from '../rag/ingest.js';
 import {
   buildMainPanel,
   buildCategoryPanel,
@@ -33,6 +30,7 @@ import {
   buildErlcKeyGatePanel,
   buildAuthorizePanel,
   applyFieldEdit,
+  validateFieldValue,
   CONFIG_FIELDS,
 } from './configPanel.js';
 import { handleVoice } from '../discord/voice/manager.js';
@@ -64,16 +62,26 @@ function ephemeral(text) {
   return v2Text(safe);
 }
 
+// Public status messages name users with <@id> for context, not to notify.
+function quiet(payload) {
+  return { ...payload, allowedMentions: { parse: [] } };
+}
+
 function errorEphemeral(text) {
   return v2Text(`❌ ${text}`, { color: 0xff3333 });
 }
 
 // Renders a list of lines into a single ephemeral embed, keeping under the
 // description cap and saying explicitly how many entries were omitted.
+const MAX_LIST_LINE = 300;
+
 function listEphemeral(lines, { header = null } = {}) {
   const out = [];
   let used = header ? header.length + 1 : 0;
-  for (const line of lines) {
+  // Truncate each entry so one very long item can't push every entry after
+  // it (and the ids needed to act on them) out of the list.
+  for (const rawLine of lines) {
+    const line = rawLine.length > MAX_LIST_LINE ? `${rawLine.slice(0, MAX_LIST_LINE - 1)}…` : rawLine;
     if (used + line.length + 1 > MAX_MESSAGE_TEXT - 80) break;
     out.push(line);
     used += line.length + 1;
@@ -172,6 +180,9 @@ export async function handleSources(interaction, ctx) {
       if (!ref || !/^\d{17,20}$/.test(ref)) {
         return errorEphemeral('For a channel source, pick the channel with the **channel** option.');
       }
+      // A typed id could point at a channel in another server the bot is in.
+      const owned = await interaction.guild.channels.fetch(ref).catch(() => null);
+      if (!owned) return errorEphemeral('That channel isn\u2019t in this server.');
     } else if (!ref) {
       return errorEphemeral(`Provide the **ref** option: ${kind === 'website' ? 'the page URL' : 'the document filename'}.`);
     } else if (kind === 'website') {
@@ -190,6 +201,10 @@ export async function handleSources(interaction, ctx) {
     const kind = interaction.options.getString('kind');
     const ref = interaction.options.getString('ref');
     await removeSource({ tenantId, kind, ref });
+    // Purge its indexed chunks now so removed content stops being retrievable.
+    if (ctx) {
+      await removeSourceChunks(ctx, kind, ref).catch((err) => console.warn('[sources] chunk purge failed:', err.message));
+    }
     return ephemeral(`Removed ${describeSource(kind, ref)}.`);
   }
 
@@ -315,6 +330,7 @@ export async function handleMemory(interaction, ctx) {
     const scope = interaction.options.getString('scope');
     const content = interaction.options.getString('content');
     if (scope === 'server' && !isLeadershipOrHigher) return needLeadership(ctx);
+    if (!content || content.length > 1000) return errorEphemeral('Memories must be between 1 and 1000 characters.');
     const userKey = scope === 'user' ? `discord:${interaction.user.id}` : null;
     const { addMemory } = await import('../tenant/store.js');
     await addMemory({ tenantId, scope, userKey, content, addedBy: `discord:${interaction.user.id}` });
@@ -528,6 +544,13 @@ export async function dispatchWrenCommand(interaction) {
   ]);
   const key = `${group ?? ''}:${sub ?? ''}`;
 
+  // These do DB work (and, for bans, a member fetch) before answering; defer
+  // so a slow query doesn't trip Discord's 3s window. They only ever return a
+  // payload, which index.js then sends via editReply.
+  if ((['sources', 'bans', 'memory'].includes(group) || (group === null && sub === 'setup')) && !interaction.deferred && !interaction.replied) {
+    await interaction.deferReply({ ephemeral: true }).catch(() => {});
+  }
+
   let reply;
   if (group === null) {
     if (sub === 'setup') {
@@ -625,19 +648,6 @@ export async function issueMcpToken(ctx, tenantId, discordId) {
 // and therefore goes through the AI moderation reviewer before being saved.
 const REVIEWED_FIELDS = new Set(['coreInfo', 'responseStyle']);
 
-// Personality-change confirmations awaiting a leadership member's approve/deny
-// click once a tenant has exhausted its free reviews for the trailing 12h
-// window (see countRecentPersonalityReviews). Short-lived and in-memory —
-// losing these on a restart just means the submitter has to resubmit.
-const pendingPersonalityReviews = new Map();
-
-function prunePendingReviews() {
-  const now = Date.now();
-  for (const [token, pending] of pendingPersonalityReviews) {
-    if (pending.expiresAt < now) pendingPersonalityReviews.delete(token);
-  }
-}
-
 // Atomically claims a pending $atria personality-bypass grant for this tenant,
 // if one exists and hasn't expired. DELETE...RETURNING makes the claim
 // single-use even under concurrent submissions - two requests racing for the
@@ -651,15 +661,22 @@ async function claimPersonalityBypass(tenantId) {
 }
 
 // Runs the moderation reviewer for a coreInfo/responseStyle submission,
-// applies the edit if approved, records the outcome to audit_log (which also
-// drives the 12h free-review counter), and returns a message describing the
-// result for posting in the channel.
-async function runPersonalityReview({ tenantId, tenantCtx, fieldKey, rawValue, requesterId, chargeQuota }) {
+// applies the edit if approved, records the outcome to audit_log, and returns
+// a message describing the result for posting in the channel. Reviews are free:
+// they never count against the server's monthly message quota.
+async function runPersonalityReview({ tenantId, fieldKey, rawValue, requesterId }) {
   const field = CONFIG_FIELDS[fieldKey];
+
+  // Reject invalid input up front — before it consumes a bypass grant, and before anyone is told it was saved.
+  const validation = validateFieldValue(fieldKey, rawValue);
+  if (!validation.ok) {
+    return { outcome: 'invalid', message: `❌ <@${requesterId}>'s change to **${field.label}** wasn't saved: ${validation.error}` };
+  }
 
   const bypass = await claimPersonalityBypass(tenantId).catch(() => null);
   if (bypass) {
-    await applyFieldEdit(tenantId, fieldKey, rawValue);
+    const saved = await applyFieldEdit(tenantId, fieldKey, rawValue);
+    if (!saved.ok) return { outcome: 'invalid', message: `❌ <@${requesterId}>'s change to **${field.label}** wasn't saved: ${saved.error}` };
     // Distinct action name (not 'personality_review') so a bypassed edit
     // never gets silently absorbed into normal review history - anyone
     // auditing this tenant sees exactly which staff member granted the
@@ -674,31 +691,19 @@ async function runPersonalityReview({ tenantId, tenantCtx, fieldKey, rawValue, r
     return { outcome: 'approved', message: `✅ <@${requesterId}> updated **${field.label}** (moderation bypassed via \`$atria personality bypass\`, granted by <@${bypass.grantedBy}>).` };
   }
 
-  if (chargeQuota) {
-    const tier = tenantCtx.tenant.subscriptionTier || 'free';
-    const limit = { free: 10, core: 1000, pro: 5000 }[tier] || 10;
-    const used = await incrementMessageUsage(tenantId, limit);
-    if (used > limit) {
-      return { outcome: 'quota_exceeded', message: `⚠️ This server has used all its included messages this month, so this change can't be reviewed right now. A server manager can run \`/wren upgrade\` to raise the limit.` };
-    }
-  }
-
   const result = await reviewPersonalityText({ fieldLabel: field.label, value: rawValue });
-
-  if (chargeQuota && result.errored) {
-    await decrementMessageUsage(tenantId).catch((e) => console.warn('[personalityReview] usage refund failed:', e.message));
-  }
 
   await audit({
     tenantId,
     actor: requesterId,
     action: 'personality_review',
     target: fieldKey,
-    metadata: { approved: result.approved, reason: result.reason, quotaCharged: chargeQuota && !result.errored },
+    metadata: { approved: result.approved, reason: result.reason },
   });
 
   if (result.approved) {
-    await applyFieldEdit(tenantId, fieldKey, rawValue);
+    const saved = await applyFieldEdit(tenantId, fieldKey, rawValue);
+    if (!saved.ok) return { outcome: 'invalid', message: `❌ <@${requesterId}>'s change to **${field.label}** wasn't saved: ${saved.error}` };
     return { outcome: 'approved', message: `✅ <@${requesterId}> updated **${field.label}**.` };
   }
   return { outcome: 'denied', message: `❌ <@${requesterId}>'s change to **${field.label}** was rejected: ${result.reason}` };
@@ -830,53 +835,26 @@ export async function handleComponentInteraction(interaction) {
     if (!channel) return interaction.reply(errorEphemeral('Could not access this channel to run the review.'));
 
     await interaction.deferUpdate();
-    const publicMessage = await channel.send(v2Text(`⏳ <@${interaction.user.id}> is updating **${field.label}** — reviewing…`, { title: 'Configuration review', ephemeral: false }));
+    const publicMessage = await channel.send(quiet(v2Text(`⏳ <@${interaction.user.id}> is updating **${field.label}** — reviewing…`, { title: 'Configuration review', ephemeral: false })));
 
-    const recentCount = await countRecentPersonalityReviews(tenantId);
-    if (recentCount < 3) {
+    try {
       const result = await runPersonalityReview({
-        tenantId, tenantCtx: ctx, fieldKey, rawValue, requesterId: interaction.user.id, chargeQuota: false,
+        tenantId, fieldKey, rawValue, requesterId: interaction.user.id,
       });
-      await publicMessage.edit(v2Text(result.message, { title: 'Configuration review' }));
+      await publicMessage.edit(quiet(v2Text(result.message, { title: 'Configuration review' })));
       const panel = await buildCategoryPanel(tenantId, CONFIG_CATEGORY_FOR_FIELD[fieldKey]);
       if (panel) await interaction.editReply(panelPayload(panel, false, result.outcome === 'approved' ? 'Saved.' : result.message));
-      return;
+    } catch (err) {
+      // Don't leave the public message stuck on "reviewing…" forever.
+      console.error('[personalityReview] review failed:', err);
+      await publicMessage.edit(quiet(v2Text(`❌ <@${interaction.user.id}>'s change to **${field.label}** couldn't be reviewed due to an error. Nothing was saved — please try again.`, { title: 'Configuration review', color: 0xff3333 }))).catch(() => {});
     }
-
-    prunePendingReviews();
-    const token = crypto.randomBytes(6).toString('hex');
-    pendingPersonalityReviews.set(token, {
-      tenantId, fieldKey, rawValue, requesterId: interaction.user.id, expiresAt: Date.now() + 5 * 60 * 1000,
-    });
-
-    const approve = new ButtonBuilder().setCustomId(`wren_cfg_modreview:${tenantId}:${token}:approve`).setLabel('Approve').setStyle(ButtonStyle.Success);
-    const deny = new ButtonBuilder().setCustomId(`wren_cfg_modreview:${tenantId}:${token}:deny`).setLabel('Deny').setStyle(ButtonStyle.Danger);
-    await publicMessage.edit(v2Text(`⚠️ <@${interaction.user.id}> wants to update **${field.label}**. This server has already used its free reviews in the last 12 hours — reviewing this one will use **1 message** from the server's monthly quota. A leadership member must approve or deny.`, { title: 'Approval needed', ephemeral: false, components: [new ActionRowBuilder().addComponents(approve, deny)] }));
-
-      return interaction.editReply(v2Text('⚠️ Waiting for a leadership member to confirm — this change would use part of your server’s message quota. See the message below.', { ephemeral: false }));
+    return;
   }
 
+  // Confirmation buttons from before reviews became free. Nothing to confirm now.
   if (route === 'wren_cfg_modreview') {
-    const parts = customId.split(':');
-    const token = parts[2];
-    const action = parts[3];
-    prunePendingReviews();
-    const pending = pendingPersonalityReviews.get(token);
-    if (!pending || pending.tenantId !== tenantId) {
-      return interaction.reply(ephemeral('This confirmation has expired or was already used. Please resubmit the change.'));
-    }
-    pendingPersonalityReviews.delete(token);
-
-    const field = CONFIG_FIELDS[pending.fieldKey];
-    if (action === 'deny') {
-      return interaction.update(v2Text(`❌ <@${pending.requesterId}>'s change to **${field.label}** was cancelled — <@${interaction.user.id}> denied the quota confirmation.`, { title: 'Change cancelled', ephemeral: false }));
-    }
-
-    await interaction.update(v2Text(`⏳ <@${interaction.user.id}> approved — reviewing…`, { title: 'Review in progress', ephemeral: false }));
-    const result = await runPersonalityReview({
-      tenantId, tenantCtx: ctx, fieldKey: pending.fieldKey, rawValue: pending.rawValue, requesterId: pending.requesterId, chargeQuota: true,
-    });
-    return interaction.editReply(v2Text(result.message, { title: 'Configuration review', ephemeral: false }));
+    return interaction.reply(ephemeral('Personality reviews are free now and no longer need approval. Please resubmit the change from /wren config.'));
   }
 
   console.warn('[panel] unknown route:', route, customId);

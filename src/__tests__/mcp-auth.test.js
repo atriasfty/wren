@@ -63,8 +63,16 @@ describe('MCP endpoint authentication', () => {
     expect(JSON.stringify(query.mock.calls[0][1])).not.toContain(raw);
   });
 
-  it('returns 404 for /message posts with an unknown session id', async () => {
+  it('requires the bearer token on /message posts, not just a session id', async () => {
     const res = await request(app).post('/api/mcp/message?sessionId=forged-session');
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 404 for /message posts with an unknown session id', async () => {
+    query.mockResolvedValue({ rows: [{ tenant_id: 'g', discord_id: 'u' }] });
+    const res = await request(app)
+      .post('/api/mcp/message?sessionId=forged-session')
+      .set('Authorization', 'Bearer valid-token');
     expect(res.status).toBe(404);
   });
 

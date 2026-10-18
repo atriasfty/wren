@@ -85,7 +85,31 @@ async function createWakeWordModel() {
   return owwModel;
 }
 
+// openwakeword-js has no dispose(); its onnxruntime sessions hold WASM memory
+// until released, so dropping the reference alone doesn't free anything.
+function disposeWakeWordModel(model) {
+  if (!model) return;
+  const sessions = [model.melSession, model.embeddingSession, model.vadSession, ...(model.customSessions?.values?.() ?? [])];
+  for (const session of sessions) {
+    try { session?.release?.()?.catch?.(() => {}); } catch { /* best-effort */ }
+  }
+}
+
 const activeGuilds = new Map();
+// Bumped on every join/teardown so a slow, superseded join can tell it lost.
+const joinGeneration = new Map();
+
+// Cap on buffered PCM per utterance (48kHz mono s16 = 96KB/s). A stuck-open
+// mic or music never produces the 1s of silence that ends the stream.
+const MAX_UTTERANCE_BYTES = 48000 * 2 * 30;
+
+function safeDestroy(connection) {
+  try {
+    if (connection && connection.state.status !== VoiceConnectionStatus.Destroyed) connection.destroy();
+  } catch (err) {
+    console.warn('[voice] connection destroy failed:', err.message);
+  }
+}
 
 export function getActiveVoiceSessionCount() {
   return activeGuilds.size;
@@ -99,7 +123,11 @@ function clearGuildVoiceState(guildId) {
   if (state) {
     if (state.idleTimer) clearTimeout(state.idleTimer);
     if (state.promptTimeout) clearTimeout(state.promptTimeout);
-    state.owwModel = null; // Free up WASM/Model memory
+    // Stopping forces the player to Idle, which fires any pending TTS onEnd
+    // (unlinking its temp file) instead of leaving it autopaused forever.
+    try { state.player?.stop(true); } catch {}
+    disposeWakeWordModel(state.owwModel);
+    state.owwModel = null;
   }
   activeGuilds.delete(guildId);
 }
@@ -112,10 +140,11 @@ function clearGuildVoiceState(guildId) {
 // second 'speaking' listener on the same receiver and process every
 // utterance (and bill voice time) twice.
 function teardownGuildVoice(guildId) {
+  joinGeneration.set(guildId, (joinGeneration.get(guildId) || 0) + 1);
   const connection = getVoiceConnection(guildId);
   const wasConnected = !!connection;
-  if (connection) connection.destroy();
   clearGuildVoiceState(guildId);
+  safeDestroy(connection);
   return wasConnected;
 }
 
@@ -155,6 +184,7 @@ async function joinChannel(interaction) {
     // Always start from a clean slate — see teardownGuildVoice for why this
     // matters (duplicate listeners on a reused connection otherwise).
     teardownGuildVoice(channel.guild.id);
+    const myGeneration = joinGeneration.get(channel.guild.id);
 
     const connection = joinVoiceChannel({
       channelId: channel.id,
@@ -176,19 +206,39 @@ async function joinChannel(interaction) {
         ]);
         // Looks like it's reconnecting (e.g. moved to another channel) — leave it alone.
       } catch {
-        connection.destroy();
+        // May already be destroyed (e.g. /leave during the 5s window) —
+        // destroying twice throws inside this async listener.
+        safeDestroy(connection);
       }
     });
     connection.on(VoiceConnectionStatus.Destroyed, () => {
-      clearGuildVoiceState(channel.guild.id);
+      // Only clear state that belongs to THIS connection; a late event from a
+      // superseded connection must not wipe a newer session.
+      if (activeGuilds.get(channel.guild.id)?.connection === connection) {
+        clearGuildVoiceState(channel.guild.id);
+      }
     });
 
-    // Create player and state
+    // Create player and state. A permanent 'error' listener: an AudioPlayer
+    // emitting 'error' with no listener throws and takes down the process.
     const player = createAudioPlayer();
+    player.on('error', (err) => console.error('[voice] audio player error:', err.message));
     connection.subscribe(player);
 
     // Load the wake word model for this specific guild
     const owwModel = await createWakeWordModel();
+
+    // A concurrent /join or /leave ran while the model loaded — this join lost.
+    if (joinGeneration.get(channel.guild.id) !== myGeneration) {
+      disposeWakeWordModel(owwModel);
+      try { player.stop(true); } catch {}
+      if (getVoiceConnection(channel.guild.id) !== connection) {
+        // Already replaced by a newer connection; leave that one alone.
+      } else {
+        safeDestroy(connection);
+      }
+      return voiceReply('Another join or leave happened at the same time — please check where Wren is and try again if needed.');
+    }
 
     activeGuilds.set(channel.guild.id, {
       connection,
@@ -196,7 +246,8 @@ async function joinChannel(interaction) {
       isSpeaking: false,
       channelId: channel.id,
       guild: channel.guild,
-      owwModel // Guild-specific instance
+      owwModel, // Guild-specific instance
+      disclaimedUsers: new Set(channel.members?.filter?.((m) => !m.user.bot).map((m) => m.id) ?? []),
     });
 
     // Wait for connection to be ready before playing anything, otherwise audio drops
@@ -316,6 +367,11 @@ function setupVoiceReceiver(connection, guildId, discordChannelId) {
   connection.receiver.speaking.on('start', (userId) => {
     const state = activeGuilds.get(guildId);
     if (!state || state.isSpeaking) return; // Prevent listening while Wren is talking
+
+    // 'start' fires again after any brief pause, but subscribe() hands back
+    // the SAME stream for a user who already has one — piping it into a
+    // second decoder would process one utterance twice.
+    if (connection.receiver.subscriptions.has(userId)) return;
     
     // Pause the timeout while the targeted user is actively speaking
     if (state.isWaitingForPrompt && state.listeningToUser === userId && state.promptTimeout) {
@@ -332,11 +388,30 @@ function setupVoiceReceiver(connection, guildId, discordChannelId) {
     // We decode natively at 48kHz to preserve audio quality.
     const opusDecoder = new prism.opus.Decoder({ rate: 48000, channels: 1, frameSize: 960 });
     const pcmChunks = [];
+    let pcmBytes = 0;
     
     audioStream.pipe(opusDecoder);
+
+    // pipe() doesn't forward errors, and an 'error' with no listener throws.
+    // A corrupt packet or a stream torn down mid-utterance ends the decoder
+    // so whatever was captured is still processed (or dropped) cleanly.
+    audioStream.on('error', (err) => {
+      console.warn('[voice] audio stream error:', err.message);
+      opusDecoder.end();
+    });
+    audioStream.on('close', () => { if (!opusDecoder.writableEnded) opusDecoder.end(); });
+    opusDecoder.on('error', (err) => {
+      console.warn('[voice] opus decode error:', err.message);
+      audioStream.destroy();
+    });
     
     opusDecoder.on('data', (chunk) => {
+      if (pcmBytes >= MAX_UTTERANCE_BYTES) return;
       pcmChunks.push(chunk);
+      pcmBytes += chunk.length;
+      if (pcmBytes >= MAX_UTTERANCE_BYTES) {
+        audioStream.destroy();
+      }
     });
     
     opusDecoder.on('end', async () => {
@@ -347,6 +422,7 @@ function setupVoiceReceiver(connection, guildId, discordChannelId) {
       if (pcmBuffer.length < 48000 * 2 * 0.5) {
         // If we are waiting for this user and dropped a noise, restart the timeout
         if (state.isWaitingForPrompt && state.listeningToUser === userId) {
+          if (state.promptTimeout) clearTimeout(state.promptTimeout);
           state.promptTimeout = setTimeout(() => {
             if (state.isWaitingForPrompt && state.listeningToUser === userId) {
               state.isWaitingForPrompt = false;
@@ -376,10 +452,14 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
   // pcmBuffer is 16-bit little endian, 48000Hz, mono.
   const int16Array = new Int16Array(pcmBuffer.buffer, pcmBuffer.byteOffset, pcmBuffer.length / 2);
   
-  // Downsample 48kHz to 16kHz for OpenWakeWord and Parakeet STT via 3:1 decimation
+  // Downsample 48kHz to 16kHz for OpenWakeWord. Averaging each group of 3
+  // samples is a crude low-pass (box filter) — plain decimation would alias
+  // 8–24kHz content into the band the wake-word model listens to. (STT gets
+  // a proper ffmpeg resample below.)
   const pcm16k = new Int16Array(Math.floor(int16Array.length / 3));
   for (let i = 0; i < pcm16k.length; i++) {
-    pcm16k[i] = int16Array[i * 3];
+    const j = i * 3;
+    pcm16k[i] = Math.round((int16Array[j] + int16Array[j + 1] + int16Array[j + 2]) / 3);
   }
 
   if (!state.isWaitingForPrompt) {
@@ -393,7 +473,10 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
     await new Promise(resolve => {
       owwLock = owwLock.then(async () => {
         try {
-          for (let i = 0; i < pcm16k.length - frameLength; i += frameLength) {
+          // Each utterance is scored on its own — the model's rolling buffers
+          // would otherwise carry the previous speaker's audio into this one.
+          oww.reset();
+          for (let i = 0; i <= pcm16k.length - frameLength; i += frameLength) {
             const frame = pcm16k.subarray(i, i + frameLength);
             const scores = await oww.predict(frame);
             
@@ -405,6 +488,9 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
             }
             if (detected) break;
           }
+          // Clear the internal buffers inside the lock so this can't
+          // interleave with another job's predict() (and to avoid double chimes).
+          if (detected) oww.reset();
         } finally {
           resolve();
         }
@@ -418,78 +504,153 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
       // Not addressed to Wren
       return;
     }
-    
-    // Clear the openwakeword internal buffers to prevent double chimes
-    oww.reset();
-    
-    // We heard the wake word!
-    
-    // Check billing limits
-    const tenantCtx = await resolveTenantByGuildId(guildId);
-    if (!tenantCtx) return;
-    
-    const t = tenantCtx.tenant;
-    // Read usage fresh from the DB, not the 60s-cached tenant context — rapid
-    // back-to-back voice sessions would otherwise all see the same stale count
-    // and blow past the quota before the cache refreshes.
-    const voiceSecs = await getVoiceUsageSeconds(guildId);
-    const tier = t.subscriptionTier || 'free';
 
-    let maxVoiceSecs = 2 * 60; // 2 minutes for free tier
-    if (tier === 'core') maxVoiceSecs = 30 * 60;
-    if (tier === 'pro') maxVoiceSecs = 120 * 60;
-    
-    if (voiceSecs >= maxVoiceSecs) {
-      voiceQuotaBlocked.inc({ tier });
-      console.log(`[voice] User ${userId} hit wake word, but tenant ${guildId} is out of voice minutes.`);
-      // Silence here looks like a broken bot — tell the channel what's going
-      // on, at most once per 10 minutes so repeated wake words don't spam.
-      const now = Date.now();
-      if (!state.quotaNoticeAt || now - state.quotaNoticeAt > 10 * 60 * 1000) {
-        state.quotaNoticeAt = now;
-        try {
-          const chatChannel = state.guild.channels.cache.get(state.channelId);
-          await chatChannel?.send(
-            `⚠️ I heard the wake word, but this server has used all **${Math.round(maxVoiceSecs / 60)}** voice minutes included in its **${tier.toUpperCase()}** plan this cycle. A server manager can run \`/wren upgrade\` to raise the limit, or \`/wren usage\` to see when it resets.`
-          );
-        } catch (err) {
-          console.warn('[voice] Failed to send voice-quota notice:', err.message);
-        }
-      }
-      return;
+    // Claim activation synchronously, before any await: two near-simultaneous
+    // wake words would otherwise both pass and double-activate.
+    if (state.activating || state.isWaitingForPrompt || state.isSpeaking) return;
+    state.activating = true;
+    try {
+      await activateFromWakeWord(state, userId, guildId);
+    } finally {
+      state.activating = false;
     }
-
-    console.log(`[voice] Wake word detected: "hey wren" from user ${userId}`);
-    voiceWakewordDetections.inc();
-
-    // Play the first charm
-    await playCharm(state.player);
-    state.promptStartTime = Date.now();
-    
-    // Enter stage 2: listening for the prompt from this user
-    state.isWaitingForPrompt = true;
-    state.listeningToUser = userId;
-    
-    // Clear any existing timeout
-    if (state.promptTimeout) clearTimeout(state.promptTimeout);
-    
-    // Auto-reset if the user doesn't say anything for 15 seconds
-    state.promptTimeout = setTimeout(() => {
-      if (state.isWaitingForPrompt && state.listeningToUser === userId) {
-        state.isWaitingForPrompt = false;
-        state.listeningToUser = null;
-        console.log(`[voice] Prompt timeout for user ${userId}`);
-      }
-    }, 15000);
-    
     return;
   }
+
+  await handlePrompt(state, pcmBuffer, userId, guildId, discordChannelId);
+}
+
+// Consent is checked as soon as the wake word is heard, so an unconsented
+// user's follow-up speech is never captured as a prompt or billed.
+async function hasUserConsented(userId) {
+  const res = await query('SELECT 1 FROM user_agreements WHERE discord_id = $1', [userId]);
+  return res.rows.length > 0;
+}
+
+async function handleUnconsented(state, userId) {
+  console.log(`[voice] User ${userId} has not consented to ToS.`);
+  state.isSpeaking = true;
+  await playUnconsented(state.player);
+
+  try {
+    const user = await state.guild.client.users.fetch(userId);
+    const embed = new EmbedBuilder()
+      .setTitle('Welcome to Wren!')
+      .setDescription('Before using Wren in Voice Chat, please accept our Terms of Service and Privacy Policy. By clicking "Agree", you agree to both documents.')
+      .setColor('#0099ff')
+      .addFields(
+        { name: 'Documentation', value: 'https://wren.atriasafety.org' },
+        { name: 'Terms of Service', value: 'https://atriasfty.org/wren-tos' },
+        { name: 'Privacy Policy', value: 'https://atriasfty.org/wren-privacy' }
+      );
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('agree_tos')
+        .setLabel('Agree')
+        .setStyle(ButtonStyle.Primary)
+    );
+    await user.send(v2FromEmbed(embed, [row], { ephemeral: false }));
+  } catch (dmErr) {
+    console.error('[voice] Could not send ToS DM:', dmErr);
+  }
+
+  // If nothing is playing (file missing, or it already finished) there will
+  // be no Idle transition to wait for — unlock now. Otherwise unlock on Idle,
+  // with a safety timer so a missed event can't leave the guild deaf.
+  if (state.player.state.status === AudioPlayerStatus.Idle) {
+    state.isSpeaking = false;
+    return;
+  }
+  let done = false;
+  const unlock = () => { if (!done) { done = true; state.isSpeaking = false; } };
+  state.player.once(AudioPlayerStatus.Idle, unlock);
+  setTimeout(unlock, 20_000).unref?.();
+}
+
+async function activateFromWakeWord(state, userId, guildId) {
+  let consented;
+  try {
+    consented = await hasUserConsented(userId);
+  } catch (err) {
+    console.error('[voice] ToS check error:', err);
+    return;
+  }
+  if (!consented) {
+    await handleUnconsented(state, userId);
+    return;
+  }
+
+  // Check billing limits
+  const tenantCtx = await resolveTenantByGuildId(guildId);
+  if (!tenantCtx) return;
   
+  const t = tenantCtx.tenant;
+  // Read usage fresh from the DB, not the 60s-cached tenant context — rapid
+  // back-to-back voice sessions would otherwise all see the same stale count
+  // and blow past the quota before the cache refreshes.
+  const voiceSecs = await getVoiceUsageSeconds(guildId);
+  const tier = t.subscriptionTier || 'free';
+
+  let maxVoiceSecs = 2 * 60; // 2 minutes for free tier
+  if (tier === 'core') maxVoiceSecs = 30 * 60;
+  if (tier === 'pro') maxVoiceSecs = 120 * 60;
+  
+  if (voiceSecs >= maxVoiceSecs) {
+    voiceQuotaBlocked.inc({ tier });
+    console.log(`[voice] User ${userId} hit wake word, but tenant ${guildId} is out of voice minutes.`);
+    // Silence here looks like a broken bot — tell the channel what's going
+    // on, at most once per 10 minutes so repeated wake words don't spam.
+    const now = Date.now();
+    if (!state.quotaNoticeAt || now - state.quotaNoticeAt > 10 * 60 * 1000) {
+      state.quotaNoticeAt = now;
+      try {
+        const chatChannel = state.guild.channels.cache.get(state.channelId);
+        await chatChannel?.send(
+          `⚠️ I heard the wake word, but this server has used all **${Math.round(maxVoiceSecs / 60)}** voice minutes included in its **${tier.toUpperCase()}** plan this cycle. A server manager can run \`/wren upgrade\` to raise the limit, or \`/wren usage\` to see when it resets.`
+        );
+      } catch (err) {
+        console.warn('[voice] Failed to send voice-quota notice:', err.message);
+      }
+    }
+    return;
+  }
+
+  console.log(`[voice] Wake word detected: "hey wren" from user ${userId}`);
+  voiceWakewordDetections.inc();
+
+  // Play the first charm
+  await playCharm(state.player);
+  state.promptStartTime = Date.now();
+  
+  // Enter stage 2: listening for the prompt from this user
+  state.isWaitingForPrompt = true;
+  state.listeningToUser = userId;
+  
+  // Clear any existing timeout
+  if (state.promptTimeout) clearTimeout(state.promptTimeout);
+  
+  // Auto-reset if the user doesn't say anything for 15 seconds
+  state.promptTimeout = setTimeout(() => {
+    if (state.isWaitingForPrompt && state.listeningToUser === userId) {
+      state.isWaitingForPrompt = false;
+      state.listeningToUser = null;
+      console.log(`[voice] Prompt timeout for user ${userId}`);
+    }
+  }, 15000);
+}
+
+async function handlePrompt(state, pcmBuffer, userId, guildId, discordChannelId) {
   // Stage 2: We are waiting for a prompt.
   // Ensure it's from the same user who activated the wake word
-  if (state.listeningToUser !== userId) {
+  if (!state.isWaitingForPrompt || state.listeningToUser !== userId) {
     return;
   }
+
+  // Claim the prompt slot synchronously, before any await, so a second
+  // utterance arriving during the charm can't also be processed.
+  state.isSpeaking = true;
+  state.isWaitingForPrompt = false;
+  state.listeningToUser = null;
   
   // Clear the timeout since they spoke
   if (state.promptTimeout) {
@@ -497,58 +658,25 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
     state.promptTimeout = null;
   }
   
-  // Play the second 'got it' charm
-  await playGotItCharm(state.player);
-
   const cfg = loadConfig();
   let finalTranscript;
   try {
-    // Lock the state so Wren doesn't listen to itself while processing/speaking
-    state.isSpeaking = true;
-    state.isWaitingForPrompt = false;
-    state.listeningToUser = null;
-    
-    // Check ToS Agreement
-    let hasConsented;
+    // Play the second 'got it' charm
+    await playGotItCharm(state.player);
+
+    // Defence in depth: consent was checked at wake-word time, but recheck
+    // before any audio leaves the machine.
+    let consented;
     try {
-      const res = await query('SELECT 1 FROM user_agreements WHERE discord_id = $1', [userId]);
-      hasConsented = res.rows.length > 0;
+      consented = await hasUserConsented(userId);
     } catch (err) {
       console.error('[voice] ToS check error:', err);
       state.isSpeaking = false;
       return;
     }
-  
-    if (!hasConsented) {
-      console.log(`[voice] User ${userId} has not consented to ToS.`);
-      await playUnconsented(state.player);
-      
-      // Send DM
-      try {
-        const user = await state.guild.client.users.fetch(userId);
-        const embed = new EmbedBuilder()
-          .setTitle('Welcome to Wren!')
-          .setDescription('Before using Wren in Voice Chat, please accept our Terms of Service and Privacy Policy. By clicking "Agree", you agree to both documents.')
-          .setColor('#0099ff')
-          .addFields(
-            { name: 'Documentation', value: 'https://wren.atriasafety.org' },
-            { name: 'Terms of Service', value: 'https://atriasfty.org/wren-tos' },
-            { name: 'Privacy Policy', value: 'https://atriasfty.org/wren-privacy' }
-          );
-        const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId('agree_tos')
-            .setLabel('Agree')
-            .setStyle(ButtonStyle.Primary)
-        );
-        await user.send(v2FromEmbed(embed, [row], { ephemeral: false }));
-      } catch (dmErr) {
-        console.error('[voice] Could not send ToS DM:', dmErr);
-      }
-      
-      state.player.once(AudioPlayerStatus.Idle, () => {
-        state.isSpeaking = false;
-      });
+    if (!consented) {
+      state.isSpeaking = false;
+      await handleUnconsented(state, userId);
       return;
     }
 
@@ -664,7 +792,7 @@ async function processAudio(pcmBuffer, userId, guildId, discordChannelId, connec
     const aiResult = await runAssistantPipeline(tenantCtx, {
       question: finalTranscript,
       channelContext: '', // We could fetch recent text channel messages if needed
-      actor: { kind: 'discord', member: fullMember || { id: userId, user: { username: userId } } },
+      actor: { kind: 'discord', voice: true, id: userId, member: fullMember || { id: userId, user: { username: userId } } },
       channelId: discordChannelId,
       mode: 'voice' // Custom mode to trigger concise responses
     });
@@ -761,10 +889,20 @@ export async function handleVoiceStateUpdate(oldState, newState) {
       console.log(`[voice] Wren is alone in ${guildId}. Starting 2-minute idle timer to sleep wake word model.`);
       state.idleTimer = setTimeout(() => {
         console.log(`[voice] 2-minute idle timer fired for ${guildId}. Sleeping wake word model to save memory.`);
+        disposeWakeWordModel(state.owwModel);
         state.owwModel = null;
       }, 120 * 1000);
     }
   } else {
+    // Someone who wasn't here for the join-time privacy disclaimer just
+    // arrived — play it for them too (unless Wren is mid-reply).
+    const joinedHere = newState.channelId === state.channelId && oldState.channelId !== state.channelId;
+    const joiner = newState.member;
+    if (joinedHere && joiner && !joiner.user?.bot && !state.disclaimedUsers?.has(joiner.id) && !state.isSpeaking) {
+      state.disclaimedUsers?.add(joiner.id);
+      await playDisclaimer(guildId, state.player).catch((err) => console.warn('[voice] disclaimer replay failed:', err.message));
+    }
+
     // Humans are present. Clear idle timer if active.
     if (state.idleTimer) {
       clearTimeout(state.idleTimer);

@@ -1,5 +1,5 @@
 import * as cheerio from 'cheerio';
-import { safeFetch } from '../../ai/ssrf.js';
+import { safeFetch, readTextCapped } from '../../ai/ssrf.js';
 
 export async function fetchWebpage(url, { timeoutMs = 10_000, maxChars = 5000 } = {}) {
   const controller = new AbortController();
@@ -16,7 +16,7 @@ export async function fetchWebpage(url, { timeoutMs = 10_000, maxChars = 5000 } 
       console.error(`[webpage] failed ${url}: ${res.status}`);
       return null;
     }
-    const html = await res.text();
+    const html = await readTextCapped(res);
     const $ = cheerio.load(html);
     $('script, style, nav, header, footer, aside, .ad, .advertisement').remove();
     const title = $('title').text() || $('h1').first().text() || 'Webpage';

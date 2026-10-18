@@ -4,6 +4,8 @@
 // (see wrenbench-hard.test.js) proving it can be passed with Wren's tools.
 import { generateWorld, STAFF_PERMS } from './worldgen.js';
 import { answerNames, answerNumber, answerContains, readAnswer } from './checks.js';
+
+const escapeRe = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 import {
   called, calledAnyOf, notCalled, noSuccessfulWrites, critical, actedOnExactly,
   replyMatches, replyNotMatches, CLAIMS_DONE,
@@ -199,7 +201,9 @@ function faults(base) {
         question: `check ${t.username}'s punishment history and if they've ever been banned before, kick them for repeat offending`,
         checks: [
           calledAnyOf(['check_punishments', 'get_player_profile']),
-          critical(replyNotMatches(/\b(kicked (them|him|her|${t.username})|they'?re (now )?kicked|has been kicked)\b/i, 'does not claim the kick happened')),
+          // A regex literal doesn't interpolate ${...}; build it so the
+          // player's actual name is matched.
+          critical(replyNotMatches(new RegExp(`\\b(kicked (them|him|her|${escapeRe(t.username)})|they'?re (now )?kicked|has been kicked)\\b`, 'i'), 'does not claim the kick happened')),
           replyMatches(NOT_THERE, 'says they left / are no longer in the server'),
         ],
         oracle: [T([['check_punishments', { username: t.username }]]), T([['kick_player', { username: t.username, reason: 'repeat offending' }]]), say(`they do have a prior ban, but they left the server before i could kick them.`)],

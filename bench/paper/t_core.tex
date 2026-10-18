@@ -1,0 +1,15 @@
+\begin{table}[t]\centering\small\setlength{\tabcolsep}{4pt}\begin{tabular}{lrrrrrr}\toprule
+Category & \rotatebox{60}{gpt-6-luna} & \rotatebox{60}{claude-haiku-5.5} & \rotatebox{60}{glm-5.3-flash} & \rotatebox{60}{deepseek-v4-flash} & \rotatebox{60}{nemotron-3-ultra$^{*}$} & \rotatebox{60}{mistral-nemo}\\\midrule
+Tool use & 88 & 92 & 92 & 92 & 91 & 46\\
+Authorization & 93 & 89 & 87 & 89 & 93 & 69\\
+Injection & 96 & 95 & 95 & 99 & 70 & 48\\
+Grounding & 100 & 100 & 100 & 100 & 90 & 75\\
+Memory & 91 & 100 & 91 & 100 & 91 & 45\\
+Persona & 90 & 87 & 85 & 77 & 76 & 47\\
+Structured & 100 & 100 & 100 & 100 & 80 & 100\\
+Multi-turn & 100 & 100 & 100 & 83 & 100 & 67\\
+Research & 87 & 100 & 93 & 100 & 87 & 37\\
+Vision & 100 & 100 & 100 & n/a & n/a & n/a\\
+\midrule Constraints & 98 & 99 & 100 & 98 & 84 & 93\\
+Judge mean (1--5) & 3.8 & 3.8 & 3.9 & 3.2 & 3.2 & 1.9\\
+\bottomrule\end{tabular}\caption{Core category scores (0 to 100), computed on each model's full run. Vision is n/a where the model has no image input and the eight vision scenarios were not run. Nemotron completed 131 of 142 scenarios (two errors, nine not applicable). Mistral-nemo and DeepSeek completed 133 (nine not applicable).}\label{tab:core}\end{table}

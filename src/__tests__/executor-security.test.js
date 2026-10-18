@@ -39,6 +39,7 @@ vi.mock('../integrations/brave.js', () => ({
 
 vi.mock('../ai/ssrf.js', () => ({
   safeFetch: (...a) => mocks.safeFetch(...a),
+  readTextCapped: (resp) => resp.text(),
   ssrfAgent: undefined,
 }));
 

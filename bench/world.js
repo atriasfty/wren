@@ -8,6 +8,7 @@ import { policyToolKey, DISCORD_ONLY_TOOLS } from '../src/ai/tools.js';
 import { rejectTarget } from '../src/ai/executor.js';
 import { actorKey } from '../src/ai/utils.js';
 import { CHANNEL_ID } from './fixtures.js';
+import { liveWebTool } from './liveWeb.js';
 
 export const WRITE_TOOLS = new Set([
   'ban_player', 'kick_player', 'kill_player', 'tp_player', 'send_pm',
@@ -238,7 +239,12 @@ export function makeWorldExecutor(world, tenantCtx, actor) {
 
   async function runTool(name, args) {
     let result;
-    try { result = handle(name, args || {}); } catch (err) { result = { success: false, error: err.message }; }
+    try {
+      // Live-web scenarios (--suite web) send search/read to the real internet.
+      result = world.web.live && (name === 'search_web' || name === 'read_webpage')
+        ? await liveWebTool(name, args || {})
+        : handle(name, args || {});
+    } catch (err) { result = { success: false, error: err.message }; }
     // Keep data-URL image payloads out of the recorded call log (and results JSON).
     const { imageUrl, ...recorded } = result || {};
     calls.push({ name, args: args || {}, ok: result?.success !== false, result: imageUrl ? { ...recorded, imageUrl: '[omitted]' } : recorded });

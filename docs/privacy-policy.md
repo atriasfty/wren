@@ -53,6 +53,7 @@ When you send a message to Wren in a Discord server, we process:
 | **Your message content** | Passed to the AI model to generate a response; logged for observability | **Yes** — transmitted to OpenRouter under a signed Data Processing Agreement (not used to train AI models; may be temporarily logged by AI providers) and stored in PostHog (EU servers) for **30 days**; may also be stored indefinitely as conversation memory if a Server Owner has saved it via Wren's memory system |
 | **Recent channel messages** (up to 100 messages) | Provides conversational context to the AI | **Yes** — transmitted to OpenRouter under a signed Data Processing Agreement (not used to train AI models; may be temporarily logged by AI providers) and stored in PostHog (EU servers) for **30 days**; not otherwise persisted in our own database |
 | **Images you attach** | Passed by URL to the AI model for vision analysis | No — URLs only; images are not stored by us |
+| **Image generation prompts** (if you ask Wren to create an image) | Sent to OpenRouter, which routes them to the image model; we also record that you generated an image (your user ID and a timestamp) to enforce weekly limits | Prompts: not stored by us. Usage record: Yes — our database |
 | **Your in-game username / handle** (ERLC integration, if enabled) | Identifies you in game server moderation tools | Yes — stored as plain text in our database; only if your server uses the ERLC integration |
 
 ### 4.2 Data Collected from Server Owners / Administrators

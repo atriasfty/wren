@@ -3,7 +3,7 @@ import { listTenants } from '../tenant/store.js';
 import { runAssistantPipeline } from '../ai/pipeline.js';
 import { loadConfig } from '../config.js';
 import { executeTool } from '../ai/executor.js';
-import { findPlayer } from '../integrations/prc.js';
+import { findPlayerExact } from '../integrations/prc.js';
 
 const HANDLE_PREFIX_RE = /^:\s*pm\s+/i;
 
@@ -24,6 +24,20 @@ export const lastPollTs = new Map();
 // Per-player conversational history for in-game PMs (multi-turn bridge session state)
 export const playerSessions = new Map(); // key: `${tenantId}:${playerName}`, value: { messages: [], lastActive: Date.now() }
 const SESSION_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+// The cursor can't move past a failed modcall, so later modcalls in the same
+// batch get seen again next sweep. Remember which ones were already answered
+// (so they aren't re-run and re-PM'd) and how often each one has failed (so a
+// modcall that fails deterministically is eventually given up on instead of
+// pinning the cursor and retrying forever).
+export const handledModcalls = new Map(); // key -> expiresAt
+export const modcallFailures = new Map(); // key -> { count, expiresAt }
+const MODCALL_MEMORY_MS = 60 * 60 * 1000;
+const MAX_MODCALL_ATTEMPTS = 3;
+
+function modcallKey(tenantId, m) {
+  return `${tenantId}:${m.timestamp || 0}:${m.callerName || m.playerName || ''}:${m.message || m.content || ''}`;
+}
 
 export async function pollModcallsFor(tenantCtx) {
   const sinceTs = lastPollTs.get(tenantCtx.tenantId) || 0;
@@ -64,6 +78,9 @@ export async function pollModcallsFor(tenantCtx) {
     const playerName = m.callerName || m.playerName;
     if (!playerName) { maxHandledTs = Math.max(maxHandledTs, ts); continue; }
 
+    const key = modcallKey(tenantCtx.tenantId, m);
+    if (handledModcalls.has(key)) { maxHandledTs = Math.max(maxHandledTs, ts); continue; }
+
     // Extract the actual question by removing the bot's name/handle
     const question = cleanText.slice(botName.length).trim();
     if (!question) { maxHandledTs = Math.max(maxHandledTs, ts); continue; }
@@ -79,7 +96,9 @@ export async function pollModcallsFor(tenantCtx) {
     session.lastActive = now;
 
     try {
-      const online = await findPlayer(tenantCtx, playerName).catch(() => null);
+      // Exact match only: a fuzzy match could resolve a departed caller's
+      // name to an online moderator and hand them staff rank.
+      const online = await findPlayerExact(tenantCtx, playerName).catch(() => null);
       const actor = { kind: 'in_game', playerName, isStaff: online?.permission === 'Server Moderator' || online?.permission === 'Server Administrator' };
 
       const result = await runAssistantPipeline(tenantCtx, {
@@ -111,19 +130,32 @@ export async function pollModcallsFor(tenantCtx) {
         }
       }
       maxHandledTs = Math.max(maxHandledTs, ts);
+      handledModcalls.set(key, Date.now() + MODCALL_MEMORY_MS);
+      modcallFailures.delete(key);
     } catch (err) {
       console.error(`[ingame] failed to process modcall from ${playerName}:`, err.message);
-      firstFailureTs = firstFailureTs === null ? ts : Math.min(firstFailureTs, ts);
-      // Let the player know rather than leaving them with silence; best-effort
-      // and doesn't block the retry this modcall gets on the next sweep.
-      try {
-        await executeTool(
-          tenantCtx,
-          'send_pm',
-          { username: playerName, message: 'Sorry, something went wrong processing your request. Please try again.' },
-          { kind: 'system' },
-        );
-      } catch {}
+      const prev = modcallFailures.get(key)?.count || 0;
+      const attempts = prev + 1;
+      const givingUp = attempts >= MAX_MODCALL_ATTEMPTS;
+      if (givingUp) {
+        handledModcalls.set(key, Date.now() + MODCALL_MEMORY_MS);
+        modcallFailures.delete(key);
+        maxHandledTs = Math.max(maxHandledTs, ts);
+      } else {
+        modcallFailures.set(key, { count: attempts, expiresAt: Date.now() + MODCALL_MEMORY_MS });
+        firstFailureTs = firstFailureTs === null ? ts : Math.min(firstFailureTs, ts);
+      }
+      // Tell the player once, when we stop retrying, rather than every sweep.
+      if (givingUp) {
+        try {
+          await executeTool(
+            tenantCtx,
+            'send_pm',
+            { username: playerName, message: 'Sorry, something went wrong processing your request. Please try again.' },
+            { kind: 'system' },
+          );
+        } catch {}
+      }
     }
   }
 
@@ -162,13 +194,19 @@ export function attachIngameBridge(client) {
     }
   }, 30_000);
 
-  // Periodically clean up expired player sessions
+  // Periodically clean up expired player sessions and modcall bookkeeping
   setInterval(() => {
     const now = Date.now();
     for (const [key, value] of playerSessions.entries()) {
       if (now - value.lastActive > SESSION_TTL_MS) {
         playerSessions.delete(key);
       }
+    }
+    for (const [key, expiresAt] of handledModcalls.entries()) {
+      if (now > expiresAt) handledModcalls.delete(key);
+    }
+    for (const [key, v] of modcallFailures.entries()) {
+      if (now > v.expiresAt) modcallFailures.delete(key);
     }
   }, 60_000);
 }

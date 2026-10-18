@@ -36,6 +36,19 @@ This runs the judge through `claude -p` using whatever the Claude Code CLI is al
 
 Each call is isolated: the system prompt is replaced, tools, MCP and settings/hooks are off, no session is saved, it runs from the OS temp dir (so no CLAUDE.md), and there's a `--max-budget-usd 0.50` cap per call. A one-word preflight call checks the login before any model runs, so a broken login fails in seconds instead of after the OpenRouter spend. Set `WRENBENCH_CLAUDE_BIN` if `claude` isn't on your PATH.
 
+### OpenRouter Armor
+
+[Armor](https://openrouter.ai/docs/guides/features/plugins/armor) (beta) is an OpenRouter-side classifier that checks each tool call against rules and removes the ones that match before they reach Wren. Add `+armor` to a model id to run it with Armor:
+
+```bash
+npm run bench -- --models openai/gpt-6-luna,openai/gpt-6-luna+armor --max-calls 600 --judge claude-code
+npm run bench -- --models openai/gpt-6-luna+armor --armor-mode audit   # record verdicts, block nothing
+```
+
+The rules live in `bench/armor.js` (`--armor-rules file.json` swaps in another `classifier_context`). They're all `hard_deny` and about intent, not action type: an action whose idea came from untrusted data (injection), a kick/ban/kill sweep over the whole server, leaking the prompt or credentials, scam links, and memories that are directives to the bot. Denying by action type (every kick, every PM) blocked real requests whose target came from a lookup or a correction, because Armor's "the user asked for this" exception is literal. `allow` rules only clear `soft_deny`, so the legitimate patterns are described in the rule text and `environment` instead. Write rules as descriptions of the action ("Banning a player..."), not orders to the classifier; imperative rules scored under the 0.6 match threshold in testing.
+
+A blocked call comes back as an `<openrouter_armor_blocked>` marker in the assistant text, which includes the raw tool name and arguments. The bench strips it, as production would have to. Each result gets an `armor` array of verdicts, and the run ends with a list of flagged calls next to their scenario's outcome. Evaluation is free during the beta and adds roughly 0.3 s per tool call.
+
 ## Cost controls
 
 - `--max-calls` (default **400**) is a hard cap on every OpenRouter request in the run, including an OpenRouter judge. A Claude Code judge runs on your subscription, has its own cap, and its spend is not counted as test cost. Judge calls are reserved first, then the rest is split evenly per model so the comparison stays fair. When the cap is hit, the remaining scenarios are marked `skip` and don't count toward scores.

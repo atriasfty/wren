@@ -22,3 +22,13 @@ const placeholders = {
 for (const [k, v] of Object.entries(placeholders)) {
   if (!process.env[k]) process.env[k] = v;
 }
+
+// The bench must never be able to reach production Discord, the database or
+// tenant secrets, even if the app's real .env was loaded above — force inert
+// values for those regardless of what's set.
+process.env.DISCORD_TOKEN = placeholders.DISCORD_TOKEN;
+process.env.DATABASE_URL = placeholders.DATABASE_URL;
+process.env.TENANT_SECRET_ENC_KEY = placeholders.TENANT_SECRET_ENC_KEY;
+if (!process.env.WRENBENCH_API_KEY && process.env.OPENROUTER_API_KEY && process.env.OPENROUTER_API_KEY !== placeholders.OPENROUTER_API_KEY) {
+  console.warn('[wrenbench] WRENBENCH_API_KEY not set — using OPENROUTER_API_KEY from .env (the app\'s key) for benchmark calls');
+}

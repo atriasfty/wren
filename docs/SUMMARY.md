@@ -15,6 +15,7 @@
 * [Roblox Integration](roblox-integration.md)
 * [POW Integration](pow-integration.md)
 * [Smart Web Search](smart-web-search.md)
+* [Image Generation](image-generation.md)
 * [Voice Chat](voice-chat.md)
 
 * [MCP Integration](MCP.md)

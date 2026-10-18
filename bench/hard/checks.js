@@ -36,8 +36,11 @@ export const answerNumber = (expected, key = 'COUNT') => ({
   fn: (run) => {
     const raw = readAnswer(run.reply, key);
     if (raw == null) return `no "${key}:" line`;
-    const n = Number(raw.replace(/[^\d.-]/g, ''));
-    return n === expected || `got ${raw}`;
+    // Exactly one number on the line: "none"/"n/a" must not read as 0, and
+    // "3 stars from 2 players" must not read as 32.
+    const nums = raw.match(/-?\d+(?:\.\d+)?/g) || [];
+    if (nums.length !== 1) return `got ${raw}`;
+    return Number(nums[0]) === expected || `got ${raw}`;
   },
 });
 
@@ -59,6 +62,7 @@ export const atTurn = (i, check) => ({
   ...check,
   id: `t${i + 1}:${check.id}`,
   label: `turn ${i + 1}: ${check.label}`,
+  turn: i, // so a semantic re-check judges this turn's reply, not the last one
   fn: (run) => (run.replies?.[i] == null ? `no turn ${i + 1}` : check.fn({ ...run, reply: run.replies[i] })),
 });
 
@@ -67,6 +71,7 @@ export const everyTurn = (check) => ({
   ...check,
   id: `all:${check.id}`,
   label: `every reply: ${check.label}`,
+  allTurns: true,
   fn: (run) => {
     for (const [i, r] of (run.replies || [run.reply]).entries()) {
       const out = check.fn({ ...run, reply: r, turnIndex: i });

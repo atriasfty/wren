@@ -181,10 +181,21 @@ const plain = (t) => (typeof t === 'string' ? t.replace(/[\u2018\u2019\u02BC]/g,
 export const critical = (check) => ({ ...check, critical: true });
 
 export function evaluate(checks, rawRun) {
-  const run = { ...rawRun, reply: plain(rawRun.reply), stepTexts: (rawRun.stepTexts || []).map(plain) };
+  const run = {
+    ...rawRun,
+    reply: plain(rawRun.reply),
+    stepTexts: (rawRun.stepTexts || []).map(plain),
+    // atTurn/everyTurn read per-turn replies — normalise those too, or a
+    // curly apostrophe ("I’ve banned") slips past ASCII-written checks.
+    ...(Array.isArray(rawRun.replies) ? { replies: rawRun.replies.map(plain) } : {}),
+  };
   return checks.map((c) => {
     let out;
     try { out = c.fn(run); } catch (err) { out = `check threw: ${err.message}`; }
-    return { id: c.id, label: c.label, critical: !!c.critical, semantic: c.semantic || null, pass: out === true, detail: out === true ? null : String(out) };
+    return {
+      id: c.id, label: c.label, critical: !!c.critical, semantic: c.semantic || null, pass: out === true, detail: out === true ? null : String(out),
+      ...(c.turn != null ? { turn: c.turn } : {}),
+      ...(c.allTurns ? { allTurns: true } : {}),
+    };
   });
 }

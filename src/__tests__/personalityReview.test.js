@@ -6,7 +6,6 @@ const mocks = vi.hoisted(() => ({
   reviewPersonalityText: vi.fn(),
   incrementMessageUsage: vi.fn(),
   decrementMessageUsage: vi.fn(),
-  countRecentPersonalityReviews: vi.fn(),
   audit: vi.fn(),
   query: vi.fn(),
 }));
@@ -55,7 +54,6 @@ vi.mock('../tenant/store.js', () => ({
   removeMemory: vi.fn(),
   incrementMessageUsage: mocks.incrementMessageUsage,
   decrementMessageUsage: mocks.decrementMessageUsage,
-  countRecentPersonalityReviews: mocks.countRecentPersonalityReviews,
   audit: mocks.audit,
 }));
 
@@ -80,11 +78,29 @@ function makeModalInteraction(fieldKey, value, publicMessage) {
   };
 }
 
+// Components V2 payloads nest text and buttons inside containers; serialise
+// (builders implement toJSON) and search the result.
+function payloadText(payload) {
+  return JSON.stringify(payload);
+}
+
+function lastCallText(spy) {
+  return payloadText(spy.mock.calls.at(-1)?.[0]);
+}
+
 function extractButtonCustomId(publicMessage, label) {
-  const call = publicMessage.edit.mock.calls.find((c) => c[0]?.components?.length);
-  const row = call[0].components[0];
-  const json = row.toJSON();
-  return json.components.find((c) => c.label === label).custom_id;
+  for (const [payload] of publicMessage.edit.mock.calls) {
+    const json = JSON.parse(payloadText(payload));
+    const stack = [json];
+    while (stack.length) {
+      const node = stack.pop();
+      if (node && typeof node === 'object') {
+        if (node.label === label && node.custom_id) return node.custom_id;
+        stack.push(...Object.values(node));
+      }
+    }
+  }
+  return undefined;
 }
 
 describe('personality change moderation review', () => {
@@ -92,8 +108,6 @@ describe('personality change moderation review', () => {
     vi.clearAllMocks();
     mocks.applyFieldEdit.mockResolvedValue({ ok: true, message: 'Saved.' });
     mocks.buildCategoryPanel.mockResolvedValue({ embeds: ['behaviour'], components: ['rows'] });
-    mocks.countRecentPersonalityReviews.mockResolvedValue(0);
-    mocks.incrementMessageUsage.mockResolvedValue(1);
     mocks.query.mockResolvedValue({ rowCount: 0, rows: [] }); // no bypass grant pending, by default
   });
 
@@ -123,7 +137,7 @@ describe('personality change moderation review', () => {
       tenantId: TENANT_ID, action: 'personality_review', target: 'responseStyle',
       metadata: expect.objectContaining({ approved: true }),
     }));
-    expect(publicMessage.edit).toHaveBeenCalledWith({ content: expect.stringContaining('✅') });
+    expect(lastCallText(publicMessage.edit)).toContain('✅');
     expect(mocks.incrementMessageUsage).not.toHaveBeenCalled();
   });
 
@@ -136,8 +150,8 @@ describe('personality change moderation review', () => {
     await handleComponentInteraction(interaction);
 
     expect(mocks.applyFieldEdit).not.toHaveBeenCalled();
-    expect(publicMessage.edit).toHaveBeenCalledWith({ content: expect.stringContaining('❌') });
-    expect(publicMessage.edit.mock.calls[0][0].content).toContain('Impersonates a real person.');
+    expect(lastCallText(publicMessage.edit)).toContain('❌');
+    expect(lastCallText(publicMessage.edit)).toContain('Impersonates a real person.');
   });
 
   it('skips the reviewer and applies the edit when a staff $atria personality bypass is pending', async () => {
@@ -163,7 +177,7 @@ describe('personality change moderation review', () => {
       target: 'responseStyle',
       metadata: expect.objectContaining({ grantedBy: 'staff-1' }),
     }));
-    expect(publicMessage.edit).toHaveBeenCalledWith({ content: expect.stringContaining('bypassed') });
+    expect(lastCallText(publicMessage.edit)).toContain('bypassed');
   });
 
   it('ignores an expired bypass grant and runs the reviewer normally', async () => {
@@ -182,64 +196,56 @@ describe('personality change moderation review', () => {
     expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({ action: 'personality_review' }));
   });
 
-  it('gates the 4th change in 12h behind a leadership approve/deny before spending quota', async () => {
-    mocks.countRecentPersonalityReviews.mockResolvedValue(3);
-    const { handleComponentInteraction } = await import('../slash/handlers.js');
-    const publicMessage = makePublicMessage();
-    const modalInteraction = makeModalInteraction('coreInfo', 'This is our server vibe.', publicMessage);
-
-    await handleComponentInteraction(modalInteraction);
-
-    expect(mocks.reviewPersonalityText).not.toHaveBeenCalled();
-    expect(mocks.applyFieldEdit).not.toHaveBeenCalled();
-    const approveId = extractButtonCustomId(publicMessage, 'Approve');
-    expect(approveId).toMatch(new RegExp(`^wren_cfg_modreview:${TENANT_ID}:`));
-
+  it('reviews every change for free, with no quota charge or approval gate, however many came before', async () => {
     mocks.reviewPersonalityText.mockResolvedValue({ approved: true, reason: 'fine', errored: false });
-    const approveInteraction = {
-      customId: approveId,
+    const { handleComponentInteraction } = await import('../slash/handlers.js');
+    for (let i = 0; i < 5; i++) {
+      const publicMessage = makePublicMessage();
+      await handleComponentInteraction(makeModalInteraction('coreInfo', `This is our server vibe ${i}.`, publicMessage));
+      expect(lastCallText(publicMessage.edit)).toContain('✅');
+    }
+    expect(mocks.reviewPersonalityText).toHaveBeenCalledTimes(5);
+    expect(mocks.applyFieldEdit).toHaveBeenCalledTimes(5);
+    expect(mocks.incrementMessageUsage).not.toHaveBeenCalled();
+    expect(mocks.decrementMessageUsage).not.toHaveBeenCalled();
+  });
+
+  it('answers stale approve/deny buttons from the old quota gate without reviewing', async () => {
+    const { handleComponentInteraction } = await import('../slash/handlers.js');
+    const stale = {
+      customId: `wren_cfg_modreview:${TENANT_ID}:abc123:approve`,
       guild: { id: TENANT_ID },
       member: { permissions: { has: () => true } },
       user: { id: 'approver-1' },
-      update: vi.fn().mockResolvedValue(undefined),
-      editReply: vi.fn().mockResolvedValue(undefined),
-      reply: vi.fn(),
+      update: vi.fn(), editReply: vi.fn(), reply: vi.fn().mockResolvedValue(undefined),
     };
-
-    await handleComponentInteraction(approveInteraction);
-
-    expect(mocks.incrementMessageUsage).toHaveBeenCalledWith(TENANT_ID, 10);
-    expect(mocks.reviewPersonalityText).toHaveBeenCalledWith({ fieldLabel: 'Core info (always-on note)', value: 'This is our server vibe.' });
-    expect(mocks.applyFieldEdit).toHaveBeenCalledWith(TENANT_ID, 'coreInfo', 'This is our server vibe.');
-    expect(approveInteraction.editReply).toHaveBeenCalledWith({ content: expect.stringContaining('✅') });
+    await handleComponentInteraction(stale);
+    expect(stale.reply).toHaveBeenCalled();
+    expect(mocks.reviewPersonalityText).not.toHaveBeenCalled();
   });
 
-  it('cancels the change without spending quota when a leadership member denies the quota gate', async () => {
-    mocks.countRecentPersonalityReviews.mockResolvedValue(5);
+  it('rejects an invalid value before review, without saving or claiming "updated"', async () => {
+    mocks.reviewPersonalityText.mockResolvedValue({ approved: true, reason: 'fine', errored: false });
     const { handleComponentInteraction } = await import('../slash/handlers.js');
     const publicMessage = makePublicMessage();
-    const modalInteraction = makeModalInteraction('responseStyle', 'Something to review.', publicMessage);
+    const interaction = makeModalInteraction('responseStyle', 'Be\tterse.', publicMessage);
 
-    await handleComponentInteraction(modalInteraction);
-    const denyId = extractButtonCustomId(publicMessage, 'Deny');
+    await handleComponentInteraction(interaction);
 
-    const denyInteraction = {
-      customId: denyId,
-      guild: { id: TENANT_ID },
-      member: { permissions: { has: () => true } },
-      user: { id: 'approver-2' },
-      update: vi.fn().mockResolvedValue(undefined),
-      editReply: vi.fn().mockResolvedValue(undefined),
-      reply: vi.fn(),
-    };
-
-    await handleComponentInteraction(denyInteraction);
-
-    expect(mocks.incrementMessageUsage).not.toHaveBeenCalled();
     expect(mocks.reviewPersonalityText).not.toHaveBeenCalled();
     expect(mocks.applyFieldEdit).not.toHaveBeenCalled();
-    expect(denyInteraction.update).toHaveBeenCalledWith(expect.objectContaining({
-      content: expect.stringContaining('cancelled'),
-    }));
+    expect(lastCallText(publicMessage.edit)).toContain("wasn't saved");
+  });
+
+  it('does not leave the public message stuck on "reviewing" when the review throws', async () => {
+    mocks.reviewPersonalityText.mockRejectedValue(new Error('reviewer down'));
+    const { handleComponentInteraction } = await import('../slash/handlers.js');
+    const publicMessage = makePublicMessage();
+    const interaction = makeModalInteraction('responseStyle', 'Be terse.', publicMessage);
+
+    await handleComponentInteraction(interaction);
+
+    expect(lastCallText(publicMessage.edit)).toContain("couldn't be reviewed");
+    expect(mocks.applyFieldEdit).not.toHaveBeenCalled();
   });
 });

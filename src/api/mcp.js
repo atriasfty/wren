@@ -12,6 +12,13 @@ import { TOOL_DEFS } from '../ai/tools.js';
 import { mcpAuthFailures } from '../metrics.js';
 
 const transports = new Map();
+const MAX_SESSIONS_PER_TOKEN = 3;
+const MAX_SESSIONS_TOTAL = 200;
+
+async function tokenStillValid(tokenHash) {
+  const r = await query('SELECT 1 FROM user_mcp_tokens WHERE token_hash = $1 AND revoked_at IS NULL', [tokenHash]);
+  return r.rows.length > 0;
+}
 
 export function getActiveMcpConnectionCount() {
   return transports.size;
@@ -68,8 +75,17 @@ export function createMcpRouter(client) {
   
   // Endpoint to establish SSE connection
   router.get('/sse', mcpAuth, async (req, res) => {
+    const { tenantId, discordId, tokenHash } = req.mcpSession;
+    if (transports.size >= MAX_SESSIONS_TOTAL) {
+      return res.status(503).json({ error: 'Too many MCP sessions; try again later' });
+    }
+    let perToken = 0;
+    for (const s of transports.values()) if (s.mcpSession.tokenHash === tokenHash) perToken++;
+    if (perToken >= MAX_SESSIONS_PER_TOKEN) {
+      return res.status(429).json({ error: `At most ${MAX_SESSIONS_PER_TOKEN} concurrent MCP sessions per token` });
+    }
+
     const transport = new SSEServerTransport('/api/mcp/message', res);
-    const { tenantId, discordId } = req.mcpSession;
     
     // Create a dedicated server instance for this connection
     const server = new Server(
@@ -105,6 +121,12 @@ export function createMcpRouter(client) {
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const toolName = request.params.name;
       const args = request.params.arguments || {};
+
+      // A token revoked while this SSE session is open must stop working now,
+      // not when the socket eventually closes.
+      if (!(await tokenStillValid(tokenHash))) {
+        throw new Error('MCP token has been revoked.');
+      }
       
       // Log the tool execution in audit log
       await logAudit(tenantId, discordId, 'mcp_tool_execution', { tool: toolName, args });
@@ -148,25 +170,42 @@ export function createMcpRouter(client) {
       }
     });
 
-    await server.connect(transport);
-    
-    // Cleanup when connection closes
+    // Register (and arm cleanup) before connecting, so a client that drops
+    // during connect() doesn't leave a dangling entry behind.
+    transports.set(transport.sessionId, { transport, server, mcpSession: req.mcpSession });
     res.on('close', () => {
       transports.delete(transport.sessionId);
+      server.close().catch(() => {});
     });
-    
-    transports.set(transport.sessionId, { transport, server, mcpSession: req.mcpSession });
+
+    try {
+      await server.connect(transport);
+    } catch (err) {
+      console.error('[mcp] connect failed:', err.message);
+      transports.delete(transport.sessionId);
+      if (!res.headersSent) res.status(500).end();
+    }
   });
 
   // Endpoint to handle incoming messages from the client
-  router.post('/message', async (req, res) => {
+  // The session id alone isn't a credential (it appears in the SSE endpoint
+  // URL and can end up in logs), so the poster must present the same token
+  // that opened the session.
+  router.post('/message', mcpAuth, async (req, res) => {
     const sessionId = req.query.sessionId;
     const sessionData = transports.get(sessionId);
-    if (!sessionData) {
+    if (!sessionData || sessionData.mcpSession.tokenHash !== req.mcpSession.tokenHash) {
       return res.status(404).send('Session not found');
     }
-    
-    await sessionData.transport.handlePostMessage(req, res);
+
+    try {
+      // express.json() has already consumed the request stream, so hand the
+      // parsed body over instead of letting the transport re-read it.
+      await sessionData.transport.handlePostMessage(req, res, req.body);
+    } catch (err) {
+      console.error('[mcp] message handling failed:', err.message);
+      if (!res.headersSent) res.status(500).send('Message handling failed');
+    }
   });
 
   return router;

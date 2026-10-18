@@ -237,3 +237,13 @@ INSERT INTO tenant_role_policy (tenant_id, tool, min_role)
 INSERT INTO tenant_role_policy (tenant_id, tool, min_role)
   SELECT tenant_id, 'search_web', 'user' FROM tenants
   ON CONFLICT DO NOTHING;
+
+-- Image generations, one row per reserved/used generation. Weekly per-person
+-- quota is counted over the trailing 7 days.
+CREATE TABLE IF NOT EXISTS image_generations (
+  id          BIGSERIAL PRIMARY KEY,
+  tenant_id   TEXT NOT NULL,
+  user_key    TEXT NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS image_generations_user_idx ON image_generations (tenant_id, user_key, created_at);

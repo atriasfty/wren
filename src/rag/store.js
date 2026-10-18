@@ -7,19 +7,37 @@ export async function ensureTenantDataDir(dataDir) {
 }
 
 export async function readVectorStore(vectorStorePath) {
+  let raw;
   try {
-    const raw = await fs.readFile(vectorStorePath, 'utf-8');
-    return JSON.parse(raw);
+    raw = await fs.readFile(vectorStorePath, 'utf-8');
   } catch (err) {
     if (err.code === 'ENOENT') return { metadata: {}, chunks: [] };
     throw err;
   }
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    // A corrupt store would otherwise fail every retrieval and ingest forever.
+    // Set it aside (recoverable by hand) and start empty; a re-ingest rebuilds it.
+    const aside = `${vectorStorePath}.corrupt-${Date.now()}`;
+    console.error(`[rag] vector store ${vectorStorePath} is corrupt (${err.message}); moved to ${aside}`);
+    await fs.rename(vectorStorePath, aside).catch(() => {});
+    return { metadata: {}, chunks: [] };
+  }
 }
 
 export async function writeVectorStore(vectorStorePath, store) {
-  const tmp = vectorStorePath + '.tmp';
-  await fs.writeFile(tmp, JSON.stringify(store, null, 2));
-  await fs.rename(tmp, vectorStorePath);
+  // Unique temp name: the CLI ingest runs as a separate process and must not
+  // share a temp file with the bot. Compact JSON — the store holds every
+  // embedding, and pretty-printing roughly doubles its size.
+  const tmp = `${vectorStorePath}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
+  try {
+    await fs.writeFile(tmp, JSON.stringify(store));
+    await fs.rename(tmp, vectorStorePath);
+  } catch (err) {
+    await fs.unlink(tmp).catch(() => {});
+    throw err;
+  }
 }
 
 export async function appendManualDoc(dataDir, filename, content) {

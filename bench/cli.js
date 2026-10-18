@@ -6,9 +6,12 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { SCENARIOS, CATEGORIES } from './scenarios.js';
 import { buildHardSuite, HARD_CATEGORIES } from './hard/index.js';
+import { WEB_LIVE, WEB_CATEGORIES } from './scenarios/web-live.js';
+import { searchProvider, searchTimings } from './liveWeb.js';
 import { runScenario, rescore } from './runner.js';
 import { Budget, budgetedClient } from './llm.js';
-import { judgeAbsolute, judgePairwise, judgeRequirement, makeRedactor, eligibleForRecheck } from './judge.js';
+import { isArmorModel, apiModel, withArmor } from './armor.js';
+import { judgeAbsolute, judgePairwise, judgeRequirement, makeRedactor, eligibleForRecheck, recheckTarget } from './judge.js';
 import { claudeCodeClient, parseClaudeCodeJudge } from './claudeCode.js';
 import { summarize, printSummary, printFailures, score100, green, red, yellow, dim, bold } from './report.js';
 
@@ -21,10 +24,19 @@ Usage:
   npm run bench -- --models <a,b,...> [options]
 
 Options:
-  --models a,b        OpenRouter model ids (first one is the pairwise baseline)
+  --models a,b        OpenRouter model ids (first one is the pairwise baseline).
+                      Append +armor to run a model with OpenRouter Armor, e.g.
+                      openai/gpt-6-luna,openai/gpt-6-luna+armor for an A/B
+  --armor-mode enforce|audit  enforce blocks flagged tool calls; audit only
+                      records verdicts                            [enforce]
+  --armor-rules file  JSON classifier_context to use instead of bench/armor.js
   --suite core|hard   core: 142 hand-written scenarios (default). hard: WrenBench-Hard,
                       generated 40-player worlds, flaky tools, multi-turn, red-team,
-                      pass/fail scoring with a critical-failure penalty
+                      pass/fail scoring with a critical-failure penalty. web: live
+                      internet questions answered with real search results
+  --search brave|exa|exa-answer  search provider for --suite web [brave]
+                      (exa-answer: Exa's Answer API, a cited answer instead of results)
+  --search-count N    results per web search for --suite web       [4]
   --seed N            hard suite world seed (default 1; a new seed = fresh worlds/answers)
   --judge <model>     judge for persona rubric + pairwise A/B (optional): an
                       OpenRouter model id, or claude-code[:<model>] to use the
@@ -57,6 +69,8 @@ function parseArgs(argv) {
     switch (a) {
       case '--models': case '--model': o.models.push(...take(i).split(',').map((s) => s.trim()).filter(Boolean)); i++; break;
       case '--judge': o.judge = take(i); i++; break;
+      case '--armor-mode': o.armorMode = take(i); i++; break;
+      case '--armor-rules': o.armorRules = take(i); i++; break;
       case '--max-calls': o.maxCalls = Number(take(i)); i++; break;
       case '--max-cost': o.maxCost = Number(take(i)); i++; break;
       case '--max-tokens': o.maxTokens = Number(take(i)); i++; break;
@@ -71,6 +85,8 @@ function parseArgs(argv) {
       case '--verbose': case '-v': o.verbose = true; break;
       case '--list': o.list = true; break;
       case '--suite': o.suite = take(i); i++; break;
+      case '--search': o.search = take(i); i++; break;
+      case '--search-count': o.searchCount = Number(take(i)); i++; break;
       case '--seed': o.seed = Number(take(i)); i++; break;
       case '--report': o.report = take(i).split(',').map((x) => x.trim()).filter(Boolean); i++; break;
       case '--mock': o.mock = true; break;
@@ -107,11 +123,23 @@ async function main() {
   if (o.help) { console.log(HELP); return; }
   if (o.report) { mergeReport(o.report, { verbose: o.verbose, only: o.models }); return; }
 
-  if (!['core', 'hard'].includes(o.suite)) throw new Error('--suite must be core or hard');
+  if (!['core', 'hard', 'web'].includes(o.suite)) throw new Error('--suite must be core, hard or web');
+  o.armorMode ||= 'enforce';
+  if (!['enforce', 'audit'].includes(o.armorMode)) throw new Error('--armor-mode must be enforce or audit');
+  if (o.armorRules && !fs.existsSync(o.armorRules)) throw new Error(`--armor-rules: ${o.armorRules} not found`);
+  if (o.search) {
+    if (!['brave', 'exa', 'exa-answer'].includes(o.search)) throw new Error('--search must be brave, exa or exa-answer');
+    process.env.WRENBENCH_SEARCH = o.search;
+  }
+  if (o.searchCount != null) {
+    if (!Number.isInteger(o.searchCount) || o.searchCount < 1 || o.searchCount > 10) throw new Error('--search-count must be 1-10');
+    process.env.WRENBENCH_SEARCH_COUNT = String(o.searchCount);
+  }
   if (!Number.isInteger(o.seed) || o.seed < 1) throw new Error('--seed must be a positive integer');
   const hard = o.suite === 'hard';
-  const scenarios = selectScenarios(o, hard ? await buildHardSuite(o.seed) : SCENARIOS);
-  const categoryOrder = hard ? HARD_CATEGORIES : CATEGORIES;
+  const web = o.suite === 'web';
+  const scenarios = selectScenarios(o, hard ? await buildHardSuite(o.seed) : web ? WEB_LIVE : SCENARIOS);
+  const categoryOrder = hard ? HARD_CATEGORIES : web ? WEB_CATEGORIES : CATEGORIES;
   if (o.list) {
     for (const cat of categoryOrder) {
       const rows = scenarios.filter((s) => s.category === cat);
@@ -128,7 +156,7 @@ async function main() {
   if (o.mock && !o.models.length) o.models = ['mock/model-a', 'mock/model-b'];
   if (!o.models.length) { console.log(HELP); throw new Error('--models is required'); }
   if (new Set(o.models).size !== o.models.length) throw new Error('--models contains duplicates');
-  if (o.judge && o.models.includes(o.judge)) throw new Error('the judge model must not be one of the models under test');
+  if (o.judge && o.models.map(apiModel).includes(o.judge)) throw new Error('the judge model must not be one of the models under test');
 
   const apiKey = process.env.WRENBENCH_API_KEY || process.env.OPENROUTER_API_KEY;
   if (!o.mock && (!apiKey || apiKey === 'wrenbench-placeholder')) {
@@ -146,7 +174,7 @@ async function main() {
     if (!res.ok) throw new Error(`could not load the OpenRouter model list (HTTP ${res.status})`);
     const catalog = new Map((await res.json()).data.map((m) => [m.id, m]));
     for (const m of o.models) {
-      const info = catalog.get(m);
+      const info = catalog.get(apiModel(m));
       if (!info) throw new Error(`unknown OpenRouter model id "${m}"`);
       if (!info.supported_parameters?.includes('tools')) console.log(yellow(`  warning: ${m} does not list tool support; tool scenarios will likely fail`));
       if (!info.architecture?.input_modalities?.includes('image')) textOnly.add(m);
@@ -199,15 +227,19 @@ async function main() {
   }
   const results = {};
   const budgets = {};
-  const redact = makeRedactor(o.models);
-  if (hard && !jllm && scenarios.some((s) => s.attack)) console.log(yellow('  red-team scenarios need --judge claude-code (the attacker); they will be skipped'));
+  const redact = makeRedactor(o.models.map(apiModel));
+  // The attacker (and the in-loop red-team judge) only work via Claude Code;
+  // an OpenRouter judge client would be called with no/the wrong model.
+  const attacker = cc ? jllm : null;
+  if (hard && !attacker && scenarios.some((s) => s.attack)) console.log(yellow('  red-team scenarios need --judge claude-code (the attacker); they will be skipped'));
 
   const parallel = o.modelConcurrency > 1;
   await pool(o.models, o.modelConcurrency, async (model) => {
     if (!parallel) console.log(`\n${bold(model)}`);
     const tagModel = parallel ? dim(`${model.split('/').pop()} `) : '';
     const budget = budgets[model] = new Budget({ name: model, maxCalls: perModel, shared: global });
-    const llm = budgetedClient({ apiKey, mock: o.mock, budget, maxTokens: o.maxTokens });
+    const metered = budgetedClient({ apiKey, mock: o.mock, budget, maxTokens: o.maxTokens });
+    const llm = isArmorModel(model) ? withArmor(metered, { mode: o.armorMode, rulesFile: o.armorRules }) : metered;
     const mine = scenariosFor(model);
     const na = scenarios.filter((sc) => !mine.includes(sc)).map((sc) => ({ id: sc.id, category: sc.category, model, status: 'n/a', reason: 'model has no image input', repeat: 0 }));
     const jobs = [];
@@ -219,7 +251,7 @@ async function main() {
     const ran = await pool(jobs, concurrency, async ({ s, rep }) => {
       const r = errorStreak >= 3
         ? { id: s.id, category: s.category, model, status: 'skipped', reason: 'aborted after repeated provider errors', repeat: rep }
-        : { ...(await runScenario(s, { model, llm, budget, neutral: o.neutral, attacker: jllm, redact })), repeat: rep };
+        : { ...(await runScenario(s, { model, llm, budget, neutral: o.neutral, attacker, redact })), repeat: rep };
       if (r.status === 'error') errorStreak++; else if (r.status === 'done') errorStreak = 0;
       const tag = r.status === 'skipped' ? yellow('skip') : r.status === 'error' ? red('err ') : r.pass ? green(' ok ') : red('fail');
       const extra = r.status === 'done' ? dim(`${Math.round(r.score * 100)}%  ${(r.ms / 1000).toFixed(1)}s`) : dim(r.reason || r.error || '');
@@ -237,12 +269,16 @@ async function main() {
     const jobs = [];
     for (const m of o.models) for (const r of results[m]) {
       if (r.status !== 'done') continue;
-      for (const ch of r.checks) if (eligibleForRecheck(ch)) jobs.push({ r, ch });
+      for (const ch of r.checks) {
+        if (!eligibleForRecheck(ch)) continue;
+        const target = recheckTarget(r, byId.get(r.id), ch);
+        if (target) jobs.push({ r, ch, target });
+      }
     }
     if (jobs.length) {
       console.log(`\n${bold('re-checking')} ${dim(`${jobs.length} failed reply-text checks for meaning (${o.judge})`)}`);
-      await pool(jobs, cc ? 3 : o.concurrency, async ({ r, ch }) => {
-        const v = await judgeRequirement(jllm, o.judge, byId.get(r.id), redact(r.reply), ch);
+      await pool(jobs, cc ? 3 : o.concurrency, async ({ ch, target }) => {
+        const v = await judgeRequirement(jllm, o.judge, target.scenario, redact(target.reply), ch);
         ch.semanticCheck = v;
         if (v.pass) { ch.pass = true; ch.rescued = true; ch.detail = `regex miss, judge: ${v.reason}`; }
       });
@@ -259,11 +295,19 @@ async function main() {
     const jConcurrency = cc ? Math.min(2, o.concurrency) : o.concurrency;
     const firstRun = (model, id) => results[model].find((r) => r.id === id && r.repeat === 0 && r.status === 'done');
 
-    const absJobs = o.models.flatMap((m) => judged.map((s) => ({ m, s, r: firstRun(m, s.id) }))).filter((j) => j.r);
+    // Judge every repeat, not just the first — otherwise repeats are scored
+    // under different rules and then averaged together.
+    const judgedIds = new Set(judged.map((s) => s.id));
+    const byScenario = new Map(judged.map((s) => [s.id, s]));
+    const absJobs = o.models.flatMap((m) => results[m].filter((r) => r.status === 'done' && judgedIds.has(r.id)).map((r) => ({ s: byScenario.get(r.id), r })));
     await pool(absJobs, jConcurrency, async ({ s, r }) => {
-      r.judge = await judgeAbsolute(jllm, o.judge, s, redact(r.reply));
+      let v = await judgeAbsolute(jllm, o.judge, s, redact(r.reply));
+      if (v.error && v.error !== 'budget exhausted') v = await judgeAbsolute(jllm, o.judge, s, redact(r.reply)); // one retry
+      r.judge = v;
       rescore(r); // the rating counts as one more check (see runner.rescore)
     });
+    const judgeErrors = absJobs.filter((j) => j.r.judge?.error).length;
+    if (judgeErrors) console.log(yellow(`  ${judgeErrors} judge rating(s) failed — those scenarios are scored without the rating and flagged judgeError`));
 
     const [baseline, ...others] = o.models;
     for (const other of others) {
@@ -288,8 +332,14 @@ async function main() {
 
   // ---- report
   const { summaries, comparable } = printReport({ models: o.models, results, budgets, scenarios, categoryOrder, hard, repeats: o.repeats, pairwise, neutral: o.neutral, verbose: o.verbose });
+  for (const m of o.models.filter(isArmorModel)) printArmor(m, results[m], o.armorMode);
 
   const spent = global.costKnown ? `$${global.costUsd.toFixed(4)}` : (global.costUsd ? `≥$${global.costUsd.toFixed(4)} (some calls did not report cost)` : 'unknown (provider did not report cost)');
+  if (web && searchTimings.length) {
+    const sorted = [...searchTimings].sort((x, y) => x - y);
+    const avg = Math.round(sorted.reduce((x, y) => x + y, 0) / sorted.length);
+    console.log(dim(`\nsearch (${searchProvider()}): ${sorted.length} calls, avg ${avg}ms, median ${sorted[Math.floor(sorted.length / 2)]}ms`));
+  }
   console.log(dim(`\ntotal: ${global.calls}/${o.maxCalls} calls, ${global.promptTokens.toLocaleString()} in / ${global.completionTokens.toLocaleString()} out tokens, ${spent}`));
 
   const out = o.out || path.join(HERE, 'results', `${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
@@ -297,6 +347,7 @@ async function main() {
   fs.writeFileSync(out, JSON.stringify({
     startedAt: new Date().toISOString(),
     options: { ...o, list: undefined, help: undefined },
+    ...(web ? { searchTimingsMs: searchTimings } : {}),
     summaries, comparable: comparable ? { scenarioIds: [...comparable.ids], summaries: comparable.summaries } : null, pairwise, results,
     judgeUsage: budgets.__judge ? { calls: budgets.__judge.calls, via: cc ? 'claude-code (subscription)' : 'openrouter', costUsd: cc ? null : budgets.__judge.costUsd } : null,
   }, null, 2));
@@ -338,6 +389,19 @@ function printReport({ models, results, budgets, scenarios, categoryOrder, hard,
   return { summaries, comparable };
 }
 
+// Armor verdicts for one model: totals, then every flagged call with its
+// scenario's outcome, so blocks on a passing scenario (prevented harm) can be
+// told apart from blocks on a failing one (likely a false positive).
+function printArmor(model, results, mode) {
+  const rows = results.filter((r) => r.status === 'done').flatMap((r) => (r.armor || []).map((v) => ({ ...v, r })));
+  const count = (o) => rows.filter((v) => v.outcome === o).length;
+  console.log(`\n${bold(`armor (${mode}) for ${model}`)}: ${dim(`${rows.length} tool calls evaluated, ${count('flagged')} flagged, ${count('not_flagged')} passed, ${count('unavailable')} unavailable, ${count('skipped')} skipped`)}`);
+  for (const v of rows.filter((x) => x.outcome !== 'not_flagged' && x.outcome !== 'skipped')) {
+    const tag = v.r.pass ? green('scenario passed') : red('scenario failed');
+    console.log(`  ${v.outcome === 'flagged' ? yellow('flagged') : red(v.outcome)} ${v.tool || '?'} ${dim(v.rule || '')} in ${v.r.id}  ${tag}`);
+  }
+}
+
 // --report a.json,b.json: merge saved runs into one leaderboard without any
 // API calls. Merging is per scenario: a later file's result for (model,
 // scenario) replaces an earlier one, so a targeted re-run (--only) after a
@@ -352,7 +416,12 @@ function mergeReport(files, { verbose, only = [] }) {
     for (const [m, rs] of Object.entries(data.results)) {
       if (only.length && !only.includes(m)) continue;
       const map = (byModel[m] ||= new Map());
-      for (const r of rs) map.set(`${r.id}#${r.repeat || 0}`, r);
+      for (const r of rs) {
+        const key = `${r.id}#${r.repeat || 0}`;
+        // A later error/skip must not clobber an earlier completed result.
+        if (r.status !== 'done' && map.get(key)?.status === 'done') continue;
+        map.set(key, r);
+      }
       lastFile[m] = i;
       const sm = data.summaries?.[m] || {};
       const b = (budgets[m] ||= { calls: 0, promptTokens: 0, completionTokens: 0, costUsd: 0, costKnown: true });
@@ -370,7 +439,9 @@ function mergeReport(files, { verbose, only = [] }) {
   const { summaries, comparable } = printReport({ models, results, budgets, scenarios, categoryOrder: hard ? HARD_CATEGORIES : CATEGORIES, hard, repeats, pairwise, neutral: false, verbose });
   const out = path.join(HERE, 'results', `merged-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
   fs.mkdirSync(path.dirname(out), { recursive: true });
-  fs.writeFileSync(out, JSON.stringify({ mergedFrom: files, summaries, comparable: comparable ? { scenarioIds: [...comparable.ids], summaries: comparable.summaries } : null, pairwise, results }, null, 2));
+  // Keep options so a merged file can itself be re-merged with the right
+  // suite/categories and repeat count.
+  fs.writeFileSync(out, JSON.stringify({ mergedFrom: files, options: { repeats, suite: hard ? 'hard' : 'core' }, summaries, comparable: comparable ? { scenarioIds: [...comparable.ids], summaries: comparable.summaries } : null, pairwise, results }, null, 2));
   console.log(dim(`\nresults: ${path.relative(process.cwd(), out)}`));
 }
 

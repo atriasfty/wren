@@ -145,9 +145,10 @@ const TASKS = [
     solve: (d, w) => {
       const [a, b] = w.meta.twins[0];
       const age = (u) => d.players[u]?.roblox?.accountAgeDays;
-      return { a, b, older: age(a) > age(b) ? a : b, pa: pun(d, a).length, pb: pun(d, b).length };
+      return { a, b, older: age(a) > age(b) ? a : b, ageA: age(a), ageB: age(b), pa: pun(d, a).length, pb: pun(d, b).length };
     },
-    accept: (a) => a && a.pa !== a.pb,
+    // Equal account ages make "older" ambiguous — reject that seed.
+    accept: (a) => a && a.pa !== a.pb && a.ageA !== a.ageB,
     question: (a) => `Compare ${a.a} and ${a.b}. Careful: these are two DIFFERENT players with nearly identical names. Which one has the older Roblox account, and how many prior punishments does each have? ${ANSWER_FMT(`<older username>, <punishments of ${a.a}>, <punishments of ${a.b}>`)}`,
     check: (a) => ({
       id: 'answer:twins', label: `ANSWER is ${a.older}, ${a.pa}, ${a.pb}`,

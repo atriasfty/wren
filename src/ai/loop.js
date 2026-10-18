@@ -7,6 +7,7 @@
 
 export const MAX_TOOL_STEPS = 8;
 export const MAX_VIEWED_IMAGES = 3;
+export const MAX_GENERATED_IMAGES = 2;
 
 function contentText(content) {
   return typeof content === 'string' ? content : (content?.[0]?.text || '');
@@ -24,6 +25,7 @@ export async function runModelLoop({
   temperature = 0.2,
   maxSteps = MAX_TOOL_STEPS,
   onToolStep = null,
+  generatedImages = [],
 }) {
   const trace = [];
   let finalText = '';
@@ -32,7 +34,7 @@ export async function runModelLoop({
     const resp = await complete({ model, messages, tools, tool_choice: 'auto', temperature });
 
     const choice = resp.choices?.[0];
-    if (!choice) return { text: 'No response from model.', noChoice: true, trace };
+    if (!choice) return { text: 'No response from model.', noChoice: true, trace, generatedImages };
 
     const msg = choice.message;
     const toolCalls = msg.tool_calls || [];
@@ -58,7 +60,17 @@ export async function runModelLoop({
       let malformedArgs = false;
       try { args = tc.function?.arguments ? JSON.parse(tc.function.arguments) : {}; } catch { malformedArgs = true; }
 
-      let result = await runTool(name, args);
+      // Don't run a tool on arguments we couldn't parse: running it with {}
+      // can "succeed" vacuously (e.g. pm_all_staff with no message) and the
+      // model would then report an action that never happened.
+      // Refuse before running, not after: generate_image spends the user's
+      // weekly allowance, so a call whose image would be dropped must not run.
+      const imageCapHit = name === 'generate_image' && generatedImages.length >= MAX_GENERATED_IMAGES;
+      let result = malformedArgs
+        ? { success: false, error: 'Tool arguments were not valid JSON; nothing was executed. Retry with valid arguments.' }
+        : imageCapHit
+          ? { success: false, error: `At most ${MAX_GENERATED_IMAGES} images can be generated per reply.` }
+          : await runTool(name, args);
 
       // view_image hands back a URL; pull it out so only text goes in the tool
       // result and the pixels arrive as a user turn below.
@@ -70,6 +82,14 @@ export async function runModelLoop({
           rest.success = false;
           rest.error = `At most ${MAX_VIEWED_IMAGES} images can be viewed per reply.`;
         }
+        result = rest;
+      }
+
+      // generate_image hands back the bytes; keep them out of the tool result
+      // text and collect them to attach to the final reply.
+      if (result?.generatedImage) {
+        const { generatedImage, ...rest } = result;
+        generatedImages.push(generatedImage);
         result = rest;
       }
 
@@ -110,9 +130,17 @@ export async function runModelLoop({
       const resp = await complete({ model, messages, temperature });
       finalText = contentText(resp.choices?.[0]?.message?.content);
     } catch (err) {
-      console.error('[loop] forced final reply failed:', err);
+      // Some providers reject a history containing tool calls when no tools
+      // are declared; fall back to declaring them with tool_choice 'none'.
+      console.warn('[loop] forced final reply without tools failed, retrying with tool_choice none:', err.message);
+      try {
+        const resp = await complete({ model, messages, tools, tool_choice: 'none', temperature });
+        finalText = contentText(resp.choices?.[0]?.message?.content);
+      } catch (err2) {
+        console.error('[loop] forced final reply failed:', err2);
+      }
     }
   }
 
-  return { text: finalText, forcedFinal, trace };
+  return { text: finalText, forcedFinal, trace, generatedImages };
 }

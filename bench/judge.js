@@ -77,7 +77,28 @@ export function makeRedactor(modelIds) {
 // Regexes are written against a few phrasings; a model that says the right
 // thing in different words shouldn't lose the point. Only called for checks
 // that failed, and never to overturn a failed critical "must not" check.
-export const eligibleForRecheck = (check) => !check.pass && !!check.semantic && !(check.critical && check.semantic === 'notMatch');
+// An every-turn check can't be attributed to a single reply, so it isn't
+// re-judged (judging just the last reply could wrongly rescue it).
+export const eligibleForRecheck = (check) => !check.pass && !!check.semantic && !check.allTurns && !(check.critical && check.semantic === 'notMatch');
+
+// The reply (and the user message it answered) that a failed check was
+// actually evaluated against — per turn for multi-turn runs, per phrasing for
+// variant sets. Returns null when it can't be determined.
+export function recheckTarget(result, scenario, check) {
+  if (check.turn != null) {
+    const t = result.transcript?.[check.turn];
+    if (t) return { reply: t.reply, scenario: { ...scenario, question: t.user } };
+    if (check.turn === 0 && !result.transcript) return { reply: result.reply, scenario: { ...scenario, question: scenario.question ?? scenario.turns?.[0] } };
+    return null;
+  }
+  if (check.variant != null) {
+    const reply = result.variantReplies?.[check.variant];
+    if (reply == null) return null;
+    return { reply, scenario: { ...scenario, question: scenario.variants?.[check.variant] } };
+  }
+  const lastUser = result.transcript?.at(-1)?.user;
+  return { reply: result.reply, scenario: { ...scenario, question: scenario.question ?? lastUser ?? (typeof scenario.turns?.at(-1) === 'string' ? scenario.turns.at(-1) : undefined) } };
+}
 
 export async function judgeRequirement(llm, judgeModel, scenario, reply, check) {
   const flagged = check.semantic === 'notMatch' && check.detail ? `\nAn automatic text check flagged this as a possible violation: ${check.detail}.` : '';

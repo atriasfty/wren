@@ -32,6 +32,8 @@ Your monthly message limit applies to the number of times Wren has to generate a
 - Replying to a user in a Voice Channel.
 
 **This DOES NOT include:**
+- Personality reviews (the automatic check when you change Core Info or Response Style in `/wren config`). These are always free.
+- Image generations. They have their own weekly allowance, below, though the reply that delivers the image still counts as one message.
 - Running slash commands (like `/wren config view` or `/wren sources list`).
 - Background ingestion (when Wren reads your server documentation).
 - Moderation actions (like automatically punishing a raider).
@@ -48,6 +50,18 @@ Voice Chat uses a separate resource pool based on **Active Listening Time**.
 
 **How time is calculated:** 
 The timer starts the moment Wren joins the voice channel and hears the wake word ("Hey Wren"). It stops the moment Wren finishes speaking its response. You are only billed for the seconds where Wren is actively transcribing your voice or speaking back to you. Sitting idle in a voice channel does *not* consume your minutes.
+
+---
+
+## Image Generation Limits
+
+Image generation is limited **per person** (not per server) over a **rolling 7 days**, based on your server's plan:
+
+- **Free Plan:** not included.
+- **Core Plan:** 2 images per person per week.
+- **Pro Plan:** 10 images per person per week.
+
+Each image frees up exactly 7 days after it was made. If a generation fails, it doesn't use any of your allowance. Ask Wren "how many images do I have left?" to check, and see [Image Generation](image-generation.md) for details.
 
 ---
 

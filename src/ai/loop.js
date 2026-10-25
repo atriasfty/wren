@@ -9,6 +9,8 @@ export const MAX_TOOL_STEPS = 8;
 export const MAX_VIEWED_IMAGES = 3;
 export const MAX_GENERATED_IMAGES = 2;
 export const MAX_REPLY_IMAGES = 4; // generated + web images combined
+export const MAX_WEB_ATTACHMENTS = 2;
+export const MAX_IMAGE_SEARCHES = 3;
 
 function contentText(content) {
   return typeof content === 'string' ? content : (content?.[0]?.text || '');
@@ -30,6 +32,11 @@ export async function runModelLoop({
 }) {
   const trace = [];
   let generatedCount = 0;
+  // find_images candidates: shown to the model, held here until it attaches some.
+  const candidates = new Map();
+  let candidateSeq = 0;
+  let imageSearches = 0;
+  let webAttached = 0;
   let finalText = '';
 
   for (let step = 0; step < maxSteps; step++) {
@@ -56,6 +63,7 @@ export async function runModelLoop({
 
     const toolResults = [];
     const viewedImages = [];
+    const candidateViews = [];
     for (const tc of toolCalls) {
       const name = tc.function?.name;
       let args = {};
@@ -68,12 +76,42 @@ export async function runModelLoop({
       // Refuse before running, not after: generate_image spends the user's
       // weekly allowance, so a call whose image would be dropped must not run.
       const imageCapHit = (name === 'generate_image' && generatedCount >= MAX_GENERATED_IMAGES) ||
-        ((name === 'generate_image' || name === 'find_images') && generatedImages.length >= MAX_REPLY_IMAGES);
-      let result = malformedArgs
-        ? { success: false, error: 'Tool arguments were not valid JSON; nothing was executed. Retry with valid arguments.' }
-        : imageCapHit
-          ? { success: false, error: `Image limit for one reply reached (${MAX_GENERATED_IMAGES} generated, ${MAX_REPLY_IMAGES} total).` }
-          : await runTool(name, args);
+        (name === 'generate_image' && generatedImages.length >= MAX_REPLY_IMAGES) ||
+        (name === 'find_images' && (imageSearches >= MAX_IMAGE_SEARCHES || webAttached >= MAX_WEB_ATTACHMENTS));
+      let result;
+      if (malformedArgs) {
+        result = { success: false, error: 'Tool arguments were not valid JSON; nothing was executed. Retry with valid arguments.' };
+      } else if (name === 'attach_images') {
+        // Handled here, not by runTool: it only moves a candidate the model has
+        // already looked at into the reply, so it needs the loop's state.
+        const ids = Array.isArray(args.ids) ? [...new Set(args.ids.map(String))] : [];
+        const room = Math.min(MAX_WEB_ATTACHMENTS - webAttached, MAX_REPLY_IMAGES - generatedImages.length);
+        // Only candidates from an EARLIER step count: the pictures reach the
+        // model after this step's tool results, so one created in this very
+        // step (find_images and attach_images in the same turn) is unseen.
+        const seenIds = ids.filter((id) => candidates.has(id) && candidates.get(id).step < step);
+        const picked = seenIds.slice(0, Math.max(0, room));
+        if (!picked.length) {
+          const unseen = ids.some((id) => candidates.get(id)?.step === step);
+          result = { success: false, error: unseen
+            ? 'You have not seen those images yet. Wait for the pictures in the next message, look at them, then call attach_images.'
+            : ids.length ? 'None of those ids are candidates you looked at (or the image limit was reached). Use ids like c1, c2 from find_images.' : 'ids is required, e.g. ["c1"].' };
+        } else {
+          for (const id of picked) {
+            const c = candidates.get(id);
+            generatedImages.push({ buffer: c.buffer, mediaType: c.mediaType, filename: `${id}-${c.filename}` });
+            webAttached++;
+            candidates.delete(id);
+          }
+          result = { success: true, attached: picked, note: 'Attached to your reply. Mention the source(s) in your message.' };
+        }
+      } else if (imageCapHit) {
+        result = name === 'find_images'
+          ? { success: false, error: 'Image search limit for one reply reached. Work with what you have, or tell the user you could not find a good image.' }
+          : { success: false, error: `Image limit for one reply reached (${MAX_GENERATED_IMAGES} generated, ${MAX_REPLY_IMAGES} total).` };
+      } else {
+        result = await runTool(name, args);
+      }
 
       // view_image hands back a URL; pull it out so only text goes in the tool
       // result and the pixels arrive as a user turn below.
@@ -96,10 +134,19 @@ export async function runModelLoop({
         generatedCount++;
         result = rest;
       }
-      // find_images hands back downloaded web images the same way.
-      if (result?.attachedImages) {
-        const { attachedImages, ...rest } = result;
-        generatedImages.push(...attachedImages.slice(0, MAX_REPLY_IMAGES - generatedImages.length));
+      // find_images hands back downloaded candidates. The model gets text
+      // metadata in the tool result and the (downscaled) pictures in a user
+      // turn below; the full-size files wait here for attach_images.
+      if (result?.candidateImages) {
+        const { candidateImages, ...rest } = result;
+        imageSearches++;
+        rest.candidates = candidateImages.map((c) => {
+          const id = `c${++candidateSeq}`;
+          candidates.set(id, { ...c, step });
+          candidateViews.push({ id, url: c.visionUrl, meta: c.meta });
+          return { id, title: c.meta.title, source: c.meta.source || null, page_url: c.meta.pageUrl || null };
+        });
+        rest.note = 'The candidate pictures are in the next message. Look at each one. Call attach_images with the ids that really show what the user asked for, or call find_images again with a better query if none do. Do not attach one just to have something.';
         result = rest;
       }
 
@@ -115,6 +162,15 @@ export async function runModelLoop({
     messages.push(...toolResults);
     // Tool messages must stay contiguous after the assistant's tool_calls, so
     // the requested images go in a user turn after all of them.
+    for (const v of candidateViews) {
+      messages.push({
+        role: 'user',
+        content: [
+          { type: 'text', text: `[Candidate ${v.id} from find_images. Page title: "${String(v.meta.title || '').replace(/"/g, "'").slice(0, 150)}". Source: ${v.meta.source || 'unknown'}. Not attached yet. Shown for this reply only.]` },
+          { type: 'image_url', image_url: { url: v.url } },
+        ],
+      });
+    }
     for (const v of viewedImages) {
       messages.push({
         role: 'user',
@@ -136,6 +192,11 @@ export async function runModelLoop({
     // content-less message even when told not to call tools, so the only
     // reliable way to force text is to not expose any tools at all.
     forcedFinal = true;
+    // With no tools the model can't attach what it found, so say so: otherwise
+    // it may write "here it is" about a picture that was never sent.
+    if (imageSearches > 0 && webAttached === 0) {
+      messages.push({ role: 'user', content: '[System note: no image has been attached to this reply and none can be now. Do not say or imply that an image is attached. Say you could not find a good image if that is the case.]' });
+    }
     try {
       const resp = await complete({ model, messages, temperature });
       finalText = contentText(resp.choices?.[0]?.message?.content);

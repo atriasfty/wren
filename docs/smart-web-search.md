@@ -22,8 +22,9 @@ If you ask Wren to show you something ("show me what the new iPhone looks like")
 
 A few things worth knowing:
 
-- Wren picks images based on their titles and where they came from. It can't actually look at them, so now and then it will attach one that isn't quite right. Say so and ask again with a more specific description.
-- Adult content is filtered out, but no filter is perfect.
+- Wren looks at the candidate images before sending anything. If none of them show what you asked for, it searches again (up to three times) or tells you it couldn't find a good one. It can still get it wrong sometimes, so tell it and ask again with a more specific description.
+- This needs the AI model Wren runs on to understand images. Self-hosters using a text-only model will see image replies fail.
+- Search results are moderated and images from known adult sites are blocked, but no filter is perfect.
 - Wren downloads the image and attaches it. It doesn't store it, and the original is credited to its source page.
 - It doesn't work in voice chat or in-game.
 - Exa doesn't have a dedicated image search. Wren finds relevant web pages and picks the images from them, so results look more like press photos and article pictures than a general image index. Self-hosters: this uses the same `EXA_API_KEY` as web search.

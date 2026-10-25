@@ -58,6 +58,20 @@ describe('exa', () => {
     expect(out[2].title).toBe('Other');
   });
 
+  it('isUsableImageUrl drops real junk but keeps product photos with look-alike words', () => {
+    const ok = ['https://c.test/pixel-9-pro-hero.jpg', 'https://c.test/iconic-mustang-1967.jpg', 'https://c.test/Badger.jpg', 'https://c.test/silicon-wafer.jpg', 'https://c.test/a.jpg?trackingId=5', 'https://c.test/avatar-fire-and-ash-poster.jpg'];
+    const bad = ['https://c.test/site-logo.png', 'https://c.test/assets/icons/x.png', 'https://c.test/spacer.gif', 'https://c.test/a.svg', 'https://c.test/favicon.ico', 'https://c.test/1x1.gif', 'ftp://c.test/a.jpg', 'not a url'];
+    for (const u of ok) expect(exa.isUsableImageUrl(u), u).toBe(true);
+    for (const u of bad) expect(exa.isUsableImageUrl(u), u).toBe(false);
+  });
+
+  it('asks Exa to moderate both kinds of search', async () => {
+    mockFetch({ results: [] });
+    await exa.webSearch('x');
+    await exa.imageSearch('x');
+    for (const call of globalThis.fetch.mock.calls) expect(JSON.parse(call[1].body).moderation).toBe(true);
+  });
+
   it('imageSearch surfaces API errors with a status', async () => {
     mockFetch({ error: 'nope' }, { ok: false, status: 402 });
     await expect(exa.imageSearch('x')).rejects.toMatchObject({ status: 402 });

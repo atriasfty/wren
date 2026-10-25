@@ -44,20 +44,50 @@ export async function fetchImageForAttachment(url, { fetchImpl = safeFetch } = {
   }
 }
 
-// Walks search results in order, trying the original image then the
-// thumbnail (if the provider gives one), until `n` distinct images are downloaded.
-export async function collectImages(results, n, { fetchImpl } = {}) {
+// Downloads candidates in small parallel batches (a sequential walk could take
+// minutes when hosts are slow), keeping search-result order. Tries the original
+// image then the thumbnail. `prepare(img)` may return extra fields to merge in,
+// or null to reject the image (used to drop ones the model can't be shown), so
+// `n` counts only images that fully qualify.
+export async function collectImages(results, n, { fetchImpl, prepare } = {}) {
   const out = [];
-  for (const r of results) {
-    if (out.length >= n) break;
-    for (const u of [r.imageUrl, r.thumbnailUrl]) {
-      if (!u) continue;
-      const img = await fetchImageForAttachment(u, { fetchImpl });
-      if (img) {
-        out.push({ ...img, filename: `${out.length + 1}-${img.filename}`, meta: r });
-        break;
+  let i = 0;
+  while (out.length < n && i < results.length) {
+    const batch = results.slice(i, i + Math.max(2, n - out.length));
+    i += batch.length;
+    const done = await Promise.all(batch.map(async (r) => {
+      for (const u of [r.imageUrl, r.thumbnailUrl]) {
+        if (!u) continue;
+        const img = await fetchImageForAttachment(u, { fetchImpl });
+        if (!img) continue;
+        const extra = prepare ? await prepare(img) : {};
+        if (extra) return { ...img, ...extra, meta: r };
       }
+      return null;
+    }));
+    for (const d of done) {
+      if (d && out.length < n) out.push({ ...d, filename: `${out.length + 1}-${d.filename}` });
     }
   }
   return out;
+}
+
+// A small JPEG data URL the model can look at. Candidates are shown to the
+// model at reduced size (about 768px) to keep token cost and request size sane;
+// the full-size file is what gets attached if the model picks it. Returns null
+// if the image can't be decoded, so undecodable candidates are never shown.
+export async function toVisionDataUrl(buffer, { maxSide = 768 } = {}) {
+  try {
+    const sharp = (await import('sharp')).default;
+    const out = await sharp(buffer, { failOn: 'none' })
+      .rotate()
+      .resize({ width: maxSide, height: maxSide, fit: 'inside', withoutEnlargement: true })
+      .flatten({ background: '#ffffff' })
+      .jpeg({ quality: 72 })
+      .toBuffer();
+    return `data:image/jpeg;base64,${out.toString('base64')}`;
+  } catch (err) {
+    console.warn('[webImages] could not prepare image for the model:', err.message);
+    return null;
+  }
 }

@@ -218,6 +218,36 @@ describe('messageHandler and helpers', () => {
       expect(mocks.runAssistantPipeline).toHaveBeenCalled();
     });
 
+    it('processes a message when the bot is pinged in the middle or at the end', async () => {
+      attachMessageHandler(client);
+      const handler = client.on.mock.calls[0][1];
+
+      for (const [content, expected] of [
+        ['hey <@bot-123> what is the rules?', 'hey what is the rules?'],
+        ['what is the rules? <@bot-123>', 'what is the rules?'],
+        ['hey <@!bot-123> and also <@bot-123> thanks', 'hey and also thanks'],
+      ]) {
+        mocks.runAssistantPipeline.mockClear();
+        mockMessage.content = content;
+        mockMessage.reference = null;
+        await handler(mockMessage);
+        expect(mocks.runAssistantPipeline).toHaveBeenCalledTimes(1);
+        expect(mocks.runAssistantPipeline.mock.calls[0][1].question).toBe(expected);
+      }
+    });
+
+    it('still ignores @everyone and mentions of other users mid-message', async () => {
+      attachMessageHandler(client);
+      const handler = client.on.mock.calls[0][1];
+
+      for (const content of ['hello @everyone', 'did you ask <@other-user> about this?']) {
+        mockMessage.content = content;
+        mockMessage.reference = null;
+        await handler(mockMessage);
+      }
+      expect(mocks.runAssistantPipeline).not.toHaveBeenCalled();
+    });
+
     it('processes messages that are replies to the bot', async () => {
       attachMessageHandler(client);
       const handler = client.on.mock.calls[0][1];

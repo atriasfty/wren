@@ -29,6 +29,14 @@ export function client() {
   return _client;
 }
 
+// data: URLs (e.g. downscaled web-image candidates) can be hundreds of KB each;
+// keep them out of span attributes.
+function redactInlineImages(messages) {
+  return (messages || []).map((m) => (Array.isArray(m.content)
+    ? { ...m, content: m.content.map((p) => (p?.type === 'image_url' && String(p.image_url?.url || '').startsWith('data:') ? { type: 'image_url', image_url: { url: '[inline image omitted]' } } : p)) }
+    : m));
+}
+
 function normaliseWhitespace(text) {
   return text.replace(/\s+/g, ' ').trim();
 }
@@ -112,7 +120,7 @@ export async function runAssistantPipeline(tenantCtx, {
         'gen_ai.request.model': model,
         // Full prompts carry memory, channel history and attached documents;
         // only export them when explicitly opted in.
-        ...(traceContent() ? { 'gen_ai.input.messages': JSON.stringify(params.messages) } : {}),
+        ...(traceContent() ? { 'gen_ai.input.messages': JSON.stringify(redactInlineImages(params.messages)) } : {}),
         'posthog.distinct_id': actorKey(actor),
         'posthog.tenant_id': tenantCtx.tenantId,
       }

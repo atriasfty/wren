@@ -1,7 +1,7 @@
 import * as prc from '../integrations/prc.js';
 import * as pow from '../integrations/pow.js';
 import { webSearch, imageSearch } from '../integrations/exa.js';
-import { collectImages } from './webImages.js';
+import { collectImages, toVisionDataUrl } from './webImages.js';
 import { audit, addMemory, removeMemory, reserveImageGeneration, releaseImageGeneration, getImageQuota } from '../tenant/store.js';
 import { generateImage } from './imageGen.js';
 import { canRunTool, denialReason, POLICY_GATED_TOOLS, resolveActorRank, RANK_ORDER } from './policy.js';
@@ -550,7 +550,6 @@ async function executeToolInner(tenantCtx, name, args, actor) {
       case 'find_images': {
         if (actor?.voice) return { success: false, error: 'Images can\'t be sent in voice chat. Ask in a text channel instead.' };
         if (typeof args.query !== 'string' || !args.query.trim()) return { success: false, error: 'query is required' };
-        const want = clampPositiveInt(args.count, 1, 2);
         let found;
         try {
           found = await imageSearch(args.query.trim(), { count: 8 });
@@ -559,18 +558,18 @@ async function executeToolInner(tenantCtx, name, args, actor) {
           console.warn('[executor] find_images search failed:', e.message);
           return { success: false, error: 'Image search failed. Try again in a moment, or share a link instead.' };
         }
-        if (!found.length) return { success: false, error: 'No images found for that search.' };
-        const got = await collectImages(found, want);
-        if (!got.length) return { success: false, error: 'Found image results but none could be downloaded safely. Share the source links instead.' };
-        // `attachedImages` is consumed by the model loop and attached to the
-        // reply; the model only sees the text metadata below, never the bytes.
-        result = {
-          success: true,
-          attached: got.length,
-          images: got.map((g) => ({ title: g.meta.title, source: g.meta.source || null, page_url: g.meta.pageUrl || null, width: g.meta.width, height: g.meta.height })),
-          note: 'The images are attached to your reply automatically. You cannot see them: describe them only as the titles and sources say, and credit the source.',
-          attachedImages: got.map(({ buffer, mediaType, filename }) => ({ buffer, mediaType, filename })),
-        };
+        if (!found.length) return { success: false, error: 'No images found for that search. Try different wording.' };
+        // Only candidates the model can actually look at are offered.
+        const candidates = await collectImages(found, 4, {
+          prepare: async (img) => {
+            const visionUrl = await toVisionDataUrl(img.buffer);
+            return visionUrl ? { visionUrl } : null;
+          },
+        });
+        if (!candidates.length) return { success: false, error: 'Found image results but none could be downloaded safely. Try different wording, or share the source links instead.' };
+        // `candidateImages` is consumed by the model loop: it shows the pictures
+        // to the model and holds the full-size files until attach_images.
+        result = { success: true, candidateImages: candidates };
         break;
       }
       case 'check_image_quota': {

@@ -11,6 +11,7 @@ const require = createRequire(import.meta.url);
 const pdfParse = require('pdf-parse');
 
 const MAX_RESPONSE_LEN = 1900;
+const MAX_UPLOAD_BYTES = 9 * 1024 * 1024;
 
 // Per-user in-flight guard: prevents duplicate concurrent pipeline runs.
 const inFlight = new Set();
@@ -72,20 +73,22 @@ export async function fetchChannelContext(channel, beforeId, botId, count = 25) 
 }
 
 /**
- * Returns true only if the bot is directly addressed — i.e. the bot mention
- * is the FIRST token in the message content (after optional whitespace).
- * This prevents the bot from triggering when someone merely references it
- * mid-sentence, e.g. "hey did you ask @wren about this?".
+ * True if the message contains a real mention of the bot ("<@id>" or "<@!id>")
+ * anywhere in its text. @everyone/@here and role mentions don't count, and
+ * neither does the reply ping alone: replies to the bot are handled separately
+ * by the caller via the message reference.
  */
 function isDirectlyMentioned(message, botUserId) {
   if (!message || !message.content) return false;
-  const c = message.content.trim();
-  return c.startsWith(`<@${botUserId}>`) || c.startsWith(`<@!${botUserId}>`);
+  return new RegExp(`<@!?${botUserId}>`).test(message.content);
 }
 
+// Removes every mention of the bot, wherever it sits, so the model sees
+// "hey what's the server ip?" rather than "hey <@123> what's the server ip?".
 function stripMention(content, botUserId) {
   return (content || '')
-    .replace(new RegExp(`^\\s*<@!?${botUserId}>\\s*`), '')
+    .replace(new RegExp(`[ \\t]*<@!?${botUserId}>[ \\t]*`, 'g'), ' ')
+    .replace(/[ \t]{2,}/g, ' ')
     .trim();
 }
 
@@ -133,7 +136,7 @@ export function attachMessageHandler(client) {
       (s) => s.enabled && s.kind === 'discord_channel' && s.ref === message.channel.id
     );
 
-    // Only respond if the bot is directly addressed at the start of the message,
+    // Only respond if the bot is mentioned anywhere in the message,
     // or if the message is a direct reply to one of the bot's messages.
     const directlyMentioned = isDirectlyMentioned(message, client.user.id);
 
@@ -381,7 +384,15 @@ export function attachMessageHandler(client) {
 
     const chunks = splitForDiscord(result.text || '');
     const noPings = { parse: [] };
-    const files = (result.images || []).map((im) => ({ attachment: im.buffer, name: im.filename }));
+    // Stay under Discord's upload limit (10 MB for unboosted servers); an
+    // oversized message would otherwise fail and the user would get no answer.
+    const files = [];
+    let fileBytes = 0;
+    for (const im of result.images || []) {
+      if (fileBytes + im.buffer.length > MAX_UPLOAD_BYTES) continue;
+      fileBytes += im.buffer.length;
+      files.push({ attachment: im.buffer, name: im.filename });
+    }
     let first = false;
     if (statusMessage) {
       try {
@@ -396,7 +407,12 @@ export function attachMessageHandler(client) {
     try {
       if (!first) {
         const first0 = { content: chunks[0] || '\u2026', allowedMentions: noPings, ...(files.length ? { files } : {}) };
-        await message.reply(first0).catch(() => message.channel.send(first0));
+        await message.reply(first0).catch(() => message.channel.send(first0)).catch(async (err) => {
+          // Attachments are the likeliest reason a send fails: deliver the text.
+          if (!files.length) throw err;
+          console.warn('[message] send with attachments failed, retrying text-only:', err.message);
+          await message.channel.send({ content: chunks[0] || '\u2026', allowedMentions: noPings });
+        });
       }
       for (let i = 1; i < chunks.length; i++) {
         await message.channel.send({ content: chunks[i], allowedMentions: noPings });

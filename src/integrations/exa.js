@@ -20,7 +20,7 @@ export async function webSearch(query, { count = 5 } = {}) {
     const res = await fetch(EXA_URL, {
       method: 'POST',
       headers: { 'x-api-key': key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: String(query ?? '').slice(0, 300), type: 'instant', numResults: count, contents: { highlights: { maxCharacters: 400 } } }),
+      body: JSON.stringify({ query: String(query ?? '').slice(0, 300), type: 'instant', numResults: count, moderation: true, contents: { highlights: { maxCharacters: 400 } } }),
       signal: controller.signal,
     });
     externalApiDuration.observe({ service: 'exa', status: res.ok ? 'ok' : 'error' }, (Date.now() - __start) / 1000);
@@ -84,13 +84,17 @@ export async function webAnswer(query, { count = 4 } = {}) {
 }
 
 // URLs that are almost never the picture a person asked to see.
-const JUNK_IMAGE_RE = /\.(svg|ico)(\?|#|$)|favicon|sprite|logo|icon|avatar|badge|pixel|tracking|spacer|1x1|placeholder|\/emoji\//i;
+// Matches whole tokens in the path (split on / _ - . and digits-x-digits), not
+// substrings, so "pixel-9-pro-hero.jpg" or "iconic-mustang.jpg" survive while
+// "site-logo.png", "/icons/x.png" and "spacer.gif" don't.
+const JUNK_IMAGE_RE = /(^|[/_.-])(favicons?|sprites?|logos?|icons?|badges?|spacer|placeholders?|emoji|pixel\.(gif|png)|1x1)([/_.-]|$)|\/avatars?\//i;
 
 export function isUsableImageUrl(u) {
   try {
     const url = new URL(u);
     if (!['http:', 'https:'].includes(url.protocol)) return false;
-    return !JUNK_IMAGE_RE.test(url.pathname + url.search);
+    if (/\.(svg|ico)$/i.test(url.pathname)) return false;
+    return !JUNK_IMAGE_RE.test(url.pathname);
   } catch {
     return false;
   }
@@ -118,6 +122,7 @@ export async function imageSearch(query, { count = 8 } = {}) {
       body: JSON.stringify({
         query: String(query ?? '').slice(0, 300),
         type: 'auto',
+        moderation: true,
         numResults: Math.min(Math.max(count, 1), 10),
         contents: { extras: { richImageLinks: 4 } },
       }),

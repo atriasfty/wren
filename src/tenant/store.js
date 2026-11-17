@@ -293,10 +293,14 @@ export async function addBan({ tenantId, userKey, reason = null, bannedBy = null
      ON CONFLICT (tenant_id, user_key) DO UPDATE SET reason = EXCLUDED.reason, banned_by = EXCLUDED.banned_by`,
     [tenantId, userKey, reason, bannedBy],
   );
+  const { invalidateTenant } = await import('./resolve.js');
+  invalidateTenant(tenantId);
 }
 
 export async function removeBan({ tenantId, userKey }) {
   await query(`DELETE FROM tenant_bans WHERE tenant_id = $1 AND user_key = $2`, [tenantId, userKey]);
+  const { invalidateTenant } = await import('./resolve.js');
+  invalidateTenant(tenantId);
 }
 
 // ---------- memory ----------

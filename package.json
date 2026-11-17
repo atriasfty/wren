@@ -47,6 +47,7 @@
     "wavefile": "^11.0.0"
   },
   "devDependencies": {
+
     "@eslint/js": "^10.0.1",
     "@opentelemetry/sdk-trace-base": "^2.8.0",
     "eslint": "^10.6.0",

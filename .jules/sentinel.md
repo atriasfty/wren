@@ -1,0 +1,4 @@
+## 2024-07-27 - Fix Express error handlers leaking stack traces
+**Vulnerability:** Missing global and parsing error handlers in Express API Server. Malformed JSON caused `express.json()` to throw a SyntaxError. Without an immediate error-handling middleware, Express defaulted to its built-in HTML stack trace error page which leaked internal workings.
+**Learning:** Default Express error handling will expose HTML stack traces for unhandled exceptions and 400 Bad Requests if not caught.
+**Prevention:** Always follow parsing middleware like `express.json()` with an error handling middleware `app.use((err, req, res, next) => {...})` to gracefully reject malformed payloads as JSON. Additionally, place a global `app.use((err, req, res, next) => {...})` handler at the very end of route definitions to catch all unhandled exceptions and return a sanitized JSON 500 response.

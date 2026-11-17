@@ -1,0 +1,3 @@
+## 2026-08-01 - Keyboard Accessibility for Custom Tailwind Inputs
+**Learning:** When building custom range sliders (or standard inputs) with Tailwind, standard focus styles may not appear over dark themes unless explicitly configured. Native `<input type="range">` elements require visible focus outlines to ensure keyboard navigation accessibility.
+**Action:** Always include `focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background-dark outline-none` (or equivalent theme colors) on interactive elements like buttons and sliders to ensure high-contrast focus indicators for keyboard users.

@@ -1,0 +1,3 @@
+## 2026-07-29 - Accessible Form Controls in Tailwind
+**Learning:** Custom inputs like sliders (`<input type="range">`) and icon buttons need explicit focus-visible utility classes (e.g., `focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2`) for keyboard accessibility, especially against dark themes. Missing `for` attributes on labels disconnects them from their associated inputs.
+**Action:** Always use `focus-visible` utility classes for interactive elements and ensure semantic HTML structures (like `for` on labels with `cursor-pointer`) to maintain accessibility, even when customizing with Tailwind.

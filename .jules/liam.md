@@ -1,0 +1,4 @@
+## 2024-06-25 - Prevent Express Stack Trace Leaks via Error Handlers
+**Vulnerability:** Express `express.json()` can throw a `SyntaxError` on malformed JSON which by default results in an HTML response containing the stack trace. Also, unhandled application errors can leak internals.
+**Learning:** In Express, custom error handlers must have exactly four parameters (`err, req, res, _next`) to be recognized as error handlers. If `res.headersSent` is true, the error must be forwarded to the default handler to avoid hanging the request or sending corrupted responses.
+**Prevention:** Always place a 4-parameter error handler immediately after body parsers like `express.json()` to catch and sanitize payload parsing errors (e.g. `SyntaxError`), and place a global catch-all error handler at the end of the route chain that checks `if (res.headersSent) return _next(err);` before responding with a generic 500 error.

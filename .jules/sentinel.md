@@ -1,0 +1,4 @@
+## 2025-02-14 - Prevent HTML Stack Trace Leaks on SyntaxError
+**Vulnerability:** The Express API server leaked raw HTML stack traces when a malformed JSON payload was provided, due to the lack of a proper error handler immediately after `express.json()`. Additionally, there was no global error handler, meaning other unhandled exceptions could also leak internal details and hang requests.
+**Learning:** In Express, middleware like `express.json()` can throw a `SyntaxError` (status 400). If this is not caught explicitly by an error handler middleware before other routes, it falls through to the default Express HTML error handler, leaking the stack trace.
+**Prevention:** Always implement an error handler middleware immediately following `express.json()` to catch `SyntaxError`, and add a global catch-all error handler at the end of the routing stack to ensure all unhandled errors return generic 500 responses without leaking internals.

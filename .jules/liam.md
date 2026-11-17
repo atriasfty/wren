@@ -1,0 +1,4 @@
+## 2025-02-27 - Express API JSON SyntaxError Exposure
+**Vulnerability:** Express' default behavior on `express.json()` payload parsing failure is to throw a `SyntaxError` that bypasses normal flow, triggering the framework's default error handler, which often returns a verbose HTML error page containing a stack trace.
+**Learning:** This is particularly relevant when the payload is intended to be JSON and the endpoints serve an API, but the framework returns HTML. An attacker submitting a malformed JSON payload (e.g. `{invalid json`) could glean stack traces or configuration info via this HTML page.
+**Prevention:** Always place a dedicated error-handling middleware (`(err, req, res, next)`) immediately after body-parsing middleware like `express.json()`, explicitly checking for `err instanceof SyntaxError` with a `400` status. This handler should return a generic, secure `400 Bad Request` JSON response without leaking framework details.

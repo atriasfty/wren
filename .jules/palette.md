@@ -1,0 +1,3 @@
+## 2026-07-23 - Keyboard Accessibility for Custom Styled Inputs
+**Learning:** Interactive elements like custom range sliders and standard interactive components (buttons, `<summary>`) styled heavily with Tailwind lack `focus-visible` styling by default in this application. Furthermore, custom form inputs often miss their `for` label associations, hindering screen readers and keyboard navigation.
+**Action:** When working on UI enhancements, explicitly add `focus-visible` utility classes (e.g., `focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none`) to ensure keyboard focus is visually clear. Ensure form controls are properly associated with their labels via `for` attributes and include `cursor-pointer` to reinforce interactivity.

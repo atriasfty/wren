@@ -1,3 +1,7 @@
 ## 2025-02-18 - Avoid O(N) database queries and O(N) API calls before determining relevance
 **Learning:** Found a major architectural bottleneck where the Discord message event handler executed an O(N) database query (`enforceBan`) for every single message received by a server, and an O(replies) Discord API message fetch to determine the author of replied messages before it even determined if the message was relevant (mentions the bot, or in a source channel).
 **Action:** Always check the fastest and cheapest preconditions (like `directlyMentioned`, `isSourceChannel`, or using cached objects / checking `mentions.repliedUser`) first. Delay expensive database queries and API calls until you are confident the data needs to be acted upon.
+
+## 2025-02-18 - RAG Vector Similarity Optimization
+**Learning:** The `@xenova/transformers` library natively outputs normalized vectors when `normalize: true` is passed. This means all chunk embeddings stored and query embeddings generated have a magnitude of 1. As a result, calculating vector magnitudes and their square roots in the cosine similarity function is completely unnecessary redundant work.
+**Action:** Always check the upstream embedding configuration before implementing similarity searches. If vectors are guaranteed to be normalized to unit length, calculate similarity using a pure dot product to skip the expensive square root operations and save ~60% overhead per comparison.

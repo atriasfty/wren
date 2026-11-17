@@ -1,0 +1,3 @@
+## 2024-07-22 - Tailwind Form Associations
+**Learning:** In standard HTML inputs configured with Tailwind, form associations via the `for` attribute and focus-visible classes are often missed, especially on `<input type="range">`.
+**Action:** When updating form controls, always ensure they are properly associated with their labels via `for` attributes, and include `cursor-pointer` on labels to reinforce interactivity. Explicitly add `focus-visible` utility classes (e.g., `focus-visible:ring-2 focus-visible:ring-offset-2`) to ensure keyboard accessibility, matching the existing design system colors (e.g., `ring-primary`).

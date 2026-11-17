@@ -151,6 +151,18 @@ describe('REST API', () => {
       expect(res.status).toBe(400);
     });
 
+    it('catches malformed JSON gracefully to prevent HTML stack trace leaks', async () => {
+      const res = await request(app)
+        .post('/v1/chat')
+        .set('Authorization', `Bearer ${TOKEN}`)
+        .set('Content-Type', 'application/json')
+        .send('{"question": "what is this", "malformed": true'); // missing closing brace
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('Malformed JSON payload');
+      expect(res.text).not.toContain('<html');
+      expect(res.text).not.toContain('SyntaxError');
+    });
+
     it('answers a valid question with an api-kind actor (no Discord privileges)', async () => {
       const res = await request(app)
         .post('/v1/chat')

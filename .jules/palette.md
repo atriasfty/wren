@@ -1,0 +1,3 @@
+## 2024-05-17 - Improve Keyboard Accessibility on Dark Themes
+**Learning:** Default browser focus rings are often invisible against dark backgrounds. When styling interactive elements like buttons, summary tags, or custom range inputs with Tailwind, they require explicit utility classes (e.g. `focus-visible:ring-2`, `focus-visible:ring-primary`, `focus-visible:ring-offset-2`, `focus-visible:ring-offset-background-dark`) to be usable via keyboard navigation.
+**Action:** Always include `focus-visible` utilities alongside hover/active states for any custom interactive element, and ensure form controls are properly associated with `cursor-pointer` labels via the `for` attribute to reinforce interactivity.

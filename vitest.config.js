@@ -1,3 +1,4 @@
+// TODO [SECURITY]: upgrade vitest — breaking change, requires manual review
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({

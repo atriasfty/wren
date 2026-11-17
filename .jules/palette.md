@@ -1,0 +1,3 @@
+## 2026-07-27 - Focus Visible Styles for Dark Theme
+**Learning:** When styling interactive frontend elements with Tailwind in this codebase (including custom standard inputs like `<input type="range">`), explicitly include `focus-visible` utility classes (e.g., `focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background-dark`) to ensure keyboard accessibility and visibility against the dark theme.
+**Action:** Ensure form controls are properly associated with their labels via `for` attributes, and include `cursor-pointer` on labels to reinforce interactivity, and apply standard `focus-visible` classes to inputs, buttons, and summary elements.

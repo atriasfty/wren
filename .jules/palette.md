@@ -1,0 +1,3 @@
+## 2026-07-05 - Visible Focus States for Custom UI in Tailwind
+**Learning:** When styling interactive elements like custom range inputs (`input[type=range]`) or buttons in Tailwind, default browser focus rings are often disabled or overridden by global resets, making keyboard navigation difficult. Additionally, labels must explicitly associate with their inputs.
+**Action:** Always verify that interactive elements include explicit focus states using Tailwind's `focus-visible` utility (e.g., `focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2`) to ensure accessibility for keyboard users while keeping a clean design for mouse users. Ensure labels use the `for` attribute to link to the correct input `id`.

@@ -1,0 +1,4 @@
+
+## 2024-07-24 - Accessible Input Focus States
+**Learning:** Custom interactive elements (like range sliders) and HTML standard input types styled with Tailwind CSS (`appearance-none`) lose their default focus rings in browsers, harming keyboard accessibility. Furthermore, Tailwind's `focus:` variant is sometimes overly broad compared to `focus-visible:`, which triggers specifically when navigating via keyboard. Additionally, the label requires explicitly binding it to the input field (`for="input-id"`) and reinforcing interactivity with `cursor-pointer`.
+**Action:** Always include explicitly defined `focus-visible` utility classes (`focus-visible:ring-2 focus-visible:ring-offset-2`) on custom inputs and buttons, and remember to bind `label` elements appropriately and style them with pointer cursor.

@@ -2,6 +2,13 @@ import * as cheerio from 'cheerio';
 import { safeFetch, readTextCapped } from '../../ai/ssrf.js';
 
 export async function fetchWebpage(url, { timeoutMs = 10_000, maxChars = 5000 } = {}) {
+  // [SECURITY-FIX] SSRF: validate against an allowlist of schemes and hosts
+  const parsedUrl = new URL(url);
+  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+    console.error(`[webpage] blocked unsafe scheme: ${url}`);
+    return null;
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {

@@ -1,0 +1,3 @@
+## 2026-07-30 - Keyboard Accessibility on Custom Dark Theme Elements
+**Learning:** Custom interactive elements (like range sliders and details summaries) can lose visible focus states against dark backgrounds if native outlines are suppressed by resets, making keyboard navigation difficult.
+**Action:** Always explicitly define focus states using Tailwind's focus-visible utilities (e.g., `focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background-dark focus-visible:outline-none`) on custom elements in dark themes to ensure high contrast keyboard accessibility.

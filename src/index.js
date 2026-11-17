@@ -1,3 +1,8 @@
+// TODO [SECURITY]: upgrade vitest — breaking change, requires manual review
+// TODO [SECURITY]: upgrade sharp — breaking change, requires manual review
+// TODO [SECURITY]: upgrade protobufjs — breaking change, requires manual review
+// TODO [SECURITY]: upgrade onnxruntime-web — breaking change, requires manual review
+
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';

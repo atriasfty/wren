@@ -1,0 +1,4 @@
+## 2024-07-29 - Prevent Information Leaks in Express Error Handling
+**Vulnerability:** Express servers exposed HTML stack traces to clients during unhandled exceptions and specifically when a malformed JSON payload (causing a `SyntaxError`) was received by `express.json()`.
+**Learning:** Default Express error handling will return HTML stack traces for status 400 and 500 errors unless specifically overridden with custom error handlers.
+**Prevention:** Always place a `SyntaxError` handler immediately after `app.use(express.json())` to catch status 400 JSON parse errors, and always add a global catch-all error handling middleware at the end of the routing boundary to prevent 500 stack trace leaks. Use `if (res.headersSent) return next(err);` in the catch-all to prevent hanging errors if the response has already started.

@@ -8,7 +8,10 @@ import { runMigrations } from '../src/db/migrate.js';
 import { closePool, query } from '../src/db/pool.js';
 
 const db = new URL(process.env.BENCH_DATABASE_URL ?? 'postgresql://wren:wren@localhost:5432/wren');
-assert(['localhost', '127.0.0.1', '[::1]'].includes(db.hostname), 'Use a local development database');
+const host = (db.searchParams.get('host') || db.hostname).replace(/^\[(::1)\]$/, '$1');
+assert(['postgres:', 'postgresql:'].includes(db.protocol) && ['localhost', '127.0.0.1', '::1'].includes(host),
+  'Use a local development database');
+db.searchParams.set('host', host);
 const schema = 'bench_polar_' + randomBytes(8).toString('hex');
 const isolated = new URL(db);
 isolated.searchParams.set('options', '-c search_path=' + schema);

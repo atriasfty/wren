@@ -48,6 +48,9 @@ const sql = new pg.Client({ connectionString: db.href });
 let server;
 let schemaCreated = false;
 let sends = 0;
+const stop = (signal) => { process.exitCode = signal === 'SIGINT' ? 130 : 143; };
+process.on('SIGINT', stop);
+process.on('SIGTERM', stop);
 try {
   await sql.connect();
   await sql.query('CREATE SCHEMA ' + schema);
@@ -68,6 +71,7 @@ try {
   await once(server, 'listening');
   const url = 'http://127.0.0.1:' + server.address().port + '/webhooks/polar';
   for (const kind of ['renewal', 'new purchase']) {
+    if (process.exitCode) break;
     const times = [];
     sends = 0;
     async function run(i, record) {
@@ -89,8 +93,9 @@ try {
     const warmupSends = sends;
     let next = 4;
     await Promise.all(Array.from({ length: 4 }, async () => {
-      for (let i; (i = next++) < 124;) await run(i, true);
+      for (let i; !process.exitCode && (i = next++) < 124;) await run(i, true);
     }));
+    if (process.exitCode) break;
     times.sort((a, b) => a - b);
     const pct = (p) => +times[Math.ceil(times.length * p) - 1].toFixed(2);
     console.log(kind, { n: times.length, p50: pct(.5), p95: pct(.95), p99: pct(.99), notifications: sends - warmupSends });
@@ -103,4 +108,6 @@ try {
   await closePool();
   if (schemaCreated) await sql.query('DROP SCHEMA ' + schema + ' CASCADE');
   await sql.end();
+  process.off('SIGINT', stop);
+  process.off('SIGTERM', stop);
 }

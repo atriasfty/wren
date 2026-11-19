@@ -215,8 +215,11 @@ export async function createApiServer(client) {
 
           await updateSubscription(tenantId, tier, sub.id, ownerId, customerId);
           invalidateTenant(tenantId);
-          // Try to send a success message to the guild
-          if (client) {
+          // Renewals and metadata-only updates aren't upgrades.
+          const shouldNotify = event.type === 'subscription.created'
+            || ctx?.tenant.polarSubscriptionId !== sub.id
+            || ctx?.tenant.subscriptionTier !== tier;
+          if (client && shouldNotify) {
             try {
               const guild = await client.guilds.fetch(tenantId).catch(() => null);
               if (guild) {

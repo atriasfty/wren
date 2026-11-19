@@ -9,7 +9,7 @@ import { encryptSecret } from '../src/tenant/crypto.js';
 import { clearCache, setEncryptionKey } from '../src/tenant/resolve.js';
 
 const db = new URL(process.env.BENCH_DATABASE_URL ?? 'postgresql://wren:wren@localhost:5432/wren');
-const host = (db.searchParams.get('host') || db.hostname).replace(/^\[(::1)\]$/, '$1');
+const host = (db.searchParams.getAll('host').at(-1) || db.hostname).replace(/^\[(::1)\]$/, '$1');
 assert(['postgres:', 'postgresql:'].includes(db.protocol) && ['localhost', '127.0.0.1', '::1'].includes(host),
   'Use a local development database');
 db.searchParams.set('host', host);

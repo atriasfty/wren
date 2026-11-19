@@ -16,7 +16,7 @@ export async function retrieveSources(tenantCtx, question, topK = 8, { minSimila
   const __start = Date.now();
   try {
     if (!tenantCtx.vectorStorePath || !tenantCtx.sources || tenantCtx.sources.length === 0) return [];
-    const store = await readVectorStore(tenantCtx.vectorStorePath);
+    const store = await readVectorStore(tenantCtx.vectorStorePath, { cache: true });
     if (!store.chunks || !store.chunks.length) return [];
     const q = await embedText(question);
     // Only chunks from currently enabled sources are eligible: chunks of a

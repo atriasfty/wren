@@ -76,6 +76,37 @@ describe('Polar Webhook', () => {
     // second webhook for the same tenant arriving inside that window would
     // read stale pre-write data back out of resolveTenantById.
     expect(resolve.invalidateTenant).toHaveBeenCalledWith('guild_1');
+    expect(clientMock.guilds.fetch).toHaveBeenCalledWith('guild_1');
+  });
+
+  it.each([
+    ['prod_core', 'core', false],
+    ['prod_pro', 'pro', true],
+  ])('updates an existing subscription to %s, notifying only for a tier change', async (productId, tier, shouldNotify) => {
+    process.env.POLAR_PRO_PRODUCT_ID = 'prod_pro';
+    validateEvent.mockReturnValue({
+      type: 'subscription.updated',
+      data: {
+        id: 'sub_123',
+        customerId: 'cus_new',
+        productId,
+        metadata: { tenantId: 'guild_1', ownerId: 'owner_new' },
+      },
+    });
+    resolve.resolveTenantById.mockResolvedValue({
+      tenant: { polarSubscriptionId: 'sub_123', subscriptionTier: 'core', statusChannelId: 'status' },
+    });
+    const send = vi.fn().mockResolvedValue(undefined);
+    const fetch = vi.fn().mockResolvedValue({ channels: { fetch: vi.fn().mockResolvedValue({ send }) } });
+    const app = await createApiServer({ guilds: { fetch } });
+
+    const res = await request(app).post('/webhooks/polar').set('webhook-id', 'msg_update').send({});
+
+    expect(res.status).toBe(200);
+    expect(store.updateSubscription).toHaveBeenCalledWith('guild_1', tier, 'sub_123', 'owner_new', 'cus_new');
+    expect(resolve.invalidateTenant).toHaveBeenCalledWith('guild_1');
+    expect(fetch).toHaveBeenCalledTimes(Number(shouldNotify));
+    expect(send).toHaveBeenCalledTimes(Number(shouldNotify));
   });
 
   it('should skip reprocessing a redelivered webhook (same webhook-id)', async () => {

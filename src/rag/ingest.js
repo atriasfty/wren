@@ -17,11 +17,13 @@ dotenv.config({ path: path.join(__dirname, '..', '..', '.env') });
 
 const CHUNK_SIZE = 1000;
 const CHUNK_OVERLAP = 150;
+const MAX_DISCORD_UPDATES_PER_WRITE = 32;
 
 // The vector store is a single JSON file per tenant, updated with
 // read-modify-write cycles. Serialise those per tenant so concurrent message
 // events can't clobber each other's writes.
 const storeLocks = new Map();
+const pendingDiscordWrites = new Map();
 function withStoreLock(tenantId, fn) {
   const prev = storeLocks.get(tenantId) || Promise.resolve();
   const next = prev.catch(() => {}).then(fn);
@@ -33,6 +35,38 @@ function withStoreLock(tenantId, fn) {
     if (storeLocks.get(tenantId) === next) storeLocks.delete(tenantId);
   });
   return next;
+}
+
+function queueDiscordUpdate({ tenantId, vectorStorePath }, update) {
+  const pending = pendingDiscordWrites.get(tenantId);
+  // Only join an unstarted write at the tail; deletes and rebuilds are barriers.
+  if (pending && pending.done === storeLocks.get(tenantId) && pending.vectorStorePath === vectorStorePath
+      && pending.updates.length < MAX_DISCORD_UPDATES_PER_WRITE) {
+    pending.updates.push(update);
+    return pending.done;
+  }
+
+  const batch = { vectorStorePath, updates: [update] };
+  batch.done = withStoreLock(tenantId, async () => {
+    if (pendingDiscordWrites.get(tenantId) === batch) pendingDiscordWrites.delete(tenantId);
+    const latest = new Map();
+    for (const { messageId, chunks } of batch.updates) {
+      latest.delete(messageId);
+      latest.set(messageId, chunks);
+    }
+    const store = await readVectorStore(vectorStorePath);
+    store.chunks = (store.chunks || []).filter((chunk) => !latest.has(chunk.messageId));
+    for (const chunks of latest.values()) {
+      for (const chunk of chunks) store.chunks.push(chunk);
+    }
+    store.chunks.forEach((chunk, i) => { chunk.id = i; });
+    if (!store.metadata) store.metadata = {};
+    store.metadata.totalChunks = store.chunks.length;
+    store.metadata.updatedAt = new Date().toISOString();
+    await writeVectorStore(vectorStorePath, store);
+  });
+  pendingDiscordWrites.set(tenantId, batch);
+  return batch.done;
 }
 
 export function chunkText(text, size = CHUNK_SIZE, overlap = CHUNK_OVERLAP) {
@@ -275,37 +309,20 @@ export async function ingestDiscordMessage(tenantCtx, message) {
   if (!chunks.length) return;
 
   const vectors = await embedBatch(chunks);
-
-  await withStoreLock(tenantCtx.tenantId, async () => {
-    const store = await readVectorStore(tenantCtx.vectorStorePath);
-
-    // Remove existing chunks for this specific message first (in case of updates)
-    store.chunks = (store.chunks || []).filter((c) => c.messageId !== message.id);
-
-    const source = tenantCtx.sources.find(
-      (s) => s.kind === 'discord_channel' && s.ref === message.channel.id
-    );
-    const label = source ? source.label : 'Discord Channel';
-
-    for (let i = 0; i < chunks.length; i++) {
-      store.chunks.push({
-        id: store.chunks.length,
-        text: chunks[i],
-        embedding: vectors[i],
-        sourceKind: 'discord_channel',
-        sourceRef: message.channel.id,
-        label,
-        messageId: message.id,
-      });
-    }
-
-    // Ensure sequential IDs
-    store.chunks.forEach((c, idx) => { c.id = idx; });
-    if (!store.metadata) store.metadata = {};
-    store.metadata.totalChunks = store.chunks.length;
-    store.metadata.updatedAt = new Date().toISOString();
-
-    await writeVectorStore(tenantCtx.vectorStorePath, store);
+  const source = tenantCtx.sources.find(
+    (s) => s.kind === 'discord_channel' && s.ref === message.channel.id
+  );
+  await queueDiscordUpdate(tenantCtx, {
+    messageId: message.id,
+    chunks: chunks.map((text, i) => ({
+      id: 0,
+      text,
+      embedding: vectors[i],
+      sourceKind: 'discord_channel',
+      sourceRef: message.channel.id,
+      label: source ? source.label : 'Discord Channel',
+      messageId: message.id,
+    })),
   });
 }
 

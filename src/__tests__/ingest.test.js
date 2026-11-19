@@ -1,3 +1,4 @@
+import { setImmediate } from 'node:timers/promises';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { chunkText, ingestDiscordMessage, removeDiscordMessageChunks } from '../rag/ingest.js';
 
@@ -98,6 +99,7 @@ describe('real-time auto-ingestion', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.writeVectorStore.mockReset();
     tenantCtx = {
       tenantId: 'guild-123',
       vectorStorePath: 'data/tenants/guild-123/vector-store.json',
@@ -199,6 +201,75 @@ describe('real-time auto-ingestion', () => {
         ]
       })
     );
+  });
+
+  it('writes ready Discord edits together, keeping only the last edit per message', async () => {
+    const other = { ...mockMessage, id: 'msg-789' };
+    const latest = { ...mockMessage, content: 'The new announcement replaces the original version of this message.' };
+
+    await Promise.all([mockMessage, other, latest].map((message) => ingestDiscordMessage(tenantCtx, message)));
+
+    expect(mocks.readVectorStore).toHaveBeenCalledTimes(1);
+    expect(mocks.writeVectorStore).toHaveBeenCalledTimes(1);
+    const [, store] = mocks.writeVectorStore.mock.calls[0];
+    expect(store.metadata.totalChunks).toBe(2);
+    expect(store.chunks.map(({ id, messageId, text }) => [id, messageId, text])).toEqual([
+      [0, other.id, other.content],
+      [1, latest.id, latest.content],
+    ]);
+  });
+
+  it('starts another write after a batch reaches 32 edits', async () => {
+    const chunkCounts = [];
+    mocks.writeVectorStore.mockImplementation((_path, { chunks }) => { chunkCounts.push(chunks.length); });
+    const messages = Array.from({ length: 33 }, (_, i) => ({ ...mockMessage, id: `message-${i}` }));
+    await Promise.all(messages.map((message) => ingestDiscordMessage(tenantCtx, message)));
+
+    expect(chunkCounts).toEqual([32, 33]);
+  });
+
+  it('does not merge an edit across a queued delete', async () => {
+    let startFirstWrite;
+    let releaseFirstWrite;
+    const firstWriteStarted = new Promise((resolve) => { startFirstWrite = resolve; });
+    const firstWriteReleased = new Promise((resolve) => { releaseFirstWrite = resolve; });
+    const versions = [];
+    const recordVersion = (_path, { chunks }) => {
+      versions.push(chunks.find(({ messageId }) => messageId === mockMessage.id)?.text);
+    };
+    mocks.writeVectorStore.mockImplementationOnce(async (...args) => {
+      recordVersion(...args);
+      startFirstWrite();
+      await firstWriteReleased;
+    });
+    for (let i = 0; i < 3; i++) mocks.writeVectorStore.mockImplementationOnce(recordVersion);
+    const first = ingestDiscordMessage(tenantCtx, { ...mockMessage, id: 'in-flight' });
+    await firstWriteStarted;
+    const beforeDelete = ingestDiscordMessage(tenantCtx, mockMessage);
+    await setImmediate();
+    const deletion = removeDiscordMessageChunks(tenantCtx, mockMessage.id);
+    const latest = { ...mockMessage, content: 'This edit was queued after the deletion and must not be lost.' };
+    const afterDelete = ingestDiscordMessage(tenantCtx, latest);
+    await setImmediate();
+    releaseFirstWrite();
+    await Promise.all([first, beforeDelete, deletion, afterDelete]);
+
+    expect(versions).toEqual([undefined, mockMessage.content, undefined, latest.content]);
+  });
+
+  it('rejects every edit in a failed write and still runs the next write', async () => {
+    const failure = new Error('disk write failed');
+    mocks.writeVectorStore.mockRejectedValueOnce(failure);
+    const first = ingestDiscordMessage(tenantCtx, mockMessage);
+    const second = ingestDiscordMessage(tenantCtx, { ...mockMessage, id: 'msg-789' });
+
+    expect(await Promise.allSettled([first, second])).toEqual([
+      { status: 'rejected', reason: failure },
+      { status: 'rejected', reason: failure },
+    ]);
+    expect(mocks.writeVectorStore).toHaveBeenCalledTimes(1);
+    await ingestDiscordMessage(tenantCtx, mockMessage);
+    expect(mocks.writeVectorStore).toHaveBeenCalledTimes(2);
   });
 
   it('removeDiscordMessageChunks removes chunks matching messageId', async () => {

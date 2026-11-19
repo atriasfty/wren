@@ -81,6 +81,23 @@ export async function listTenants(encKey) {
   return r.rows.map((row) => rowToTenant(row, encKey));
 }
 
+export async function listInGamePollTenants(encKey) {
+  if (!encKey) return [];
+  const r = await query(
+    `SELECT tenant_id, in_game_handle, prc_base_url, erlc_server_key_enc
+     FROM tenants WHERE erlc_server_key_enc IS NOT NULL ORDER BY created_at`,
+  );
+  return r.rows.flatMap((row) => {
+    const erlcServerKey = safeDecrypt(row.erlc_server_key_enc, encKey, row.tenant_id, 'erlc_server_key');
+    return erlcServerKey ? [{
+      tenantId: row.tenant_id,
+      inGameHandle: row.in_game_handle,
+      prcBaseUrl: row.prc_base_url,
+      erlcServerKey,
+    }] : [];
+  });
+}
+
 export async function updateTenant(tenantId, patch, encKey) {
   const fields = [];
   const values = [];

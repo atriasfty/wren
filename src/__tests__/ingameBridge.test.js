@@ -53,9 +53,40 @@ describe('ingameBridge - pollModcallsFor', () => {
       { callerName: 'Player2', message: ':pm bob hi', timestamp: 101 },
     ]);
 
-    await pollModcallsFor(tenantCtx);
+    const loadContext = vi.fn();
+    await pollModcallsFor(tenantCtx, loadContext);
 
+    expect(loadContext).not.toHaveBeenCalled();
     expect(mocks.runAssistantPipeline).not.toHaveBeenCalled();
+  });
+
+  it('loads the full context once for multiple questions in one tenant poll', async () => {
+    const pollCtx = { ...tenantCtx, tenant: { inGameHandle: ':pm wren' } };
+    const fullCtx = { ...tenantCtx, sources: [{ ref: 'rules' }] };
+    const loadContext = vi.fn().mockResolvedValue(fullCtx);
+    mocks.getModcalls.mockResolvedValue([
+      { callerName: 'Player1', message: ':pm wren rules?', timestamp: 100 },
+      { callerName: 'Player2', message: ':pm wren hello?', timestamp: 101 },
+    ]);
+
+    await pollModcallsFor(pollCtx, loadContext);
+
+    expect(mocks.getModcalls).toHaveBeenCalledWith(pollCtx, { sinceTs: 0 });
+    expect(loadContext).toHaveBeenCalledTimes(1);
+    expect(mocks.runAssistantPipeline).toHaveBeenCalledTimes(2);
+    for (const [ctx] of mocks.runAssistantPipeline.mock.calls) expect(ctx).toBe(fullCtx);
+  });
+
+  it('does not consume a question if resolving the full context fails', async () => {
+    mocks.getModcalls.mockResolvedValue([
+      { callerName: 'Player1', message: ':pm wren rules?', timestamp: 100 },
+    ]);
+    const loadContext = vi.fn().mockRejectedValueOnce(new Error('db down')).mockResolvedValueOnce(tenantCtx);
+    await expect(pollModcallsFor(tenantCtx, loadContext)).rejects.toThrow('db down');
+    await pollModcallsFor(tenantCtx, loadContext);
+
+    expect(mocks.getModcalls).toHaveBeenNthCalledWith(2, tenantCtx, { sinceTs: 0 });
+    expect(mocks.runAssistantPipeline).toHaveBeenCalledTimes(1);
   });
 
   it('processes modcalls addressed to the bot and strips handle correctly', async () => {

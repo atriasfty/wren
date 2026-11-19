@@ -1,5 +1,5 @@
 import { resolveTenantById } from '../tenant/resolve.js';
-import { listTenants } from '../tenant/store.js';
+import { listInGamePollTenants } from '../tenant/store.js';
 import { runAssistantPipeline } from '../ai/pipeline.js';
 import { loadConfig } from '../config.js';
 import { executeTool } from '../ai/executor.js';
@@ -39,12 +39,13 @@ function modcallKey(tenantId, m) {
   return `${tenantId}:${m.timestamp || 0}:${m.callerName || m.playerName || ''}:${m.message || m.content || ''}`;
 }
 
-export async function pollModcallsFor(tenantCtx) {
-  const sinceTs = lastPollTs.get(tenantCtx.tenantId) || 0;
-  const modcalls = await (await import('../integrations/prc.js')).getModcalls(tenantCtx, { sinceTs });
+export async function pollModcallsFor(pollCtx, loadTenantCtx = () => pollCtx) {
+  const { tenantId } = pollCtx;
+  const sinceTs = lastPollTs.get(tenantId) || 0;
+  const modcalls = await (await import('../integrations/prc.js')).getModcalls(pollCtx, { sinceTs });
   if (!modcalls.length) return;
 
-  const botHandle = (tenantCtx.tenant.inGameHandle || ':pm wren').toLowerCase();
+  const botHandle = (pollCtx.tenant.inGameHandle || ':pm wren').toLowerCase();
   const botName = botHandle.replace(HANDLE_PREFIX_RE, '').trim();
 
   // Only advance the cursor past modcalls we actually finished handling
@@ -58,6 +59,7 @@ export async function pollModcallsFor(tenantCtx) {
   // next sweep, which beats losing the failed one forever).
   let maxHandledTs = sinceTs;
   let firstFailureTs = null;
+  let tenantCtx;
 
   for (const m of modcalls) {
     const ts = m.timestamp || 0;
@@ -78,15 +80,20 @@ export async function pollModcallsFor(tenantCtx) {
     const playerName = m.callerName || m.playerName;
     if (!playerName) { maxHandledTs = Math.max(maxHandledTs, ts); continue; }
 
-    const key = modcallKey(tenantCtx.tenantId, m);
+    const key = modcallKey(tenantId, m);
     if (handledModcalls.has(key)) { maxHandledTs = Math.max(maxHandledTs, ts); continue; }
 
     // Extract the actual question by removing the bot's name/handle
     const question = cleanText.slice(botName.length).trim();
     if (!question) { maxHandledTs = Math.max(maxHandledTs, ts); continue; }
 
+    // Polling only needs PRC credentials. Load policies, sources and memory
+    // once a player actually asks Wren a question.
+    tenantCtx ??= await loadTenantCtx();
+    if (!tenantCtx) return;
+
     // Retrieve or initialize session state
-    const sessionKey = `${tenantCtx.tenantId}:${playerName.toLowerCase()}`;
+    const sessionKey = `${tenantId}:${playerName.toLowerCase()}`;
     const now = Date.now();
     let session = playerSessions.get(sessionKey);
     if (!session || (now - session.lastActive > SESSION_TTL_MS)) {
@@ -162,11 +169,11 @@ export async function pollModcallsFor(tenantCtx) {
   const cursor = firstFailureTs === null
     ? maxHandledTs
     : Math.max(sinceTs, Math.min(maxHandledTs, firstFailureTs - 1));
-  lastPollTs.set(tenantCtx.tenantId, cursor);
+  lastPollTs.set(tenantId, cursor);
 }
 
 export function attachIngameBridge(client) {
-  // Periodically poll modcalls — pass the encryption key so listTenants can decrypt secrets.
+  // Periodically poll modcalls for tenants with a configured ERLC key.
   // The in-flight guard prevents overlapping sweeps when PRC responds slowly.
   let polling = false;
   setInterval(async () => {
@@ -174,15 +181,10 @@ export function attachIngameBridge(client) {
     polling = true;
     try {
       const cfg = loadConfig();
-      const tenants = await listTenants(cfg.tenantSecretEncKey);
+      const tenants = await listInGamePollTenants(cfg.tenantSecretEncKey);
       for (const t of tenants) {
-        // Tenants without an ERLC key can't have modcalls — skip them instead
-        // of throwing inside getModcalls on every sweep.
-        if (!t.erlcServerKey) continue;
-        const ctx = await resolveTenantById(t.tenantId);
-        if (!ctx) continue;
         try {
-          await pollModcallsFor(ctx);
+          await pollModcallsFor({ tenantId: t.tenantId, tenant: t }, () => resolveTenantById(t.tenantId));
         } catch (err) {
           console.warn(`[ingame] poll failed for ${t.tenantId}:`, err.message);
         }
